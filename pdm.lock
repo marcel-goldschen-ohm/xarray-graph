@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:b77471f4487d324dc8f86e4797cb74f10f558161728b90173609ae4c66253322"
+content_hash = "sha256:b4c723ce011bfe95787517b9ab6616f1c88973c4d80dd3ec2c86d3ca242db5c1"
 
 [[package]]
 name = "asteval"
@@ -157,6 +157,26 @@ dependencies = [
 files = [
     {file = "pyqt_ext-1.1.0-py3-none-any.whl", hash = "sha256:8d810d0a28b8fa3ec42732c9951a8513799c97bb8c5513752ead697c22221e3a"},
     {file = "pyqt_ext-1.1.0.tar.gz", hash = "sha256:a437c7bfee46a96338799e026c52c916a564f32a31f441918cdc6da17864a890"},
+]
+
+[[package]]
+name = "pyqt-xarray-treeview"
+version = "1.0.0"
+requires_python = ">=3.9"
+summary = "PyQt/PySide model/view for tree of xarray datasets."
+groups = ["default"]
+dependencies = [
+    "lmfit>=1.2.2",
+    "numpy>=1.26.2",
+    "pyqt-ext>=1.1.0",
+    "qtawesome>=1.3.0",
+    "qtpy>=2.4.1",
+    "scipy>=1.11.4",
+    "xarray>=2023.12.0",
+]
+files = [
+    {file = "pyqt_xarray_treeview-1.0.0-py3-none-any.whl", hash = "sha256:30ac5054db8ba94cecc0834d4327c89c2f22e7f2f4b5127a54c94866df966590"},
+    {file = "pyqt_xarray_treeview-1.0.0.tar.gz", hash = "sha256:2b2976cbae61277191e97483c3acbb8acbe97dc64668b427cb5e0bdba3a83416"},
 ]
 
 [[package]]

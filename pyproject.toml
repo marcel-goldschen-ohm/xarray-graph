@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.11.4",
     "lmfit>=1.2.2",
     "pyqtgraph-ext>=1.0.0",
+    "pyqt-xarray-treeview>=1.0.0",
 ]
 readme = "README.md"
 keywords = ["PyQt", "PySide", "xarray"]
