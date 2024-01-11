@@ -1,1 +1,0 @@
-from pyqt_xarray_xydataviewer.PyQtXarrayXYDataViewer import XarrayXYDataViewer

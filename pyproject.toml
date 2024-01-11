@@ -1,6 +1,6 @@
 [project]
-name = "pyqt-xarray-xydataviewer"
-description = "PyQt/PySide UI for viewing/analyzing 2-D signals in xarray datasets."
+name = "pyqt-xarray-graph"
+description = "PyQt/PySide UI for 2-D graphs in xarray datasets."
 dynamic = ["version"]
 license = {text = "MIT"}
 authors = [
@@ -34,8 +34,8 @@ classifiers = [
 
 
 [project.urls]
-homepage = "https://github.com/marcel-goldschen-ohm/PyQt-Xarray-XYDataViewer"
-repository = "https://github.com/marcel-goldschen-ohm/PyQt-Xarray-XYDataViewer"
+homepage = "https://github.com/marcel-goldschen-ohm/PyQt-Xarray-Graph"
+repository = "https://github.com/marcel-goldschen-ohm/PyQt-Xarray-Graph"
 
 
 [build-system]
