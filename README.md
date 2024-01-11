@@ -1,2 +1,2 @@
-# PyQt-Xarray-XYDataViewer
-PyQt/PySide UI for viewing/analyzing 2-D signals in xarray datasets.
+# PyQt-Xarray-Graph
+PyQt/PySide UI for Xarray graphs.
