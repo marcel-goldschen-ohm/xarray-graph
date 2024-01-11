@@ -1,6 +1,6 @@
 [project]
 name = "xarray-graph"
-description = "PyQt/PySide UI for graphing (x,y) slices of xarray datasets."
+description = "PyQt/PySide UI for graphing (x,y) slices of Xarray datasets."
 dynamic = ["version"]
 license = {text = "MIT"}
 authors = [

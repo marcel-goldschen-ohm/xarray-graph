@@ -17,6 +17,7 @@ from xarray_tree import *
 import sys, re
 from pyqt_ext import *
 from pyqtgraph_ext import *
+from xarray_treeview import *
 
 
 # pg.setConfigOption('background', (235, 235, 235))
