@@ -1,1 +1,0 @@
-from pyqt_xarray_graph.PyQtXarrayGraph import XarrayGraph

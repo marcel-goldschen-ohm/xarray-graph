@@ -11,12 +11,12 @@ import numpy as np
 import scipy as sp
 import lmfit
 import xarray as xr
+from xarray_tree import *
 # import datatree as xt
 # import zarr
 import sys, re
 from pyqt_ext import *
 from pyqtgraph_ext import *
-from pyqt_xarray_treeview import *
 
 
 # pg.setConfigOption('background', (235, 235, 235))
