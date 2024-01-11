@@ -1,4 +1,4 @@
-# PyQt-Xarray-Graph
+# xarray-graph
 PyQt/PySide UI for Xarray graphs.
 
 # TODO
