@@ -37,10 +37,10 @@ class XarrayGraph(QWidget):
     def __init__(self, *args, **kwargs):
         QWidget.__init__(self, *args, **kwargs)
 
-        # the waveform data
+        # xarray data tree
         self._data: XarrayTreeNode | None = None
 
-        # the x-axis dimension to be plotted against
+        # x-axis dimension to be plotted against
         self._xdim: str = 'time'
 
         # selections
@@ -54,23 +54,48 @@ class XarrayGraph(QWidget):
         return self._data
     
     @data.setter
-    def data(self, data: XarrayTreeNode | xr.Dataset | None, **kwargs):
+    def data(self, data: XarrayTreeNode | xr.Dataset | None):
         # set xarray tree
-        if isinstance(data, xr.Dataset):
+        if isinstance(data, XarrayTreeNode):
+            self._data = data
+        elif isinstance(data, xr.Dataset):
+            # add data as child dataset of empty root node
             root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
             XarrayTreeNode(name='dataset', dataset=data, parent=root_node)
             self._data = root_node
-        elif isinstance(data, XarrayTreeNode):
-            if data.dataset is not None and data.parent is None:
-                # add an empty root node
-                root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
-                data.parent = root_node
-                data = root_node
-            self._data = data
+        elif isinstance(data, xr.DataArray):
+            # add data as child dataset of empty root node
+            ds = xr.Dataset(data_vars={data.name: data})
+            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
+            XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
+            self._data = root_node
         elif isinstance(data, np.ndarray):
-            return # TODO: y
-        elif isinstance(data, tuple):
-            return # TODO: (x, y)
+            # add data as child dataset of empty root node
+            ds = xr.Dataset(data_vars={'y': xr.DataArray(data=data)})
+            print(ds)
+            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
+            XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
+            self._data = root_node
+            self.data.dump()
+        elif (isinstance(data, tuple) or isinstance(data, list)) and len(data) == 2:
+            x, y = data
+            if not isinstance(y, xr.DataArray):
+                if not isinstance(y, np.ndarray):
+                    y = np.array(y)
+                y = xr.DataArray(data=y)
+            if not isinstance(x, xr.DataArray):
+                if not isinstance(x, np.ndarray):
+                    x = np.array(x)
+                for dim in reversed(y.dims):
+                    if y.sizes[dim] == x.size:
+                        xdim = dim
+                        break
+                x = xr.DataArray(dims=[xdim], data=x)
+            # add data as child dataset of empty root node
+            ds = xr.Dataset(data_vars={'y': y}, coords={x.dims[0]: x})
+            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
+            XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
+            self._data = root_node
         elif data is None:
             self._data = None
         else:
@@ -105,10 +130,42 @@ class XarrayGraph(QWidget):
         # reset xdim in case dims have changed
         # also updates dim spinboxes and plot grid
         self.xdim = self.xdim
-
-        autoscale = kwargs.get('autoscale', True)
-        if autoscale:
-            self.autoscale_plots()
+    
+    def set_data(self, *args, **kwargs):
+        x = y = None
+        if len(args) == 1:
+            y = args
+        elif len(args) == 2:
+            x, y = args
+        if x is None:
+            x = kwargs.get('x', None)
+        if y is None:
+            y = kwargs.get('y', None)
+        if y is None:
+            return
+        if not isinstance(y, xr.Dataset) and not isinstance(y, xr.DataArray):
+            if not isinstance(y, np.ndarray):
+                y = np.array(y)
+            dims = kwargs.get('dims', [f'dim_{i}' for i in range(y.ndim)])
+            attrs = kwargs.get('attrs', {})
+            y = xr.DataArray(dims=dims, data=y, attrs=attrs)
+        if x is not None and not isinstance(x, xr.DataArray):
+            if not isinstance(x, np.ndarray):
+                x = np.array(x)
+            xdim = kwargs.get('xdim', None)
+            if xdim is None:
+                for dim in reversed(y.dims):
+                    if y.sizes[dim] == x.size:
+                        xdim = dim
+                        break
+            xattrs = kwargs.get('xattrs', {})
+            x = xr.DataArray(dims=[xdim], data=x, attrs=xattrs)
+        if x is None:
+            self.data = y
+        else:
+            self.data = x, y
+            self.xdim = xdim
+        self.autoscale_plots()
     
     @property
     def xdim(self) -> str:
@@ -209,7 +266,6 @@ class XarrayGraph(QWidget):
         self.setup_top_toolbar()
         self.setup_view_panel()
         self.setup_plot_grid()
-        self.setup_display_settings()
 
         # main layout
         vbox = QVBoxLayout(self)
@@ -233,7 +289,20 @@ class XarrayGraph(QWidget):
         self._view_button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.7}]))
         self._view_button.setToolTip('View Selections/Options')
         self._view_button.clicked.connect(lambda: self._view_panel.setVisible(not self._view_panel.isVisible()))
-        self._toolbar_top.addWidget(self._view_button)
+        self._view_action = self._toolbar_top.addWidget(self._view_button)
+
+        # plot grid settings button
+        self.setup_plot_grid_settings()
+        self._plot_grid_settings_button = QToolButton()
+        self._plot_grid_settings_button.setIcon(qta.icon('mdi.grid', options=[{'opacity': 0.5}]))
+        self._plot_grid_settings_button.setToolTip('Tile plots in grid')
+        self._plot_grid_settings_button.setPopupMode(QToolButton.InstantPopup)
+        self._plot_grid_settings_button_menu = QMenu()
+        action = QWidgetAction(self._plot_grid_settings_button_menu)
+        action.setDefaultWidget(self._plot_grid_settings_panel)
+        self._plot_grid_settings_button_menu.addAction(action)
+        self._plot_grid_settings_button.setMenu(self._plot_grid_settings_button_menu)
+        self._tile_action = self._toolbar_top.addWidget(self._plot_grid_settings_button)
 
         # widgets and toolbar actions for iterating dimension indices
         self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
@@ -270,47 +339,30 @@ class XarrayGraph(QWidget):
         self._home_button.setToolTip('Autoscale all plots')
         self._home_button.clicked.connect(self.autoscale_plots)
         self._home_action = self._toolbar_top.addWidget(self._home_button)
-    
-    def setup_view_panel(self) -> None:
-        # data tree
-        self._data_treeview = XarrayTreeView()
-        self._data_treeview.setSelectionMode(QAbstractItemView.MultiSelection)
-        root_node: XarrayTreeNode = self.data if self.data is not None else XarrayTreeNode('/', None)
-        root_item = XarrayTreeItem(node=root_node, key=None)
-        model: XarrayTreeModel = XarrayTreeModel(root_item)
-        model._allowed_selections = ['var']
-        self._data_treeview.setModel(model)
-        self._data_treeview.selection_changed.connect(self.on_var_selection_changed)
 
-        # x-axis selection
-        self._xdim_combobox = QComboBox()
-        self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
+        # settings button
+        self.setup_settings()
+        self._settings_button = QToolButton()
+        self._settings_button.setIcon(qta.icon('msc.settings-gear', options=[{'opacity': 0.5}]))
+        self._settings_button.setToolTip('General settings')
+        self._settings_button.setPopupMode(QToolButton.InstantPopup)
+        self._settings_button_menu = QMenu()
+        action = QWidgetAction(self._settings_button_menu)
+        action.setDefaultWidget(self._settings_panel)
+        self._settings_button_menu.addAction(action)
+        self._settings_button.setMenu(self._settings_button_menu)
+        self._settings_action = self._toolbar_top.addWidget(self._settings_button)
+    
+    def setup_plot_grid_settings(self) -> None:
+        # link axes
+        self._link_xaxis_checkbox = QCheckBox()
+        self._link_xaxis_checkbox.setChecked(True)
+        self._link_xaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
 
-        # display settings button
-        self._display_settings_button = QToolButton()#QPushButton('Display Options')
-        self._display_settings_button.setIcon(qta.icon('msc.settings-gear', options=[{'opacity': 0.7}]))
-        self._display_settings_button.setToolTip('Display Options')
-        self._display_settings_button.clicked.connect(self.display_settings_dialog)
-        
-        # view panel
-        self._view_panel = QWidget()
-        vbox = QVBoxLayout(self._view_panel)
-        vbox.setContentsMargins(3, 3, 3, 3)
-        vbox.setSpacing(5)
-        vbox.addWidget(self._data_treeview)
-        hbox = QHBoxLayout()
-        hbox.addWidget(QLabel('X axis:'))
-        hbox.addWidget(self._xdim_combobox)
-        hbox.addStretch()
-        hbox.addWidget(self._display_settings_button)
-        vbox.addLayout(hbox)
-    
-    def setup_plot_grid(self) -> None:
-        self._plot_grid = PlotGrid()
-        self._grid_rowlim = ()
-        self._grid_collim = ()
-    
-    def setup_display_settings(self) -> None:
+        self._link_yaxis_checkbox = QCheckBox()
+        self._link_yaxis_checkbox.setChecked(True)
+        self._link_yaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
+
         # row/col tile selection
         self._row_tile_combobox = QComboBox()
         self._row_tile_combobox.addItems(['None'])
@@ -322,15 +374,21 @@ class XarrayGraph(QWidget):
         self._col_tile_combobox.setCurrentText('None')
         self._col_tile_combobox.currentTextChanged.connect(self.update_plot_grid)
 
-        # link axes
-        self._link_xaxis_checkbox = QCheckBox()
-        self._link_xaxis_checkbox.setChecked(True)
-        self._link_xaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
+        # settings panel
+        self._plot_grid_settings_panel = QWidget()
+        form = QFormLayout(self._plot_grid_settings_panel)
+        form.setContentsMargins(5, 5, 5, 5)
+        form.setSpacing(5)
+        form.addRow('Link X axes:', self._link_xaxis_checkbox)
+        form.addRow('Link Y axes:', self._link_yaxis_checkbox)
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        form.addRow(line)
+        form.addRow('Tile rows:', self._row_tile_combobox)
+        form.addRow('Tile columns:', self._col_tile_combobox)
 
-        self._link_yaxis_checkbox = QCheckBox()
-        self._link_yaxis_checkbox.setChecked(True)
-        self._link_yaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
-
+    def setup_settings(self) -> None:
         # font size
         self._axislabel_fontsize_spinbox = QSpinBox()
         self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
@@ -351,29 +409,14 @@ class XarrayGraph(QWidget):
         self._linewidth_spinbox = QSpinBox()
         self._linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
         self._linewidth_spinbox.setMinimum(1)
-        self._linewidth_spinbox.valueChanged.connect(lambda: self.update_plot_items(item_types=[XYDataItem]))
-    
-    def display_settings_dialog(self) -> None:
-        dlg = QDialog(self)
-        dlg.setWindowTitle('Display Settings')
-        form = QFormLayout(dlg)
+        self._linewidth_spinbox.valueChanged.connect(lambda: self.update_plot_items(item_types=[XYData]))
+
+        # settings panel
+        self._settings_panel = QWidget()
+        form = QFormLayout(self._settings_panel)
         form.setContentsMargins(5, 5, 5, 5)
         form.setSpacing(5)
 
-        form.addRow('Tile rows', self._row_tile_combobox)
-        form.addRow('Tile columns', self._col_tile_combobox)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        form.addRow(line)
-        form.addRow('Link X axis', self._link_xaxis_checkbox)
-        form.addRow('Link Y axis', self._link_yaxis_checkbox)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        form.addRow(line)
         form.addRow('Axis label font size', self._axislabel_fontsize_spinbox)
         form.addRow('Axis tick font size', self._axistick_fontsize_spinbox)
         form.addRow('Text item font size', self._textitem_fontsize_spinbox)
@@ -383,10 +426,37 @@ class XarrayGraph(QWidget):
         line.setFrameShadow(QFrame.Shadow.Sunken)
         form.addRow(line)
         form.addRow('Default line width', self._linewidth_spinbox)
+    
+    def setup_view_panel(self) -> None:
+        # data tree
+        self._data_treeview = XarrayTreeView()
+        self._data_treeview.setSelectionMode(QAbstractItemView.MultiSelection)
+        root_node: XarrayTreeNode = self.data if self.data is not None else XarrayTreeNode('/', None)
+        root_item = XarrayTreeItem(node=root_node, key=None)
+        model: XarrayTreeModel = XarrayTreeModel(root_item)
+        model._allowed_selections = ['var']
+        self._data_treeview.setModel(model)
+        self._data_treeview.selection_changed.connect(self.on_var_selection_changed)
 
-        pos = self.mapToGlobal(self.rect().topLeft())
-        dlg.move(pos)
-        dlg.exec()
+        # x-axis selection
+        self._xdim_combobox = QComboBox()
+        self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
+        
+        # view panel
+        self._view_panel = QWidget()
+        vbox = QVBoxLayout(self._view_panel)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._data_treeview)
+        hbox = QHBoxLayout()
+        hbox.addWidget(QLabel('X axis:'))
+        hbox.addWidget(self._xdim_combobox)
+        vbox.addLayout(hbox)
+    
+    def setup_plot_grid(self) -> None:
+        self._plot_grid = PlotGrid()
+        self._grid_rowlim = ()
+        self._grid_collim = ()
     
     def update_dim_iter_things(self) -> None:
         # remove dim iter actions from toolbar
@@ -652,10 +722,14 @@ class XarrayGraph(QWidget):
                     tile_index = (col - colmin) % n_col_tiles
                     tile_coord = col_tile_coords.values[tile_index]
                     plot_coords[col_tile_dim] = xr.DataArray(data=[tile_coord], dims=[col_tile_dim], attrs=col_tile_coords.attrs)
+                if plot_coords:
+                    coord_permutations = XarrayTreeNode.permutations(plot_coords)
+                else:
+                    coord_permutations = [{}]
                 self._plot_info[row,col] = {
                     'vars': [var_name],
                     'coords': plot_coords,
-                    'coord_permutations': XarrayTreeNode.permutations(plot_coords)
+                    'coord_permutations': coord_permutations,
                 }
         if DEBUG:
             print(self._plot_info)
@@ -1750,7 +1824,7 @@ class XarrayGraph(QWidget):
 
 
 def test_live():
-    app = QApplication(sys.argv)
+    app = QApplication()
 
     ui = XarrayGraph()
     ui.setWindowTitle(ui.__class__.__name__)
@@ -1790,8 +1864,11 @@ def test_live():
 
     ui.data = root_node
 
-    status = app.exec()
-    sys.exit(status)
+    # ui.data = np.linspace(0, 5, 100), np.random.random((3, 10, 100))
+    # ui.set_data([1, 3, 5, 7, 9], [10, 13, 56, 47, 29])
+    # ui.data = np.random.random((1000,))
+
+    app.exec()
 
 
 if __name__ == '__main__':
