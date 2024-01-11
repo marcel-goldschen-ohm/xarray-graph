@@ -823,12 +823,13 @@ class XarrayGraph(QWidget):
         if grid_cols is None:
             grid_cols = range(colmin, colmax + 1)
         
-        line_width = self._linewidth_spinbox.value()
+        default_line_width = self._linewidth_spinbox.value()
         for row in grid_rows:
             for col in grid_cols:
                 plot = self._plot_grid.getItem(row, col)
                 if plot is None or not issubclass(type(plot), pg.PlotItem):
                     continue
+                view: View = plot.getViewBox()
                 info: dict = self._plot_info[row,col]
                     
                 if item_types is None or XYData in item_types:
@@ -837,7 +838,7 @@ class XarrayGraph(QWidget):
                     
                     # update plot traces
                     trace_count = 0
-                    # color_index = 0
+                    color_index = 0
                     for tree_item in self._selected_tree_items:
                         if not tree_item.is_var():
                             continue
@@ -859,6 +860,7 @@ class XarrayGraph(QWidget):
                                     ydata = ydata.reshape((1,))
                             except:
                                 continue
+                            
                             # show trace in plot
                             if len(trace_items) > trace_count:
                                 # update existing trace in plot
@@ -869,30 +871,28 @@ class XarrayGraph(QWidget):
                                 trace_item = XYData(x=xdata, y=ydata)
                                 plot.addItem(trace_item)
                                 trace_items.append(trace_item)
-                            # style
-                            pen: QPen = pg.mkPen(trace_item.opts['pen'])
-                            if pen.width() != line_width:
-                                pen.setWidth(line_width)
-                                trace_item.setPen(pen)
-                            # # store data info with trace
-                            # trace_item._tree_item: XarrayTreeItem = tree_item
-                            # trace_item._coords: dict = coords
-                            # # trace name (limit to 50 characters)
-                            # trace_name: str = tree_item.node.path + tree_item.key
-                            # trace_name_parts: list[str] = trace_name.split('/')
-                            # trace_name = trace_name_parts[-1]
-                            # for i in reversed(range(len(trace_name_parts) - 1)):
-                            #     if i > 0 and len(trace_name) + len(trace_name_parts[i]) >= 50:
-                            #         trace_name = '.../' + trace_name
-                            #         break
-                            #     trace_name = trace_name_parts[i] + '/' + trace_name
-                            # trace_item.setName(trace_name)
-                            # # trace style
-                            # style = var.attrs['style'] if 'style' in var.attrs else {}
-                            # style = XYDataStyleDict(style)
-                            # color_index = trace_item.setStyleDict(style, colorIndex=color_index)
+                            
+                            # trace style
+                            style = yarr.attrs.get('style', {})
+                            if 'LineWidth' not in style:
+                                style['LineWidth'] = default_line_width
+                            style = XYDataStyleDict(style)
+                            color_index = trace_item.setStyleDict(style, colorIndex=color_index)
+                            
+                            # trace name (limit to 50 characters)
+                            trace_name: str = tree_item.node.path + tree_item.key
+                            trace_name_parts: list[str] = trace_name.split('/')
+                            trace_name = trace_name_parts[-1]
+                            for i in reversed(range(len(trace_name_parts) - 1)):
+                                if i > 0 and len(trace_name) + len(trace_name_parts[i]) >= 50:
+                                    trace_name = '.../' + trace_name
+                                    break
+                                trace_name = trace_name_parts[i] + '/' + trace_name
+                            trace_item.setName(trace_name)
+                            
                             # next trace
                             trace_count += 1
+                    
                     # remove extra plot traces
                     while len(trace_items) > trace_count:
                         trace_item = trace_items.pop()
