@@ -237,9 +237,35 @@ class XarrayGraph(QWidget):
         # widgets and toolbar actions for iterating dimension indices
         self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
 
+        # region button
+        self._region_button = QToolButton()
+        self._region_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
+        self._region_button.setToolTip('X axis regions')
+        self._region_button.setCheckable(True)
+        self._region_button.setChecked(False)
+        self._region_button.setPopupMode(QToolButton.InstantPopup)
+        self._region_button_menu = QMenu()
+        self._draw_regions_action = self._region_button_menu.addAction(qta.icon('mdi.pencil'), 'Draw regions', self.draw_regions)
+        self._draw_regions_action.setCheckable(True)
+        self._draw_regions_action.setChecked(False)
+        self._region_button_menu.addSeparator()
+        self._region_button_menu.addAction('Hide visible regions', lambda: self.update_regions(is_visible=False))
+        self._region_button_menu.addAction('Show hidden regions', lambda: self.update_regions(is_visible=True))
+        self._region_button_menu.addSeparator()
+        self._region_button_menu.addAction('Freeze visible regions', lambda: self.update_regions(which_regions='visible', is_moveable=False))
+        self._region_button_menu.addAction('Unfreeze visible regions', lambda: self.update_regions(which_regions='visible', is_moveable=True))
+        self._region_button_menu.addSeparator()
+        self._region_button_menu.addAction('Name visible regions').setDisabled(True) # TODO: implement
+        self._region_button_menu.addAction('Manage named regions').setDisabled(True) # TODO: implement
+        self._region_button_menu.addSeparator()
+        self._region_button_menu.addAction('Clear regions', lambda: self.update_regions(clear=True))
+        self._region_button.setMenu(self._region_button_menu)
+        self._region_action = self._toolbar_top.addWidget(self._region_button)
+        self._action_after_dim_iter_things = self._region_action
+
         # home button
         self._home_button = QToolButton()
-        self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.7}]))
+        self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
         self._home_button.setToolTip('Autoscale all plots')
         self._home_button.clicked.connect(self.autoscale_plots)
         self._home_action = self._toolbar_top.addWidget(self._home_button)
@@ -318,7 +344,7 @@ class XarrayGraph(QWidget):
         self._textitem_fontsize_spinbox = QSpinBox()
         self._textitem_fontsize_spinbox.setValue(DEFAULT_TEXT_ITEM_FONT_SIZE)
         self._textitem_fontsize_spinbox.setSuffix('pt')
-        # self._textitem_fontsize_spinbox.valueChanged.connect(lambda: self.updatePlotItems(itemTypes=[EventItem]))
+        self._textitem_fontsize_spinbox.valueChanged.connect(self.update_item_font)
 
         # line width
         self._linewidth_spinbox = QSpinBox()
@@ -398,27 +424,28 @@ class XarrayGraph(QWidget):
                     self._dim_iter_things[dim]['spinbox'] = spinbox
                 if 'labelAction' in self._dim_iter_things[dim]:
                     label_action: QAction = self._dim_iter_things[dim]['labelAction']
-                    self._toolbar_top.insertAction(self._home_action, label_action)
+                    self._toolbar_top.insertAction(self._action_after_dim_iter_things, label_action)
                 else:
-                    label_action: QAction = self._toolbar_top.insertWidget(self._home_action, label)
+                    label_action: QAction = self._toolbar_top.insertWidget(self._action_after_dim_iter_things, label)
                     self._dim_iter_things[dim]['labelAction'] = label_action
                 if 'spinboxAction' in self._dim_iter_things[dim]:
                     spinbox_action: QAction = self._dim_iter_things[dim]['spinboxAction']
-                    self._toolbar_top.insertAction(self._home_action, spinbox_action)
+                    self._toolbar_top.insertAction(self._action_after_dim_iter_things, spinbox_action)
                 else:
-                    spinbox_action: QAction = self._toolbar_top.insertWidget(self._home_action, spinbox)
+                    spinbox_action: QAction = self._toolbar_top.insertWidget(self._action_after_dim_iter_things, spinbox)
                     self._dim_iter_things[dim]['spinboxAction'] = spinbox_action
         
         if DEBUG:
             print('_dim_iter_things:', self._dim_iter_things)
     
-    def new_plot(self) -> PlotItem:
-        plot: PlotItem = PlotItem()
-        plot.vb.setMinimumSize(5, 5)
+    def new_plot(self) -> Plot:
+        plot: Plot = Plot()
+        view: View = plot.getViewBox()
+        view.setMinimumSize(5, 5)
         # viewBox.menu.addAction('Measure', lambda self=self, plot=plot: self.measure(plot))
         # viewBox.menu.addAction('Curve Fit', lambda self=self, plot=plot: self.curve_fit(plot))
         # viewBox.menu.addSeparator()
-        # viewBox.sigItemAdded.connect(self.on_item_added_to_axes)
+        view.sigItemAdded.connect(self.on_item_added_to_axes)
         return plot
     
     def on_var_selection_changed(self) -> None:
@@ -638,6 +665,9 @@ class XarrayGraph(QWidget):
         # update plot items
         self.update_plot_items()
 
+        # ensure all plots have appropriate draw state
+        self.draw_regions()
+
         # update plot grid (hopefully after everything has been redrawn)
         QTimer.singleShot(100, self.update_grid_layout)
     
@@ -801,9 +831,9 @@ class XarrayGraph(QWidget):
                     continue
                 info: dict = self._plot_info[row,col]
                     
-                if item_types is None or XYDataItem in item_types:
+                if item_types is None or XYData in item_types:
                     # existing plot traces
-                    trace_items = [item for item in plot.listDataItems() if isinstance(item, XYDataItem)]
+                    trace_items = [item for item in plot.listDataItems() if isinstance(item, XYData)]
                     
                     # update plot traces
                     trace_count = 0
@@ -836,7 +866,7 @@ class XarrayGraph(QWidget):
                                 trace_item.setData(x=xdata, y=ydata)
                             else:
                                 # add new trace to plot
-                                trace_item = XYDataItem(x=xdata, y=ydata)
+                                trace_item = XYData(x=xdata, y=ydata)
                                 plot.addItem(trace_item)
                                 trace_items.append(trace_item)
                             # style
@@ -880,6 +910,21 @@ class XarrayGraph(QWidget):
         except:
             return None, None
     
+    def update_item_font(self):
+        try:
+            rowmin, rowmax = self._grid_rowlim
+            colmin, colmax = self._grid_collim
+        except:
+            return
+        for row in range(rowmin, rowmax + 1):
+            for col in range(colmin, colmax + 1):
+                plot = self._plot_grid.getItem(row, col)
+                if plot is not None and issubclass(type(plot), pg.PlotItem):
+                    view: View = plot.getViewBox()
+                    for item in view.allChildren():
+                        if isinstance(item, XAxisRegion):
+                            item.setFontSize(self._textitem_fontsize_spinbox.value())
+
     def autoscale_plots(self, grid_rows: list[int] = None, grid_cols: list[int] = None) -> None:
         try:
             rowmin, rowmax = self._grid_rowlim
@@ -902,25 +947,74 @@ class XarrayGraph(QWidget):
         QWidget.resizeEvent(self, event)
         self.update_grid_layout()
  
+    def draw_regions(self, draw: bool | None = None) -> None:
+        if draw is None:
+            draw = self._draw_regions_action.isChecked()
+        self._region_button.setChecked(draw)
+        self._draw_regions_action.blockSignals(True)
+        self._draw_regions_action.setChecked(draw)
+        self._draw_regions_action.blockSignals(False)
+        
+        try:
+            rowmin, rowmax = self._grid_rowlim
+            colmin, colmax = self._grid_collim
+        except:
+            return
+        for row in range(rowmin, rowmax + 1):
+            for col in range(colmin, colmax + 1):
+                plot = self._plot_grid.getItem(row, col)
+                if plot is not None and issubclass(type(plot), pg.PlotItem):
+                    view: View = plot.getViewBox()
+                    if draw:
+                        view.startDrawingItemsOfType(XAxisRegion)
+                    else:
+                        view.stopDrawingItems()
     
-#     @Slot(QGraphicsObject)
-#     def on_item_added_to_axes(self, item: QGraphicsObject):
-#         viewBox: ViewBox = self.sender()
-#         plot: PlotItem = viewBox.parentItem()
-#         if isinstance(item, EventItem):
-#             # TODO: add event to xarray tree
-#             print('TODO: event added')
-#             # editing the event text via the popup dialog will also reset the region,
-#             # so this will cover text changes too
-#             item.sigRegionChangeFinished.connect(self.on_axes_item_changed)
+    def update_regions(self, which_regions: str = 'all', is_visible: bool | None = None, is_moveable: bool | None = None, clear: bool = False) -> None:
+        try:
+            rowmin, rowmax = self._grid_rowlim
+            colmin, colmax = self._grid_collim
+        except:
+            return
+        for row in range(rowmin, rowmax + 1):
+            for col in range(colmin, colmax + 1):
+                plot = self._plot_grid.getItem(row, col)
+                if plot is not None and issubclass(type(plot), pg.PlotItem):
+                    view: View = plot.getViewBox()
+                    regions: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
+                    if which_regions == 'all':
+                        pass
+                    elif which_regions == 'visible':
+                        regions = [region for region in regions if region.isVisible()]
+                    elif which_regions == 'hidden':
+                        regions = [region for region in regions if not region.isVisible()]
+                    if clear:
+                        for region in regions:
+                            view.removeItem(region)
+                            region.deleteLater()
+                        continue
+                    if is_visible is not None:
+                        for region in regions:
+                            region.setVisible(is_visible)
+                    if is_moveable is not None:
+                        for region in regions:
+                            region.setMovable(is_moveable)
+    
+    @Slot(QGraphicsObject)
+    def on_item_added_to_axes(self, item: QGraphicsObject):
+        view: View = self.sender()
+        plot: Plot = view.parentItem()
+        if isinstance(item, XAxisRegion):
+            item.setFontSize(self._textitem_fontsize_spinbox.value())
+            # editing the region text via the popup dialog will also reset the region,
+            # so this will cover text changes too
+            item.sigRegionChangeFinished.connect(self.on_axes_item_changed)
 
-#     @Slot()
-#     def on_axes_item_changed(self):
-#         item = self.sender()
-#         if isinstance(item, EventItem):
-#             # TODO: update event in xarray tree
-#             print('TODO: event changed')
-    
+    @Slot()
+    def on_axes_item_changed(self):
+        item = self.sender()
+        if isinstance(item, XAxisRegion):
+            pass # TODO: handle region change?
     
 #     @Slot()
 #     def measure(self, plot: pg.PlotItem):
@@ -1658,7 +1752,7 @@ def test_live():
     app = QApplication(sys.argv)
 
     ui = XarrayGraph()
-    ui.setWindowTitle('Xarray Waveform Analyzer')
+    ui.setWindowTitle(ui.__class__.__name__)
     ui.show()
 
     n = 100
@@ -1700,5 +1794,4 @@ def test_live():
 
 
 if __name__ == '__main__':
-    print(PlotGrid.__dict__)
     test_live()
