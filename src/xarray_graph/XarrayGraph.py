@@ -265,15 +265,21 @@ class XarrayGraph(QWidget):
         return tiling_enabled
     
     def setup_ui(self) -> None:
-        self._toolbar_left = QToolBar()
-        self._toolbar_left.setOrientation(Qt.Orientation.Vertical)
-        self._toolbar_left.setStyleSheet("QToolBar{spacing:2px;}")
+        toolbar_icon_size = QSize(24, 24)
+        self._icon_button = QToolButton()
+        self._icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.75}]))
+        self._icon_button.setIconSize(toolbar_icon_size)
 
-        self._toolbar_top = QToolBar()
-        self._toolbar_top.setStyleSheet("QToolBar{spacing:2px;}")
+        self._control_panel_toolbar = QToolBar()
+        self._control_panel_toolbar.setOrientation(Qt.Orientation.Vertical)
+        self._control_panel_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
+        self._control_panel_toolbar.setIconSize(toolbar_icon_size)
 
         self._control_panel = QStackedWidget()
-        self._control_panel_buttons = []
+
+        self._plot_grid_toolbar = QToolBar()
+        self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
+        self._plot_grid_toolbar.setIconSize(toolbar_icon_size)
 
         self._plot_grid = PlotGrid()
         self._grid_rowlim = ()
@@ -284,21 +290,20 @@ class XarrayGraph(QWidget):
         hsplitter.addWidget(self._plot_grid)
         hsplitter.setStretchFactor(0, 0)
         hsplitter.setStretchFactor(1, 1)
+        hsplitter.setHandleWidth(1)
         hsplitter.setSizes([200])
 
-        self._icon_button = QToolButton()
-        self._icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.75}]))
-        self._icon_button.setIconSize(QSize(32, 32))
-
+        # main layout
         grid = QGridLayout(self)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(0)
         grid.addWidget(self._icon_button, 0, 0)
-        grid.addWidget(self._toolbar_top, 0, 1)
-        grid.addWidget(self._toolbar_left, 1, 0)
+        grid.addWidget(self._plot_grid_toolbar, 0, 1)
+        grid.addWidget(self._control_panel_toolbar, 1, 0)
         grid.addWidget(hsplitter, 1, 1)
 
-        # setup toolbar left
+        # control panel toolbar
+        # button order reflects setup order
         self.setup_data_control_panel()
         self.setup_grid_control_panel()
         self.setup_region_control_panel()
@@ -306,23 +311,21 @@ class XarrayGraph(QWidget):
         self.setup_curve_fit_control_panel()
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        self._toolbar_left.addWidget(spacer)
+        self._control_panel_toolbar.addWidget(spacer)
         self.setup_settings_control_panel()
         self._control_panel.hide()
 
+        # plot grid toolbar
         self.setup_toolbar_top()
     
     def setup_data_control_panel(self) -> None:
-        self._data_control_panel_index = self._control_panel.count()
-
-        self._data_control_button = QToolButton()
-        self._data_control_button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.7}]))
-        self._data_control_button.setCheckable(True)
-        self._data_control_button.setChecked(False)
-        self._data_control_button.setToolTip('Data browser')
-        self._data_control_button.clicked.connect(lambda: self.toggle_control_panel(self._data_control_panel_index))
-        self._toolbar_left.addWidget(self._data_control_button)
-        self._control_panel_buttons.append(self._data_control_button)
+        button = QToolButton()
+        button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.7}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Data browser')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
 
         self._data_treeview = XarrayTreeView()
         self._data_treeview.setSelectionMode(QAbstractItemView.MultiSelection)
@@ -336,8 +339,8 @@ class XarrayGraph(QWidget):
         self._xdim_combobox = QComboBox()
         self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
 
-        self._data_control_panel = QWidget()
-        vbox = QVBoxLayout(self._data_control_panel)
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(0)
 
@@ -346,28 +349,26 @@ class XarrayGraph(QWidget):
         form = QFormLayout()
         form.setContentsMargins(5, 3, 0, 3)
         form.setSpacing(0)
-        form.addRow('X axis:', self._xdim_combobox)
+        form.setHorizontalSpacing(5)
+        form.addRow('X axis', self._xdim_combobox)
         vbox.addLayout(form)
 
-        self._control_panel.addWidget(self._data_control_panel)
+        self._control_panel.addWidget(panel)
     
     def setup_grid_control_panel(self) -> None:
-        self._grid_control_panel_index = self._control_panel.count()
+        button = QToolButton()
+        button.setIcon(qta.icon('mdi.grid', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Plot grid')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
 
-        self._grid_control_button = QToolButton()
-        self._grid_control_button.setIcon(qta.icon('mdi.grid', options=[{'opacity': 0.5}]))
-        self._grid_control_button.setCheckable(True)
-        self._grid_control_button.setChecked(False)
-        self._grid_control_button.setToolTip('Plot grid')
-        self._grid_control_button.clicked.connect(lambda: self.toggle_control_panel(self._grid_control_panel_index))
-        self._toolbar_left.addWidget(self._grid_control_button)
-        self._control_panel_buttons.append(self._grid_control_button)
-
-        self._link_xaxis_checkbox = QCheckBox()
+        self._link_xaxis_checkbox = QCheckBox('Link X axes')
         self._link_xaxis_checkbox.setChecked(True)
         self._link_xaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
 
-        self._link_yaxis_checkbox = QCheckBox()
+        self._link_yaxis_checkbox = QCheckBox('Link Y axes')
         self._link_yaxis_checkbox.setChecked(True)
         self._link_yaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
 
@@ -381,142 +382,329 @@ class XarrayGraph(QWidget):
         self._col_tile_combobox.setCurrentText('None')
         self._col_tile_combobox.currentTextChanged.connect(self.update_plot_grid)
 
-        self._grid_control_panel = QWidget()
-        form = QFormLayout(self._grid_control_panel)
-        form.setContentsMargins(5, 5, 5, 5)
-        form.setSpacing(5)
+        link_group = QGroupBox('Link axis')
+        vbox = QVBoxLayout(link_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(3)
+        vbox.addWidget(self._link_xaxis_checkbox)
+        vbox.addWidget(self._link_yaxis_checkbox)
 
-        form.addRow('Link X axes:', self._link_xaxis_checkbox)
-        form.addRow('Link Y axes:', self._link_yaxis_checkbox)
+        tile_group = QGroupBox('Tile plots')
+        form = QFormLayout(tile_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Rows', self._row_tile_combobox)
+        form.addRow('Columns', self._col_tile_combobox)
 
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        form.addRow(line)
-
-        form.addRow('Tile rows:', self._row_tile_combobox)
-        form.addRow('Tile columns:', self._col_tile_combobox)
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(20)
+        vbox.addWidget(link_group)
+        vbox.addWidget(tile_group)
+        vbox.addStretch()
 
         scroll_area = QScrollArea()
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(self._grid_control_panel)
+        scroll_area.setWidget(panel)
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
     
     def setup_region_control_panel(self) -> None:
-        self._region_control_panel_index = self._control_panel.count()
+        button = QToolButton()
+        button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('X axis regions')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
 
-        self._region_control_button = QToolButton()
-        self._region_control_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
-        self._region_control_button.setCheckable(True)
-        self._region_control_button.setChecked(False)
-        self._region_control_button.setToolTip('X axis regions')
-        self._region_control_button.clicked.connect(lambda: self.toggle_control_panel(self._region_control_panel_index))
-        self._toolbar_left.addWidget(self._region_control_button)
-        self._control_panel_buttons.append(self._region_control_button)
-
-        self._hide_regions_button = QPushButton('Hide visible regions')
+        self._hide_regions_button = QPushButton('Hide')
+        self._hide_regions_button.setToolTip('Hide selected regions')
         self._hide_regions_button.clicked.connect(lambda: self.update_regions(is_visible=False))
 
-        self._show_regions_button = QPushButton('Show hidden regions')
+        self._show_regions_button = QPushButton('Show')
+        self._show_regions_button.setToolTip('Show selected regions')
         self._show_regions_button.clicked.connect(lambda: self.update_regions(is_visible=True))
 
-        self._lock_regions_button = QPushButton('Lock visible regions')
+        self._lock_regions_button = QPushButton('Lock')
+        self._lock_regions_button.setToolTip('Lock selected regions')
         self._lock_regions_button.clicked.connect(lambda: self.update_regions(is_moveable=False))
 
-        self._unlock_regions_button = QPushButton('Unlock visible regions')
+        self._unlock_regions_button = QPushButton('Unlock')
+        self._unlock_regions_button.setToolTip('Unlock selected regions')
         self._unlock_regions_button.clicked.connect(lambda: self.update_regions(is_moveable=True))
 
-        self._clear_regions_button = QPushButton('Clear regions')
+        self._clear_regions_button = QPushButton('Clear')
+        self._clear_regions_button.setToolTip('Clear region selection')
         self._clear_regions_button.clicked.connect(lambda: self.update_regions(clear=True))
 
-        self._name_regions_button = QPushButton('Name visible regions') # TODO: implement
+        self._delete_regions_button = QPushButton('Delete') # TODO: implement
+        self._delete_regions_button.setToolTip('Delete selected regions')
+
+        self._name_regions_button = QPushButton('Name selected') # TODO: implement
+        self._name_regions_button.setToolTip('Name selected regions')
 
         self._region_name_list = QListWidget() # TODO: implement
+        self._region_name_list.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
-        self._region_control_panel = QWidget()
-        vbox = QVBoxLayout(self._region_control_panel)
-        vbox.setContentsMargins(5, 5, 5, 5)
-        vbox.setSpacing(3)
+        selected_group = QGroupBox('Selected regions')
+        grid = QGridLayout(selected_group)
+        grid.setContentsMargins(3, 3, 3, 3)
+        grid.setSpacing(5)
+        grid.addWidget(self._hide_regions_button, 0, 0)
+        grid.addWidget(self._show_regions_button, 1, 0)
+        grid.addWidget(self._lock_regions_button, 0, 1)
+        grid.addWidget(self._unlock_regions_button, 1, 1)
+        grid.addWidget(self._clear_regions_button, 2, 0)
+        grid.addWidget(self._delete_regions_button, 2, 1)
 
-        vbox.addWidget(self._hide_regions_button)
-        vbox.addWidget(self._show_regions_button)
-        vbox.addSpacing(10)
-        vbox.addWidget(self._lock_regions_button)
-        vbox.addWidget(self._unlock_regions_button)
-        vbox.addSpacing(10)
-        vbox.addWidget(self._clear_regions_button)
-        vbox.addSpacing(10)
+        named_group = QGroupBox('Named regions')
+        vbox = QVBoxLayout(named_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(5)
         vbox.addWidget(self._name_regions_button)
         vbox.addWidget(self._region_name_list)
 
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(20)
+        vbox.addWidget(selected_group)
+        vbox.addWidget(named_group)
+        vbox.addStretch()
+
         scroll_area = QScrollArea()
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(self._region_control_panel)
+        scroll_area.setWidget(panel)
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
     
     def setup_measure_control_panel(self) -> None:
-        self._measure_control_panel_index = self._control_panel.count()
+        button = QToolButton()
+        button.setIcon(qta.icon('mdi6.chart-scatter-plot', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Measure')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
 
-        self._measure_control_button = QToolButton()
-        self._measure_control_button.setIcon(qta.icon('mdi6.chart-scatter-plot', options=[{'opacity': 0.5}]))
-        self._measure_control_button.setCheckable(True)
-        self._measure_control_button.setChecked(False)
-        self._measure_control_button.setToolTip('Measure')
-        self._measure_control_button.clicked.connect(lambda: self.toggle_control_panel(self._measure_control_panel_index))
-        self._toolbar_left.addWidget(self._measure_control_button)
-        self._control_panel_buttons.append(self._measure_control_button)
+        self._measure_type_combobox = QComboBox() # TODO: implement
+        self._measure_type_combobox.addItems(['Mean', 'Median'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Peaks'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
+        self._measure_type_combobox.currentIndexChanged.connect(self.on_measure_type_changed)
 
-        self._measure_control_panel = QWidget()
-        vbox = QVBoxLayout(self._measure_control_panel)
+        self._peak_half_width_spinbox = QSpinBox() # TODO: implement
+        self._peak_half_width_spinbox.setValue(0)
+
+        self._peak_width_wrapper = QWidget()
+        form = QFormLayout(self._peak_width_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Average +/- samples', self._peak_half_width_spinbox)
+
+        self._peak_type_combobox = QComboBox() # TODO: implement
+        self._peak_type_combobox.addItems(['Min', 'Max'])
+
+        self._peak_threshold_spinbox = QDoubleSpinBox() # TODO: implement
+
+        self._peak_options_wrapper = QWidget()
+        form = QFormLayout(self._peak_options_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Peak type', self._peak_type_combobox)
+        form.addRow('Peak threshold', self._peak_threshold_spinbox)
+
+        self._measure_in_visible_regions_only_checkbox = QCheckBox('In visible regions only') # TODO: implement
+        self._measure_in_visible_regions_only_checkbox.setChecked(True)
+
+        self._measure_per_visible_region_checkbox = QCheckBox('In each visible region') # TODO: implement
+        self._measure_per_visible_region_checkbox.setChecked(True)
+
+        self._measure_button = QPushButton('Measure') # TODO: implement
+
+        measure_group = QGroupBox('Measure')
+        vbox = QVBoxLayout(measure_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._measure_type_combobox)
+        vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
+        vbox.addWidget(self._measure_per_visible_region_checkbox)
+        vbox.addWidget(self._peak_options_wrapper)
+        vbox.addWidget(self._peak_width_wrapper)
+        vbox.addWidget(self._measure_button)
+        self.on_measure_type_changed()
+
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(5, 5, 5, 5)
-        vbox.setSpacing(3)
+        vbox.setSpacing(20)
+        vbox.addWidget(measure_group)
+        vbox.addStretch()
 
         scroll_area = QScrollArea()
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(self._measure_control_panel)
+        scroll_area.setWidget(panel)
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
+    
+    def on_measure_type_changed(self) -> None:
+        measure_type = self._measure_type_combobox.currentText()
+        self._peak_options_wrapper.setVisible(measure_type == 'Peaks')
+        self._peak_width_wrapper.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
     
     def setup_curve_fit_control_panel(self) -> None:
-        self._curve_fit_control_panel_index = self._control_panel.count()
+        button = QToolButton()
+        button.setIcon(qta.icon('mdi.chart-bell-curve-cumulative', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Measure')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
 
-        self._curve_fit_control_button = QToolButton()
-        self._curve_fit_control_button.setIcon(qta.icon('mdi.chart-bell-curve-cumulative', options=[{'opacity': 0.5}]))
-        self._curve_fit_control_button.setCheckable(True)
-        self._curve_fit_control_button.setChecked(False)
-        self._curve_fit_control_button.setToolTip('Curve fit')
-        self._curve_fit_control_button.clicked.connect(lambda: self.toggle_control_panel(self._curve_fit_control_panel_index))
-        self._toolbar_left.addWidget(self._curve_fit_control_button)
-        self._control_panel_buttons.append(self._curve_fit_control_button)
+        self._curve_fit_type_combobox = QComboBox() # TODO: implement
+        self._curve_fit_type_combobox.addItems(['Mean', 'Median'])
+        self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
+        self._curve_fit_type_combobox.addItems(['Line', 'Polynomial', 'Spline'])
+        self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
+        self._curve_fit_type_combobox.addItems(['Equation'])
+        self._curve_fit_type_combobox.currentIndexChanged.connect(self.on_curve_fit_type_changed)
 
-        self._curve_fit_control_panel = QWidget()
-        vbox = QVBoxLayout(self._curve_fit_control_panel)
+        self._polynomial_degree_spinbox = QSpinBox() # TODO: implement
+        self._polynomial_degree_spinbox.setValue(2)
+
+        self._polynomial_options_wrapper = QWidget()
+        form = QFormLayout(self._polynomial_options_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Polynomial degree', self._polynomial_degree_spinbox)
+
+        self._spline_segments_spinbox = QSpinBox() # TODO: implement
+        self._spline_segments_spinbox.setValue(10)
+        self._spline_segments_spinbox.setMinimum(1)
+
+        self._spline_options_wrapper = QWidget()
+        form = QFormLayout(self._spline_options_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Spline segments', self._spline_segments_spinbox)
+
+        self._equation_edit = QLineEdit() # TODO: implement
+        self._equation_edit.setPlaceholderText('a * x + b')
+        self._equation_edit.editingFinished.connect(self.on_curve_fit_equation_changed)
+
+        self._equation_params_grid = QGridLayout()
+        self._equation_params_grid.setContentsMargins(0, 0, 0, 0)
+        self._equation_params_grid.setSpacing(0)
+        self._equation_params_grid.addWidget(QLabel('Param'), 0, 0)
+        self._equation_params_grid.addWidget(QLabel('Value'), 0, 1)
+        self._equation_params_grid.addWidget(QLabel('Vary'), 0, 2)
+        self._equation_params_grid.addWidget(QLabel('Min'), 0, 3)
+        self._equation_params_grid.addWidget(QLabel('Max'), 0, 4)
+
+        self._equation_eval_button = QPushButton('Evaluate') # TODO: implement
+
+        self._equation_group = QGroupBox('Equation')
+        vbox = QVBoxLayout(self._equation_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._equation_edit)
+        vbox.addLayout(self._equation_params_grid)
+        vbox.addWidget(self._equation_eval_button)
+
+        self._curve_fit_optimize_in_visible_regions_checkbox = QCheckBox('Optimize in visible regions') # TODO: implement
+        self._curve_fit_optimize_in_visible_regions_checkbox.setChecked(True)
+
+        self._curve_fit_evaluate_in_visible_regions_checkbox = QCheckBox('Evaluate in visible regions') # TODO: implement
+        self._curve_fit_evaluate_in_visible_regions_checkbox.setChecked(False)
+
+        self._fit_button = QPushButton('Fit') # TODO: implement
+
+        fit_group = QGroupBox('Curve fit')
+        vbox = QVBoxLayout(fit_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._curve_fit_type_combobox)
+        vbox.addWidget(self._polynomial_options_wrapper)
+        vbox.addWidget(self._spline_options_wrapper)
+        vbox.addWidget(self._equation_group)
+        vbox.addWidget(self._curve_fit_optimize_in_visible_regions_checkbox)
+        vbox.addWidget(self._curve_fit_evaluate_in_visible_regions_checkbox)
+        vbox.addWidget(self._fit_button)
+        self.on_curve_fit_type_changed()
+
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(5, 5, 5, 5)
-        vbox.setSpacing(3)
+        vbox.setSpacing(20)
+        vbox.addWidget(fit_group)
+        vbox.addStretch()
 
         scroll_area = QScrollArea()
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(self._curve_fit_control_panel)
+        scroll_area.setWidget(panel)
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
     
+    def on_curve_fit_type_changed(self) -> None:
+        fit_type = self._curve_fit_type_combobox.currentText()
+        self._polynomial_options_wrapper.setVisible(fit_type == 'Polynomial')
+        self._spline_options_wrapper.setVisible(fit_type == 'Spline')
+        self._equation_group.setVisible(fit_type not in ['Mean', 'Median', 'Line', 'Polynomial', 'Spline'])
+    
+    def on_curve_fit_equation_changed(self) -> None:
+        equation = self._equation_edit.text()
+        self._curve_fit_model = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
+        param_names = self._curve_fit_model.param_names
+    
+        # clear params grid
+        for row in range(1, self._equation_params_grid.rowCount()):
+            for col in range(self._equation_params_grid.columnCount()):
+                item = self._equation_params_grid.itemAtPosition(row, col)
+                if item:
+                    widget = item.widget()
+                    self._equation_params_grid.removeItem(item)
+                    widget.setParent(None)
+                    widget.setVisible(False)
+                    widget.deleteLater()
+    
+        # update params grid
+        for i, name in enumerate(param_names):
+            value_edit = QLineEdit('0')
+            vary_checkbox = QCheckBox()
+            vary_checkbox.setChecked(True)
+            min_edit = QLineEdit()
+            max_edit = QLineEdit()
+            min_edit.setPlaceholderText('-inf')
+            max_edit.setPlaceholderText('+inf')
+            self._equation_params_grid.addWidget(QLabel(name), i + 1, 0)
+            self._equation_params_grid.addWidget(value_edit, i + 1, 1)
+            self._equation_params_grid.addWidget(vary_checkbox, i + 1, 2)
+            self._equation_params_grid.addWidget(min_edit, i + 1, 3)
+            self._equation_params_grid.addWidget(max_edit, i + 1, 4)
+    
     def setup_settings_control_panel(self) -> None:
-        self._settings_control_panel_index = self._control_panel.count()
-
-        self._settings_control_button = QToolButton()
-        self._settings_control_button.setIcon(qta.icon('msc.settings-gear', options=[{'opacity': 0.5}]))
-        self._settings_control_button.setCheckable(True)
-        self._settings_control_button.setChecked(False)
-        self._settings_control_button.setToolTip('Settings')
-        self._settings_control_button.clicked.connect(lambda: self.toggle_control_panel(self._settings_control_panel_index))
-        self._toolbar_left.addWidget(self._settings_control_button)
-        self._control_panel_buttons.append(self._settings_control_button)
+        button = QToolButton()
+        button.setIcon(qta.icon('msc.settings-gear', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Measure')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
 
         self._axislabel_fontsize_spinbox = QSpinBox()
         self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
@@ -538,35 +726,46 @@ class XarrayGraph(QWidget):
         self._linewidth_spinbox.setMinimum(1)
         self._linewidth_spinbox.valueChanged.connect(lambda: self.update_plot_items(item_types=[XYData]))
 
-        self._settings_control_panel = QWidget()
-        form = QFormLayout(self._settings_control_panel)
-        form.setContentsMargins(5, 5, 5, 5)
-        form.setSpacing(5)
+        font_group = QGroupBox('Font')
+        form = QFormLayout(font_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Axis label size', self._axislabel_fontsize_spinbox)
+        form.addRow('Axis tick size', self._axistick_fontsize_spinbox)
+        form.addRow('Text item size', self._textitem_fontsize_spinbox)
 
-        form.addRow('Axis label font size', self._axislabel_fontsize_spinbox)
-        form.addRow('Axis tick font size', self._axistick_fontsize_spinbox)
-        form.addRow('Text item font size', self._textitem_fontsize_spinbox)
+        style_group = QGroupBox('Default style')
+        form = QFormLayout(style_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Line width', self._linewidth_spinbox)
 
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        form.addRow(line)
-
-        form.addRow('Default line width', self._linewidth_spinbox)
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(20)
+        vbox.addWidget(font_group)
+        vbox.addWidget(style_group)
+        vbox.addStretch()
 
         scroll_area = QScrollArea()
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(self._settings_control_panel)
+        scroll_area.setWidget(panel)
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
     
     def toggle_control_panel(self, index: int) -> None:
-        show = self._control_panel_buttons[index].isChecked()
+        actions = self._control_panel_toolbar.actions()
+        widgets = [self._control_panel_toolbar.widgetForAction(action) for action in actions]
+        buttons = [widget for widget in widgets if isinstance(widget, QToolButton)]
+        show = buttons[index].isChecked()
         if show:
             self._control_panel.setCurrentIndex(index)
         self._control_panel.setVisible(show)
-        for i, button in enumerate(self._control_panel_buttons):
+        for i, button in enumerate(buttons):
             if i != index:
                 button.setChecked(False)
     
@@ -580,20 +779,20 @@ class XarrayGraph(QWidget):
         self._region_button.setCheckable(True)
         self._region_button.setChecked(False)
         self._region_button.clicked.connect(self.draw_region)
-        self._action_after_dim_iter_things = self._toolbar_top.addWidget(self._region_button)
+        self._action_after_dim_iter_things = self._plot_grid_toolbar.addWidget(self._region_button)
 
         self._home_button = QToolButton()
         self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
         self._home_button.setToolTip('Autoscale all plots')
         self._home_button.clicked.connect(self.autoscale_plots)
-        self._toolbar_top.addWidget(self._home_button)
+        self._plot_grid_toolbar.addWidget(self._home_button)
     
     def update_dim_iter_things(self) -> None:
         # remove dim iter actions from toolbar
         for dim in self._dim_iter_things:
             for value in self._dim_iter_things[dim].values():
                 if isinstance(value, QAction):
-                    self._toolbar_top.removeAction(value)
+                    self._plot_grid_toolbar.removeAction(value)
         
         # delete unneeded dim iter things
         for dim in list(self._dim_iter_things):
@@ -625,15 +824,15 @@ class XarrayGraph(QWidget):
                     self._dim_iter_things[dim]['spinbox'] = spinbox
                 if 'labelAction' in self._dim_iter_things[dim]:
                     label_action: QAction = self._dim_iter_things[dim]['labelAction']
-                    self._toolbar_top.insertAction(self._action_after_dim_iter_things, label_action)
+                    self._plot_grid_toolbar.insertAction(self._action_after_dim_iter_things, label_action)
                 else:
-                    label_action: QAction = self._toolbar_top.insertWidget(self._action_after_dim_iter_things, label)
+                    label_action: QAction = self._plot_grid_toolbar.insertWidget(self._action_after_dim_iter_things, label)
                     self._dim_iter_things[dim]['labelAction'] = label_action
                 if 'spinboxAction' in self._dim_iter_things[dim]:
                     spinbox_action: QAction = self._dim_iter_things[dim]['spinboxAction']
-                    self._toolbar_top.insertAction(self._action_after_dim_iter_things, spinbox_action)
+                    self._plot_grid_toolbar.insertAction(self._action_after_dim_iter_things, spinbox_action)
                 else:
-                    spinbox_action: QAction = self._toolbar_top.insertWidget(self._action_after_dim_iter_things, spinbox)
+                    spinbox_action: QAction = self._plot_grid_toolbar.insertWidget(self._action_after_dim_iter_things, spinbox)
                     self._dim_iter_things[dim]['spinboxAction'] = spinbox_action
         
         if DEBUG:
