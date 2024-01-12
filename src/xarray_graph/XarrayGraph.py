@@ -715,7 +715,7 @@ class XarrayGraph(QWidget):
             for col in range(colmin, colmax + 1):
                 plot_coords = selected_coords.copy()
                 if row_tile_dim != 'None':
-                    tile_index = (row - rowmin) % n_row_tiles
+                    tile_index = int((row - rowmin) / n_vars) % n_row_tiles
                     tile_coord = row_tile_coords.values[tile_index]
                     plot_coords[row_tile_dim] = xr.DataArray(data=[tile_coord], dims=[row_tile_dim], attrs=row_tile_coords.attrs)
                 if col_tile_dim != 'None':
