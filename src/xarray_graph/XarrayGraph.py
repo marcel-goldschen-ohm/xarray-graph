@@ -302,6 +302,8 @@ class XarrayGraph(QWidget):
         self.setup_data_control_panel()
         self.setup_grid_control_panel()
         self.setup_region_control_panel()
+        self.setup_measure_control_panel()
+        self.setup_curve_fit_control_panel()
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._toolbar_left.addWidget(spacer)
@@ -452,6 +454,54 @@ class XarrayGraph(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setFrameShape(QFrame.NoFrame)
         scroll_area.setWidget(self._region_control_panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
+    
+    def setup_measure_control_panel(self) -> None:
+        self._measure_control_panel_index = self._control_panel.count()
+
+        self._measure_control_button = QToolButton()
+        self._measure_control_button.setIcon(qta.icon('mdi6.chart-scatter-plot', options=[{'opacity': 0.5}]))
+        self._measure_control_button.setCheckable(True)
+        self._measure_control_button.setChecked(False)
+        self._measure_control_button.setToolTip('Measure')
+        self._measure_control_button.clicked.connect(lambda: self.toggle_control_panel(self._measure_control_panel_index))
+        self._toolbar_left.addWidget(self._measure_control_button)
+        self._control_panel_buttons.append(self._measure_control_button)
+
+        self._measure_control_panel = QWidget()
+        vbox = QVBoxLayout(self._measure_control_panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(3)
+
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(self._measure_control_panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
+    
+    def setup_curve_fit_control_panel(self) -> None:
+        self._curve_fit_control_panel_index = self._control_panel.count()
+
+        self._curve_fit_control_button = QToolButton()
+        self._curve_fit_control_button.setIcon(qta.icon('mdi.chart-bell-curve-cumulative', options=[{'opacity': 0.5}]))
+        self._curve_fit_control_button.setCheckable(True)
+        self._curve_fit_control_button.setChecked(False)
+        self._curve_fit_control_button.setToolTip('Curve fit')
+        self._curve_fit_control_button.clicked.connect(lambda: self.toggle_control_panel(self._curve_fit_control_panel_index))
+        self._toolbar_left.addWidget(self._curve_fit_control_button)
+        self._control_panel_buttons.append(self._curve_fit_control_button)
+
+        self._curve_fit_control_panel = QWidget()
+        vbox = QVBoxLayout(self._curve_fit_control_panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(3)
+
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(self._curve_fit_control_panel)
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
