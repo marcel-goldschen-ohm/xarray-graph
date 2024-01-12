@@ -166,6 +166,8 @@ class XarrayGraph(QWidget):
             self.data = x, y
             self.xdim = xdim
         self.autoscale_plots()
+        self._data_treeview.expandToDepth(1)
+        self._data_treeview.resizeAllColumnsToContents()
     
     @property
     def xdim(self) -> str:
@@ -263,98 +265,102 @@ class XarrayGraph(QWidget):
         return tiling_enabled
     
     def setup_ui(self) -> None:
-        self.setup_top_toolbar()
-        self.setup_view_panel()
-        self.setup_plot_grid()
+        self._toolbar_left = QToolBar()
+        self._toolbar_left.setOrientation(Qt.Orientation.Vertical)
+        self._toolbar_left.setStyleSheet("QToolBar{spacing:2px;}")
 
-        # main layout
-        vbox = QVBoxLayout(self)
-        vbox.setContentsMargins(3, 3, 3, 3)
-        vbox.setSpacing(0)
-        vbox.addWidget(self._toolbar_top)
-        hsplitter = QSplitter(Qt.Orientation.Horizontal)
-        hsplitter.addWidget(self._view_panel)
-        hsplitter.addWidget(self._plot_grid)
-        hsplitter.setStretchFactor(0, 0)
-        hsplitter.setStretchFactor(1, 1)
-        vbox.addWidget(hsplitter)
-    
-    def setup_top_toolbar(self) -> None:
-        # toolbar
         self._toolbar_top = QToolBar()
         self._toolbar_top.setStyleSheet("QToolBar{spacing:2px;}")
 
-        # view button
-        self._view_button = QToolButton()
-        self._view_button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.7}]))
-        self._view_button.setToolTip('View Selections/Options')
-        self._view_button.clicked.connect(lambda: self._view_panel.setVisible(not self._view_panel.isVisible()))
-        self._view_action = self._toolbar_top.addWidget(self._view_button)
+        self._control_panel = QStackedWidget()
+        self._control_panel_buttons = []
 
-        # plot grid settings button
-        self.setup_plot_grid_settings()
-        self._plot_grid_settings_button = QToolButton()
-        self._plot_grid_settings_button.setIcon(qta.icon('mdi.grid', options=[{'opacity': 0.5}]))
-        self._plot_grid_settings_button.setToolTip('Tile plots in grid')
-        self._plot_grid_settings_button.setPopupMode(QToolButton.InstantPopup)
-        self._plot_grid_settings_button_menu = QMenu()
-        action = QWidgetAction(self._plot_grid_settings_button_menu)
-        action.setDefaultWidget(self._plot_grid_settings_panel)
-        self._plot_grid_settings_button_menu.addAction(action)
-        self._plot_grid_settings_button.setMenu(self._plot_grid_settings_button_menu)
-        self._tile_action = self._toolbar_top.addWidget(self._plot_grid_settings_button)
+        self._plot_grid = PlotGrid()
+        self._grid_rowlim = ()
+        self._grid_collim = ()
 
-        # widgets and toolbar actions for iterating dimension indices
-        self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
+        hsplitter = QSplitter(Qt.Orientation.Horizontal)
+        hsplitter.addWidget(self._control_panel)
+        hsplitter.addWidget(self._plot_grid)
+        hsplitter.setStretchFactor(0, 0)
+        hsplitter.setStretchFactor(1, 1)
+        hsplitter.setSizes([200])
 
-        # region button
-        self._region_button = QToolButton()
-        self._region_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
-        self._region_button.setToolTip('X axis regions')
-        self._region_button.setCheckable(True)
-        self._region_button.setChecked(False)
-        self._region_button.setPopupMode(QToolButton.InstantPopup)
-        self._region_button_menu = QMenu()
-        self._draw_regions_action = self._region_button_menu.addAction(qta.icon('mdi.pencil'), 'Draw regions', self.draw_regions)
-        self._draw_regions_action.setCheckable(True)
-        self._draw_regions_action.setChecked(False)
-        self._region_button_menu.addSeparator()
-        self._region_button_menu.addAction('Hide visible regions', lambda: self.update_regions(is_visible=False))
-        self._region_button_menu.addAction('Show hidden regions', lambda: self.update_regions(is_visible=True))
-        self._region_button_menu.addSeparator()
-        self._region_button_menu.addAction('Freeze visible regions', lambda: self.update_regions(which_regions='visible', is_moveable=False))
-        self._region_button_menu.addAction('Unfreeze visible regions', lambda: self.update_regions(which_regions='visible', is_moveable=True))
-        self._region_button_menu.addSeparator()
-        self._region_button_menu.addAction('Name visible regions').setDisabled(True) # TODO: implement
-        self._region_button_menu.addAction('Manage named regions').setDisabled(True) # TODO: implement
-        self._region_button_menu.addSeparator()
-        self._region_button_menu.addAction('Clear regions', lambda: self.update_regions(clear=True))
-        self._region_button.setMenu(self._region_button_menu)
-        self._region_action = self._toolbar_top.addWidget(self._region_button)
-        self._action_after_dim_iter_things = self._region_action
+        self._icon_button = QToolButton()
+        self._icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.75}]))
+        self._icon_button.setIconSize(QSize(32, 32))
 
-        # home button
-        self._home_button = QToolButton()
-        self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
-        self._home_button.setToolTip('Autoscale all plots')
-        self._home_button.clicked.connect(self.autoscale_plots)
-        self._home_action = self._toolbar_top.addWidget(self._home_button)
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(0)
+        grid.addWidget(self._icon_button, 0, 0)
+        grid.addWidget(self._toolbar_top, 0, 1)
+        grid.addWidget(self._toolbar_left, 1, 0)
+        grid.addWidget(hsplitter, 1, 1)
 
-        # settings button
-        self.setup_settings()
-        self._settings_button = QToolButton()
-        self._settings_button.setIcon(qta.icon('msc.settings-gear', options=[{'opacity': 0.5}]))
-        self._settings_button.setToolTip('General settings')
-        self._settings_button.setPopupMode(QToolButton.InstantPopup)
-        self._settings_button_menu = QMenu()
-        action = QWidgetAction(self._settings_button_menu)
-        action.setDefaultWidget(self._settings_panel)
-        self._settings_button_menu.addAction(action)
-        self._settings_button.setMenu(self._settings_button_menu)
-        self._settings_action = self._toolbar_top.addWidget(self._settings_button)
+        # setup toolbar left
+        self.setup_data_control_panel()
+        self.setup_grid_control_panel()
+        self.setup_region_control_panel()
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._toolbar_left.addWidget(spacer)
+        self.setup_settings_control_panel()
+        self._control_panel.hide()
+
+        self.setup_toolbar_top()
     
-    def setup_plot_grid_settings(self) -> None:
-        # link axes
+    def setup_data_control_panel(self) -> None:
+        self._data_control_panel_index = self._control_panel.count()
+
+        self._data_control_button = QToolButton()
+        self._data_control_button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.7}]))
+        self._data_control_button.setCheckable(True)
+        self._data_control_button.setChecked(False)
+        self._data_control_button.setToolTip('Data browser')
+        self._data_control_button.clicked.connect(lambda: self.toggle_control_panel(self._data_control_panel_index))
+        self._toolbar_left.addWidget(self._data_control_button)
+        self._control_panel_buttons.append(self._data_control_button)
+
+        self._data_treeview = XarrayTreeView()
+        self._data_treeview.setSelectionMode(QAbstractItemView.MultiSelection)
+        root_node: XarrayTreeNode = self.data if self.data is not None else XarrayTreeNode('/', None)
+        root_item = XarrayTreeItem(node=root_node, key=None)
+        model: XarrayTreeModel = XarrayTreeModel(root_item)
+        model._allowed_selections = ['var']
+        self._data_treeview.setModel(model)
+        self._data_treeview.selection_changed.connect(self.on_var_selection_changed)
+
+        self._xdim_combobox = QComboBox()
+        self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
+
+        self._data_control_panel = QWidget()
+        vbox = QVBoxLayout(self._data_control_panel)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        vbox.addWidget(self._data_treeview)
+
+        form = QFormLayout()
+        form.setContentsMargins(5, 3, 0, 3)
+        form.setSpacing(0)
+        form.addRow('X axis:', self._xdim_combobox)
+        vbox.addLayout(form)
+
+        self._control_panel.addWidget(self._data_control_panel)
+    
+    def setup_grid_control_panel(self) -> None:
+        self._grid_control_panel_index = self._control_panel.count()
+
+        self._grid_control_button = QToolButton()
+        self._grid_control_button.setIcon(qta.icon('mdi.grid', options=[{'opacity': 0.5}]))
+        self._grid_control_button.setCheckable(True)
+        self._grid_control_button.setChecked(False)
+        self._grid_control_button.setToolTip('Plot grid')
+        self._grid_control_button.clicked.connect(lambda: self.toggle_control_panel(self._grid_control_panel_index))
+        self._toolbar_left.addWidget(self._grid_control_button)
+        self._control_panel_buttons.append(self._grid_control_button)
+
         self._link_xaxis_checkbox = QCheckBox()
         self._link_xaxis_checkbox.setChecked(True)
         self._link_xaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
@@ -363,7 +369,6 @@ class XarrayGraph(QWidget):
         self._link_yaxis_checkbox.setChecked(True)
         self._link_yaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
 
-        # row/col tile selection
         self._row_tile_combobox = QComboBox()
         self._row_tile_combobox.addItems(['None'])
         self._row_tile_combobox.setCurrentText('None')
@@ -374,22 +379,95 @@ class XarrayGraph(QWidget):
         self._col_tile_combobox.setCurrentText('None')
         self._col_tile_combobox.currentTextChanged.connect(self.update_plot_grid)
 
-        # settings panel
-        self._plot_grid_settings_panel = QWidget()
-        form = QFormLayout(self._plot_grid_settings_panel)
+        self._grid_control_panel = QWidget()
+        form = QFormLayout(self._grid_control_panel)
         form.setContentsMargins(5, 5, 5, 5)
         form.setSpacing(5)
+
         form.addRow('Link X axes:', self._link_xaxis_checkbox)
         form.addRow('Link Y axes:', self._link_yaxis_checkbox)
+
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
         form.addRow(line)
+
         form.addRow('Tile rows:', self._row_tile_combobox)
         form.addRow('Tile columns:', self._col_tile_combobox)
 
-    def setup_settings(self) -> None:
-        # font size
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(self._grid_control_panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
+    
+    def setup_region_control_panel(self) -> None:
+        self._region_control_panel_index = self._control_panel.count()
+
+        self._region_control_button = QToolButton()
+        self._region_control_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
+        self._region_control_button.setCheckable(True)
+        self._region_control_button.setChecked(False)
+        self._region_control_button.setToolTip('X axis regions')
+        self._region_control_button.clicked.connect(lambda: self.toggle_control_panel(self._region_control_panel_index))
+        self._toolbar_left.addWidget(self._region_control_button)
+        self._control_panel_buttons.append(self._region_control_button)
+
+        self._hide_regions_button = QPushButton('Hide visible regions')
+        self._hide_regions_button.clicked.connect(lambda: self.update_regions(is_visible=False))
+
+        self._show_regions_button = QPushButton('Show hidden regions')
+        self._show_regions_button.clicked.connect(lambda: self.update_regions(is_visible=True))
+
+        self._lock_regions_button = QPushButton('Lock visible regions')
+        self._lock_regions_button.clicked.connect(lambda: self.update_regions(is_moveable=False))
+
+        self._unlock_regions_button = QPushButton('Unlock visible regions')
+        self._unlock_regions_button.clicked.connect(lambda: self.update_regions(is_moveable=True))
+
+        self._clear_regions_button = QPushButton('Clear regions')
+        self._clear_regions_button.clicked.connect(lambda: self.update_regions(clear=True))
+
+        self._name_regions_button = QPushButton('Name visible regions') # TODO: implement
+
+        self._region_name_list = QListWidget() # TODO: implement
+
+        self._region_control_panel = QWidget()
+        vbox = QVBoxLayout(self._region_control_panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(3)
+
+        vbox.addWidget(self._hide_regions_button)
+        vbox.addWidget(self._show_regions_button)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._lock_regions_button)
+        vbox.addWidget(self._unlock_regions_button)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._clear_regions_button)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._name_regions_button)
+        vbox.addWidget(self._region_name_list)
+
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(self._region_control_panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
+    
+    def setup_settings_control_panel(self) -> None:
+        self._settings_control_panel_index = self._control_panel.count()
+
+        self._settings_control_button = QToolButton()
+        self._settings_control_button.setIcon(qta.icon('msc.settings-gear', options=[{'opacity': 0.5}]))
+        self._settings_control_button.setCheckable(True)
+        self._settings_control_button.setChecked(False)
+        self._settings_control_button.setToolTip('Settings')
+        self._settings_control_button.clicked.connect(lambda: self.toggle_control_panel(self._settings_control_panel_index))
+        self._toolbar_left.addWidget(self._settings_control_button)
+        self._control_panel_buttons.append(self._settings_control_button)
+
         self._axislabel_fontsize_spinbox = QSpinBox()
         self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
         self._axislabel_fontsize_spinbox.setSuffix('pt')
@@ -405,15 +483,13 @@ class XarrayGraph(QWidget):
         self._textitem_fontsize_spinbox.setSuffix('pt')
         self._textitem_fontsize_spinbox.valueChanged.connect(self.update_item_font)
 
-        # line width
         self._linewidth_spinbox = QSpinBox()
         self._linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
         self._linewidth_spinbox.setMinimum(1)
         self._linewidth_spinbox.valueChanged.connect(lambda: self.update_plot_items(item_types=[XYData]))
 
-        # settings panel
-        self._settings_panel = QWidget()
-        form = QFormLayout(self._settings_panel)
+        self._settings_control_panel = QWidget()
+        form = QFormLayout(self._settings_control_panel)
         form.setContentsMargins(5, 5, 5, 5)
         form.setSpacing(5)
 
@@ -425,38 +501,42 @@ class XarrayGraph(QWidget):
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
         form.addRow(line)
-        form.addRow('Default line width', self._linewidth_spinbox)
-    
-    def setup_view_panel(self) -> None:
-        # data tree
-        self._data_treeview = XarrayTreeView()
-        self._data_treeview.setSelectionMode(QAbstractItemView.MultiSelection)
-        root_node: XarrayTreeNode = self.data if self.data is not None else XarrayTreeNode('/', None)
-        root_item = XarrayTreeItem(node=root_node, key=None)
-        model: XarrayTreeModel = XarrayTreeModel(root_item)
-        model._allowed_selections = ['var']
-        self._data_treeview.setModel(model)
-        self._data_treeview.selection_changed.connect(self.on_var_selection_changed)
 
-        # x-axis selection
-        self._xdim_combobox = QComboBox()
-        self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
-        
-        # view panel
-        self._view_panel = QWidget()
-        vbox = QVBoxLayout(self._view_panel)
-        vbox.setContentsMargins(3, 3, 3, 3)
-        vbox.setSpacing(5)
-        vbox.addWidget(self._data_treeview)
-        hbox = QHBoxLayout()
-        hbox.addWidget(QLabel('X axis:'))
-        hbox.addWidget(self._xdim_combobox)
-        vbox.addLayout(hbox)
+        form.addRow('Default line width', self._linewidth_spinbox)
+
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(self._settings_control_panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
     
-    def setup_plot_grid(self) -> None:
-        self._plot_grid = PlotGrid()
-        self._grid_rowlim = ()
-        self._grid_collim = ()
+    def toggle_control_panel(self, index: int) -> None:
+        show = self._control_panel_buttons[index].isChecked()
+        if show:
+            self._control_panel.setCurrentIndex(index)
+        self._control_panel.setVisible(show)
+        for i, button in enumerate(self._control_panel_buttons):
+            if i != index:
+                button.setChecked(False)
+    
+    def setup_toolbar_top(self) -> None:
+        # widgets and toolbar actions for iterating dimension indices
+        self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
+
+        self._region_button = QToolButton()
+        self._region_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
+        self._region_button.setToolTip('Draw X axis region')
+        self._region_button.setCheckable(True)
+        self._region_button.setChecked(False)
+        self._region_button.clicked.connect(self.draw_region)
+        self._action_after_dim_iter_things = self._toolbar_top.addWidget(self._region_button)
+
+        self._home_button = QToolButton()
+        self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
+        self._home_button.setToolTip('Autoscale all plots')
+        self._home_button.clicked.connect(self.autoscale_plots)
+        self._toolbar_top.addWidget(self._home_button)
     
     def update_dim_iter_things(self) -> None:
         # remove dim iter actions from toolbar
@@ -741,7 +821,7 @@ class XarrayGraph(QWidget):
         self.update_plot_items()
 
         # ensure all plots have appropriate draw state
-        self.draw_regions()
+        self.draw_region()
 
         # update plot grid (hopefully after everything has been redrawn)
         QTimer.singleShot(100, self.update_grid_layout)
@@ -1022,13 +1102,10 @@ class XarrayGraph(QWidget):
         QWidget.resizeEvent(self, event)
         self.update_grid_layout()
  
-    def draw_regions(self, draw: bool | None = None) -> None:
+    def draw_region(self, draw: bool | None = None) -> None:
         if draw is None:
-            draw = self._draw_regions_action.isChecked()
+            draw = self._region_button.isChecked()
         self._region_button.setChecked(draw)
-        self._draw_regions_action.blockSignals(True)
-        self._draw_regions_action.setChecked(draw)
-        self._draw_regions_action.blockSignals(False)
         
         try:
             rowmin, rowmax = self._grid_rowlim
@@ -1084,12 +1161,14 @@ class XarrayGraph(QWidget):
             # editing the region text via the popup dialog will also reset the region,
             # so this will cover text changes too
             item.sigRegionChangeFinished.connect(self.on_axes_item_changed)
+            # stop drawing regions (draw one at a time)
+            self.draw_region(False)
 
     @Slot()
     def on_axes_item_changed(self):
         item = self.sender()
         if isinstance(item, XAxisRegion):
-            pass # TODO: handle region change?
+            pass # TODO: handle region change
     
 #     @Slot()
 #     def measure(self, plot: pg.PlotItem):
