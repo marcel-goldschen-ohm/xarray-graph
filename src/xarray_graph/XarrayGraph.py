@@ -492,7 +492,7 @@ class XarrayGraph(QWidget):
         button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
         self._control_panel_toolbar.addWidget(button)
 
-        self._measure_type_combobox = QComboBox() # TODO: implement
+        self._measure_type_combobox = QComboBox()
         self._measure_type_combobox.addItems(['Mean', 'Median'])
         self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
         self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
@@ -502,7 +502,7 @@ class XarrayGraph(QWidget):
         self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
         self._measure_type_combobox.currentIndexChanged.connect(self.on_measure_type_changed)
 
-        self._peak_half_width_spinbox = QSpinBox() # TODO: implement
+        self._peak_half_width_spinbox = QSpinBox()
         self._peak_half_width_spinbox.setValue(0)
 
         self._peak_width_wrapper = QWidget()
@@ -512,10 +512,11 @@ class XarrayGraph(QWidget):
         form.setHorizontalSpacing(5)
         form.addRow('Average +/- samples', self._peak_half_width_spinbox)
 
-        self._peak_type_combobox = QComboBox() # TODO: implement
+        self._peak_type_combobox = QComboBox()
         self._peak_type_combobox.addItems(['Min', 'Max'])
+        self._peak_type_combobox.setCurrentText('Max')
 
-        self._peak_threshold_spinbox = QDoubleSpinBox() # TODO: implement
+        self._peak_threshold_spinbox = QDoubleSpinBox()
 
         self._peak_options_wrapper = QWidget()
         form = QFormLayout(self._peak_options_wrapper)
@@ -525,23 +526,33 @@ class XarrayGraph(QWidget):
         form.addRow('Peak type', self._peak_type_combobox)
         form.addRow('Peak threshold', self._peak_threshold_spinbox)
 
-        self._measure_in_visible_regions_only_checkbox = QCheckBox('In visible regions only') # TODO: implement
+        self._measure_in_visible_regions_only_checkbox = QCheckBox('In visible regions only')
         self._measure_in_visible_regions_only_checkbox.setChecked(True)
 
-        self._measure_per_visible_region_checkbox = QCheckBox('In each visible region') # TODO: implement
+        self._measure_per_visible_region_checkbox = QCheckBox('In each visible region')
         self._measure_per_visible_region_checkbox.setChecked(True)
 
-        self._measure_button = QPushButton('Measure') # TODO: implement
+        self._measure_name_edit = QLineEdit()
+
+        self._measure_name_wrapper = QWidget()
+        form = QFormLayout(self._measure_name_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Result name', self._measure_name_edit)
+
+        self._measure_button = QPushButton('Measure')
 
         measure_group = QGroupBox('Measure')
         vbox = QVBoxLayout(measure_group)
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
         vbox.addWidget(self._measure_type_combobox)
-        vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
-        vbox.addWidget(self._measure_per_visible_region_checkbox)
         vbox.addWidget(self._peak_options_wrapper)
         vbox.addWidget(self._peak_width_wrapper)
+        vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
+        vbox.addWidget(self._measure_per_visible_region_checkbox)
+        vbox.addWidget(self._measure_name_wrapper)
         vbox.addWidget(self._measure_button)
         self.on_measure_type_changed()
 
@@ -563,6 +574,7 @@ class XarrayGraph(QWidget):
         measure_type = self._measure_type_combobox.currentText()
         self._peak_options_wrapper.setVisible(measure_type == 'Peaks')
         self._peak_width_wrapper.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
+        self._measure_name_edit.setPlaceholderText(measure_type)
     
     def setup_curve_fit_control_panel(self) -> None:
         button = QToolButton()
@@ -573,15 +585,15 @@ class XarrayGraph(QWidget):
         button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
         self._control_panel_toolbar.addWidget(button)
 
-        self._curve_fit_type_combobox = QComboBox() # TODO: implement
-        self._curve_fit_type_combobox.addItems(['Mean', 'Median'])
+        self._curve_fit_type_combobox = QComboBox()
+        self._curve_fit_type_combobox.addItems(['Mean', 'Median', 'Min', 'Max'])
         self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
         self._curve_fit_type_combobox.addItems(['Line', 'Polynomial', 'Spline'])
         self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
         self._curve_fit_type_combobox.addItems(['Equation'])
         self._curve_fit_type_combobox.currentIndexChanged.connect(self.on_curve_fit_type_changed)
 
-        self._polynomial_degree_spinbox = QSpinBox() # TODO: implement
+        self._polynomial_degree_spinbox = QSpinBox()
         self._polynomial_degree_spinbox.setValue(2)
 
         self._polynomial_options_wrapper = QWidget()
@@ -591,7 +603,7 @@ class XarrayGraph(QWidget):
         form.setHorizontalSpacing(5)
         form.addRow('Polynomial degree', self._polynomial_degree_spinbox)
 
-        self._spline_segments_spinbox = QSpinBox() # TODO: implement
+        self._spline_segments_spinbox = QSpinBox()
         self._spline_segments_spinbox.setValue(10)
         self._spline_segments_spinbox.setMinimum(1)
 
@@ -602,36 +614,45 @@ class XarrayGraph(QWidget):
         form.setHorizontalSpacing(5)
         form.addRow('Spline segments', self._spline_segments_spinbox)
 
-        self._equation_edit = QLineEdit() # TODO: implement
+        self._equation_edit = QLineEdit()
         self._equation_edit.setPlaceholderText('a * x + b')
         self._equation_edit.editingFinished.connect(self.on_curve_fit_equation_changed)
 
-        self._equation_params_grid = QGridLayout()
-        self._equation_params_grid.setContentsMargins(0, 0, 0, 0)
-        self._equation_params_grid.setSpacing(0)
-        self._equation_params_grid.addWidget(QLabel('Param'), 0, 0)
-        self._equation_params_grid.addWidget(QLabel('Value'), 0, 1)
-        self._equation_params_grid.addWidget(QLabel('Vary'), 0, 2)
-        self._equation_params_grid.addWidget(QLabel('Min'), 0, 3)
-        self._equation_params_grid.addWidget(QLabel('Max'), 0, 4)
+        self._equation_params = {}
 
-        self._equation_eval_button = QPushButton('Evaluate') # TODO: implement
+        self._equation_params_table = QTableWidget(0, 5)
+        self._equation_params_table.setHorizontalHeaderLabels(['Param', 'Value', 'Vary', 'Min', 'Max'])
+        self._equation_params_table.verticalHeader().setVisible(False)
+        self._equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
+        self._equation_eval_button = QPushButton('Evaluate')
+        self._equation_clear_button = QPushButton('Clear')
 
         self._equation_group = QGroupBox('Equation')
-        vbox = QVBoxLayout(self._equation_group)
-        vbox.setContentsMargins(3, 3, 3, 3)
-        vbox.setSpacing(5)
-        vbox.addWidget(self._equation_edit)
-        vbox.addLayout(self._equation_params_grid)
-        vbox.addWidget(self._equation_eval_button)
+        grid = QGridLayout(self._equation_group)
+        grid.setContentsMargins(3, 3, 3, 3)
+        grid.setSpacing(3)
+        grid.addWidget(self._equation_edit, 0, 0, 1, 2)
+        grid.addWidget(self._equation_params_table, 1, 0, 1, 2)
+        grid.addWidget(self._equation_eval_button, 2, 0)
+        grid.addWidget(self._equation_clear_button, 2, 1)
 
-        self._curve_fit_optimize_in_visible_regions_checkbox = QCheckBox('Optimize in visible regions') # TODO: implement
+        self._curve_fit_optimize_in_visible_regions_checkbox = QCheckBox('Optimize in visible regions')
         self._curve_fit_optimize_in_visible_regions_checkbox.setChecked(True)
 
-        self._curve_fit_evaluate_in_visible_regions_checkbox = QCheckBox('Evaluate in visible regions') # TODO: implement
+        self._curve_fit_evaluate_in_visible_regions_checkbox = QCheckBox('Evaluate in visible regions')
         self._curve_fit_evaluate_in_visible_regions_checkbox.setChecked(False)
 
-        self._fit_button = QPushButton('Fit') # TODO: implement
+        self._curve_fit_name_edit = QLineEdit()
+
+        self._curve_fit_name_wrapper = QWidget()
+        form = QFormLayout(self._curve_fit_name_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Result name', self._curve_fit_name_edit)
+
+        self._fit_button = QPushButton('Fit')
 
         fit_group = QGroupBox('Curve fit')
         vbox = QVBoxLayout(fit_group)
@@ -643,6 +664,7 @@ class XarrayGraph(QWidget):
         vbox.addWidget(self._equation_group)
         vbox.addWidget(self._curve_fit_optimize_in_visible_regions_checkbox)
         vbox.addWidget(self._curve_fit_evaluate_in_visible_regions_checkbox)
+        vbox.addWidget(self._curve_fit_name_wrapper)
         vbox.addWidget(self._fit_button)
         self.on_curve_fit_type_changed()
 
@@ -665,37 +687,46 @@ class XarrayGraph(QWidget):
         self._polynomial_options_wrapper.setVisible(fit_type == 'Polynomial')
         self._spline_options_wrapper.setVisible(fit_type == 'Spline')
         self._equation_group.setVisible(fit_type not in ['Mean', 'Median', 'Line', 'Polynomial', 'Spline'])
+        if self._equation_group.isVisible():
+            self._equation_params_table.resizeColumnsToContents()
+        self._curve_fit_name_edit.setPlaceholderText(fit_type)
     
     def on_curve_fit_equation_changed(self) -> None:
-        equation = self._equation_edit.text()
-        self._curve_fit_model = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
-        param_names = self._curve_fit_model.param_names
-    
-        # clear params grid
-        for row in range(1, self._equation_params_grid.rowCount()):
-            for col in range(self._equation_params_grid.columnCount()):
-                item = self._equation_params_grid.itemAtPosition(row, col)
-                if item:
-                    widget = item.widget()
-                    self._equation_params_grid.removeItem(item)
-                    widget.setParent(None)
-                    widget.setVisible(False)
-                    widget.deleteLater()
-    
-        # update params grid
-        for i, name in enumerate(param_names):
-            value_edit = QLineEdit('0')
-            vary_checkbox = QCheckBox()
-            vary_checkbox.setChecked(True)
-            min_edit = QLineEdit()
-            max_edit = QLineEdit()
-            min_edit.setPlaceholderText('-inf')
-            max_edit.setPlaceholderText('+inf')
-            self._equation_params_grid.addWidget(QLabel(name), i + 1, 0)
-            self._equation_params_grid.addWidget(value_edit, i + 1, 1)
-            self._equation_params_grid.addWidget(vary_checkbox, i + 1, 2)
-            self._equation_params_grid.addWidget(min_edit, i + 1, 3)
-            self._equation_params_grid.addWidget(max_edit, i + 1, 4)
+        equation = self._equation_edit.text().strip()
+        if equation == '':
+            param_names = []
+        else:
+            self._curve_fit_model = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
+            param_names = self._curve_fit_model.param_names
+            for name in param_names:
+                if name not in self._equation_params:
+                    self._equation_params[name] = {
+                        'value': 0,
+                        'vary': True,
+                        'min': -np.inf,
+                        'max': np.inf
+                    }
+            self._equation_params = {name: params for name, params in self._equation_params.items() if name in param_names}
+        self._equation_params_table.clearContents()
+        self._equation_params_table.setRowCount(len(param_names))
+        for row, name in enumerate(param_names):
+            value = self._equation_params[name]['value']
+            vary = self._equation_params[name]['vary']
+            min = self._equation_params[name]['min']
+            max = self._equation_params[name]['max']
+
+            name_item = QTableWidgetItem(name)
+            value_item = QTableWidgetItem(f'{value:.6g}')
+            vary_item = QTableWidgetItem()
+            vary_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            vary_item.setCheckState(Qt.CheckState.Checked if vary else Qt.CheckState.Unchecked)
+            min_item = QTableWidgetItem(str(min))
+            max_item = QTableWidgetItem(str(max))
+
+            for col, item in enumerate([name_item, value_item, vary_item, min_item, max_item]):
+                self._equation_params_table.setItem(row, col, item)
+
+        self._equation_params_table.resizeColumnsToContents()
     
     def setup_settings_control_panel(self) -> None:
         button = QToolButton()
