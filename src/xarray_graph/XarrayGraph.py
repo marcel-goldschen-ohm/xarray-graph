@@ -32,11 +32,11 @@ DEFAULT_TEXT_ITEM_FONT_SIZE = 10
 DEFAULT_LINE_WIDTH = 1
 
 
-class XarrayGraph(QWidget):
+class XarrayGraph(QMainWindow):
     """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset. """
 
     def __init__(self, *args, **kwargs):
-        QWidget.__init__(self, *args, **kwargs)
+        QMainWindow.__init__(self, *args, **kwargs)
 
         # xarray data tree
         self._data: XarrayTreeNode | None = None
@@ -275,12 +275,18 @@ class XarrayGraph(QWidget):
         self._control_panel_toolbar.setOrientation(Qt.Orientation.Vertical)
         self._control_panel_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
         self._control_panel_toolbar.setIconSize(toolbar_icon_size)
-
-        self._control_panel = QStackedWidget()
+        self._control_panel_toolbar.setMovable(False)
 
         self._plot_grid_toolbar = QToolBar()
         self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
         self._plot_grid_toolbar.setIconSize(toolbar_icon_size)
+        self._plot_grid_toolbar.setMovable(False)
+        self._plot_grid_toolbar.addWidget(self._icon_button)
+
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._plot_grid_toolbar)
+        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, self._control_panel_toolbar)
+
+        self._control_panel = QStackedWidget()
 
         self._plot_grid = PlotGrid()
         self._grid_rowlim = ()
@@ -294,15 +300,32 @@ class XarrayGraph(QWidget):
         hsplitter.setHandleWidth(1)
         hsplitter.setSizes([200])
 
-        # main layout
-        grid = QGridLayout(self)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(0)
-        grid.addWidget(self._icon_button, 0, 0)
-        grid.addWidget(self._plot_grid_toolbar, 0, 1)
-        grid.addWidget(self._control_panel_toolbar, 1, 0)
-        grid.addWidget(hsplitter, 1, 1)
+        self.setCentralWidget(hsplitter)
 
+        self.setup_control_panel_toolbar()
+        self.setup_plot_grid_toolbar()
+
+        self._control_panel.hide()
+    
+    def setup_plot_grid_toolbar(self) -> None:
+        # widgets and toolbar actions for iterating dimension indices
+        self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
+
+        self._region_button = QToolButton()
+        self._region_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
+        self._region_button.setToolTip('Draw X axis region')
+        self._region_button.setCheckable(True)
+        self._region_button.setChecked(False)
+        self._region_button.clicked.connect(self.draw_region)
+        self._action_after_dim_iter_things = self._plot_grid_toolbar.addWidget(self._region_button)
+
+        self._home_button = QToolButton()
+        self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
+        self._home_button.setToolTip('Autoscale all plots')
+        self._home_button.clicked.connect(self.autoscale_plots)
+        self._plot_grid_toolbar.addWidget(self._home_button)
+    
+    def setup_control_panel_toolbar(self) -> None:
         # control panel toolbar
         # button order reflects setup order
         self.setup_data_control_panel()
@@ -314,10 +337,6 @@ class XarrayGraph(QWidget):
         spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._control_panel_toolbar.addWidget(spacer)
         self.setup_settings_control_panel()
-        self._control_panel.hide()
-
-        # plot grid toolbar
-        self.setup_toolbar_top()
     
     def setup_data_control_panel(self) -> None:
         button = QToolButton()
@@ -803,24 +822,6 @@ class XarrayGraph(QWidget):
         for i, button in enumerate(buttons):
             if i != index:
                 button.setChecked(False)
-    
-    def setup_toolbar_top(self) -> None:
-        # widgets and toolbar actions for iterating dimension indices
-        self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
-
-        self._region_button = QToolButton()
-        self._region_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
-        self._region_button.setToolTip('Draw X axis region')
-        self._region_button.setCheckable(True)
-        self._region_button.setChecked(False)
-        self._region_button.clicked.connect(self.draw_region)
-        self._action_after_dim_iter_things = self._plot_grid_toolbar.addWidget(self._region_button)
-
-        self._home_button = QToolButton()
-        self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
-        self._home_button.setToolTip('Autoscale all plots')
-        self._home_button.clicked.connect(self.autoscale_plots)
-        self._plot_grid_toolbar.addWidget(self._home_button)
     
     def update_dim_iter_things(self) -> None:
         # remove dim iter actions from toolbar
