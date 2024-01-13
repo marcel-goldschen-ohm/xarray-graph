@@ -20,7 +20,8 @@ from pyqtgraph_ext import *
 from xarray_treeview import *
 
 
-# pg.setConfigOption('background', (235, 235, 235))
+# Currently, color is handled by the widgets themselves.
+# pg.setConfigOption('background', (240, 240, 240))
 # pg.setConfigOption('foreground', (0, 0, 0))
 
 
@@ -739,16 +740,19 @@ class XarrayGraph(QWidget):
 
         self._axislabel_fontsize_spinbox = QSpinBox()
         self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
+        self._axislabel_fontsize_spinbox.setMinimum(1)
         self._axislabel_fontsize_spinbox.setSuffix('pt')
         self._axislabel_fontsize_spinbox.valueChanged.connect(self.update_axes_labels)
 
         self._axistick_fontsize_spinbox = QSpinBox()
         self._axistick_fontsize_spinbox.setValue(DEFAULT_AXIS_TICK_FONT_SIZE)
+        self._axistick_fontsize_spinbox.setMinimum(1)
         self._axistick_fontsize_spinbox.setSuffix('pt')
         self._axistick_fontsize_spinbox.valueChanged.connect(self.update_axes_tick_font)
 
         self._textitem_fontsize_spinbox = QSpinBox()
         self._textitem_fontsize_spinbox.setValue(DEFAULT_TEXT_ITEM_FONT_SIZE)
+        self._textitem_fontsize_spinbox.setMinimum(1)
         self._textitem_fontsize_spinbox.setSuffix('pt')
         self._textitem_fontsize_spinbox.valueChanged.connect(self.update_item_font)
 
@@ -1159,7 +1163,8 @@ class XarrayGraph(QWidget):
             col_tile_dim = 'None'
         if col_tile_dim == row_tile_dim:
             col_tile_dim = 'None'
-        axis_label_style = {'font-size': f'{self._axislabel_fontsize_spinbox.value()}pt'}
+        axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{self._axislabel_fontsize_spinbox.value()}pt'}
+        tile_label_style = {'color': 'rgb(128, 128, 128)', 'font-size': f'{self._axislabel_fontsize_spinbox.value()}pt'}
         xunits = self._selected_units.get(self.xdim, None)
         for row in range(rowmin, rowmax + 1):
             # ylabel
@@ -1179,12 +1184,12 @@ class XarrayGraph(QWidget):
                 label_text = f'{row_tile_dim}: {tile_coord}'
                 if row_label is None:
                     row_label = pg.AxisItem('left')
-                    row_label.setLabel(text=label_text, **axis_label_style)
                     row_label.setPen(pg.mkPen(width=0)) # hide axis lines
                     row_label.setStyle(showValues=False, tickLength=0) # hide tick labels
                     self._plot_grid.addItem(row_label, row, 0)
+                    row_label.setLabel(text=label_text, **tile_label_style)
                 else:
-                    row_label.setLabel(text=label_text, **axis_label_style)
+                    row_label.setLabel(text=label_text, **tile_label_style)
         for col in range(colmin, colmax + 1):
             # xlabel
             plot = self._plot_grid.getItem(rowmax, col)
@@ -1201,12 +1206,12 @@ class XarrayGraph(QWidget):
                 label_text = f'{col_tile_dim}: {tile_coord}'
                 if col_label is None:
                     col_label = pg.AxisItem('bottom')
-                    col_label.setLabel(text=label_text, **axis_label_style)
                     col_label.setPen(pg.mkPen(width=0)) # hide axis lines
                     col_label.setStyle(showValues=False, tickLength=0) # hide tick labels
                     self._plot_grid.addItem(col_label, rowmax + 1, col)
+                    col_label.setLabel(text=label_text, **tile_label_style)
                 else:
-                    col_label.setLabel(text=label_text, **axis_label_style)
+                    col_label.setLabel(text=label_text, **tile_label_style)
     
     def update_axes_tick_font(self) -> None:
         try:
