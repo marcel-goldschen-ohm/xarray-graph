@@ -26,6 +26,7 @@ from xarray_treeview import *
 
 
 DEBUG = 0
+DEFAULT_ICON_SIZE = 24
 DEFAULT_AXIS_LABEL_FONT_SIZE = 12
 DEFAULT_AXIS_TICK_FONT_SIZE = 11
 DEFAULT_TEXT_ITEM_FONT_SIZE = 10
@@ -266,10 +267,9 @@ class XarrayGraph(QMainWindow):
         return tiling_enabled
     
     def setup_ui(self) -> None:
-        toolbar_icon_size = QSize(24, 24)
-        self._icon_button = QToolButton()
-        self._icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.75}]))
-        self._icon_button.setIconSize(toolbar_icon_size)
+        toolbar_icon_size = QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE)
+        icon_button = QToolButton()
+        icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
 
         self._control_panel_toolbar = QToolBar()
         self._control_panel_toolbar.setOrientation(Qt.Orientation.Vertical)
@@ -281,7 +281,7 @@ class XarrayGraph(QMainWindow):
         self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
         self._plot_grid_toolbar.setIconSize(toolbar_icon_size)
         self._plot_grid_toolbar.setMovable(False)
-        self._plot_grid_toolbar.addWidget(self._icon_button)
+        self._plot_grid_toolbar.addWidget(icon_button)
 
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._plot_grid_toolbar)
         self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, self._control_panel_toolbar)
@@ -757,6 +757,11 @@ class XarrayGraph(QMainWindow):
         button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
         self._control_panel_toolbar.addWidget(button)
 
+        self._linewidth_spinbox = QSpinBox()
+        self._linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
+        self._linewidth_spinbox.setMinimum(1)
+        self._linewidth_spinbox.valueChanged.connect(lambda: self.update_plot_items(item_types=[XYData]))
+
         self._axislabel_fontsize_spinbox = QSpinBox()
         self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
         self._axislabel_fontsize_spinbox.setMinimum(1)
@@ -775,10 +780,19 @@ class XarrayGraph(QMainWindow):
         self._textitem_fontsize_spinbox.setSuffix('pt')
         self._textitem_fontsize_spinbox.valueChanged.connect(self.update_item_font)
 
-        self._linewidth_spinbox = QSpinBox()
-        self._linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
-        self._linewidth_spinbox.setMinimum(1)
-        self._linewidth_spinbox.valueChanged.connect(lambda: self.update_plot_items(item_types=[XYData]))
+        self._iconsize_spinbox = QSpinBox()
+        self._iconsize_spinbox.setValue(DEFAULT_ICON_SIZE)
+        self._iconsize_spinbox.setMinimum(16)
+        self._iconsize_spinbox.setMaximum(64)
+        self._iconsize_spinbox.setSingleStep(8)
+        self._iconsize_spinbox.valueChanged.connect(self.update_icon_size)
+
+        style_group = QGroupBox('Default plot style')
+        form = QFormLayout(style_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Line width', self._linewidth_spinbox)
 
         font_group = QGroupBox('Font')
         form = QFormLayout(font_group)
@@ -789,19 +803,20 @@ class XarrayGraph(QMainWindow):
         form.addRow('Axis tick size', self._axistick_fontsize_spinbox)
         form.addRow('Text item size', self._textitem_fontsize_spinbox)
 
-        style_group = QGroupBox('Default style')
-        form = QFormLayout(style_group)
+        ui_group = QGroupBox('UI options')
+        form = QFormLayout(ui_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Line width', self._linewidth_spinbox)
+        form.addRow('Icon size', self._iconsize_spinbox)
 
         panel = QWidget()
         vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(5, 5, 5, 5)
         vbox.setSpacing(20)
-        vbox.addWidget(font_group)
         vbox.addWidget(style_group)
+        vbox.addWidget(font_group)
+        vbox.addWidget(ui_group)
         vbox.addStretch()
 
         scroll_area = QScrollArea()
@@ -810,6 +825,17 @@ class XarrayGraph(QMainWindow):
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
+    
+    def update_icon_size(self) -> None:
+        size = self._iconsize_spinbox.value()
+        icon_size = QSize(size, size)
+        for toolbar in [self._control_panel_toolbar, self._plot_grid_toolbar]:
+            toolbar.setIconSize(icon_size)
+            actions = toolbar.actions()
+            widgets = [toolbar.widgetForAction(action) for action in actions]
+            buttons = [widget for widget in widgets if isinstance(widget, QToolButton)]
+            for button in buttons:
+                button.setIconSize(icon_size)
     
     def toggle_control_panel(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
