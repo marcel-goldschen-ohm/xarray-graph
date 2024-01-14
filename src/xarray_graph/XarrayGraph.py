@@ -1488,8 +1488,22 @@ class XarrayGraph(QMainWindow):
                 
         # measure options
         measure_type = self._measure_type_combobox.currentText()
-        if measure_type in ['Min', 'Max', 'AbsMax']:
+        if measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance']:
+            def existing_median(x):
+                # ensures picking an existing data point for the central value
+                i = np.argpartition(x, len(x) // 2)[len(x) // 2]
+                return x[i]
+        elif measure_type in ['Min', 'Max', 'AbsMax']:
             peak_width = self._peak_width_spinbox.value()
+            if peak_width > 0:
+                def get_peak_index_range(mask, center_index):
+                    start, stop = center_index, center_index + 1
+                    for w in range(peak_width):
+                        if center_index - w >= 0 and mask[center_index - w] and start == center_index - w + 1:
+                            start = center_index - w
+                        if center_index + w < len(mask) and mask[center_index + w] and stop == center_index + w:
+                            stop = center_index + w + 1
+                    return start, stop
         
         # measure in each plot
         for plot in plots:
@@ -1535,7 +1549,7 @@ class XarrayGraph(QMainWindow):
                     # mask for combined regions
                     mask = np.full(xdata.shape, False)
                     for region in regions:
-                        xmin, xmax = xregion
+                        xmin, xmax = region
                         mask[(xdata >= xmin) & (xdata <= xmax)] = True
                     masks = [mask]
                 else:
@@ -1552,10 +1566,11 @@ class XarrayGraph(QMainWindow):
                     x = xdata[mask]
                     y = ydata[mask]
                     if measure_type == 'Mean':
-                        xmeasure.append(np.median(x))
+                        print(existing_median(x), x)
+                        xmeasure.append(existing_median(x))
                         ymeasure.append(np.mean(y))
                     elif measure_type == 'Median':
-                        xmeasure.append(np.median(x))
+                        xmeasure.append(existing_median(x))
                         ymeasure.append(np.median(y))
                     elif measure_type == 'Min':
                         i = np.argmin(y)
@@ -1563,13 +1578,8 @@ class XarrayGraph(QMainWindow):
                         if peak_width == 0:
                             ymeasure.append(y[i])
                         else:
-                            j = np.where(mask)[0][i]
-                            start, stop = j, j + 1
-                            for w in range(peak_width):
-                                if j - w >= 0 and mask[j - w] and start == j - w + 1:
-                                    start = j - w
-                                if j + w < len(mask) and mask[j + w] and stop == j + w:
-                                    stop = j + w + 1
+                            center_index = np.where(mask)[0][i]
+                            start, stop = get_peak_index_range(mask, center_index)
                             ymeasure.append(np.mean(ydata[start:stop]))
                     elif measure_type == 'Max':
                         i = np.argmax(y)
@@ -1577,13 +1587,8 @@ class XarrayGraph(QMainWindow):
                         if peak_width == 0:
                             ymeasure.append(y[i])
                         else:
-                            j = np.where(mask)[0][i]
-                            start, stop = j, j + 1
-                            for w in range(peak_width):
-                                if j - w >= 0 and mask[j - w] and start == j - w + 1:
-                                    start = j - w
-                                if j + w < len(mask) and mask[j + w] and stop == j + w:
-                                    stop = j + w + 1
+                            center_index = np.where(mask)[0][i]
+                            start, stop = get_peak_index_range(mask, center_index)
                             ymeasure.append(np.mean(ydata[start:stop]))
                     elif measure_type == 'AbsMax':
                         i = np.argmax(np.abs(y))
@@ -1591,19 +1596,16 @@ class XarrayGraph(QMainWindow):
                         if peak_width == 0:
                             ymeasure.append(y[i])
                         else:
-                            j = np.where(mask)[0][i]
-                            start, stop = j, j + 1
-                            for w in range(peak_width):
-                                if j - w >= 0 and mask[j - w] and start == j - w + 1:
-                                    start = j - w
-                                if j + w < len(mask) and mask[j + w] and stop == j + w:
-                                    stop = j + w + 1
+                            center_index = np.where(mask)[0][i]
+                            start, stop = get_peak_index_range(mask, center_index)
                             ymeasure.append(np.mean(ydata[start:stop]))
+                    elif measure_type == 'Peaks':
+                        pass # TODO
                     elif measure_type == 'Standard Deviation':
-                        xmeasure.append(np.median(x))
+                        xmeasure.append(existing_median(x))
                         ymeasure.append(np.std(y))
                     elif measure_type == 'Variance':
-                        xmeasure.append(np.median(x))
+                        xmeasure.append(existing_median(x))
                         ymeasure.append(np.var(y))
                 
                 if not ymeasure:
