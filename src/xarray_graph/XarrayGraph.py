@@ -3,7 +3,6 @@
 TODO:
 - named regions
 - update plot items when node renamed
-- curve fit
 - i/o menu (actual i/o in xarray_tree)
 - style manipulation
 """
@@ -19,8 +18,6 @@ import scipy as sp
 import lmfit
 import xarray as xr
 from xarray_tree import *
-# import datatree as xt
-# import zarr
 import sys, re
 from pyqt_ext import *
 from pyqtgraph_ext import *
