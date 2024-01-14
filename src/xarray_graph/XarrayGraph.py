@@ -1,4 +1,11 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
+
+TODO:
+- named regions
+- update plot items when node renamed
+- curve fit
+- i/o menu (actual i/o in xarray_tree)
+- style manipulation
 """
 
 from __future__ import annotations
@@ -298,7 +305,7 @@ class XarrayGraph(QMainWindow):
         hsplitter.setStretchFactor(0, 0)
         hsplitter.setStretchFactor(1, 1)
         hsplitter.setHandleWidth(1)
-        hsplitter.setSizes([200])
+        hsplitter.setSizes([250])
 
         self.setCentralWidget(hsplitter)
 
@@ -322,7 +329,7 @@ class XarrayGraph(QMainWindow):
         self._home_button = QToolButton()
         self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
         self._home_button.setToolTip('Autoscale all plots')
-        self._home_button.clicked.connect(self.autoscale_plots)
+        self._home_button.clicked.connect(lambda: self.autoscale_plots())
         self._plot_grid_toolbar.addWidget(self._home_button)
     
     def setup_control_panel_toolbar(self) -> None:
@@ -562,6 +569,7 @@ class XarrayGraph(QMainWindow):
         form.addRow('Result name', self._measure_name_edit)
 
         self._measure_button = QPushButton('Measure')
+        self._measure_button.pressed.connect(self.measure)
 
         measure_group = QGroupBox('Measure')
         vbox = QVBoxLayout(measure_group)
@@ -611,6 +619,7 @@ class XarrayGraph(QMainWindow):
         self._curve_fit_type_combobox.addItems(['Line', 'Polynomial', 'Spline'])
         self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
         self._curve_fit_type_combobox.addItems(['Equation'])
+        self._curve_fit_type_combobox.setCurrentText('Equation')
         self._curve_fit_type_combobox.currentIndexChanged.connect(self.on_curve_fit_type_changed)
 
         self._polynomial_degree_spinbox = QSpinBox()
@@ -1100,30 +1109,30 @@ class XarrayGraph(QMainWindow):
         # assign vars and coords to each plot
         rowmin, rowmax = self._grid_rowlim
         colmin, colmax = self._grid_collim
-        self._plot_info = np.ndarray((rowmax + 1, colmax + 1), dtype=dict)
         for row in range(rowmin, rowmax + 1):
             var_name = self._selected_var_names[(row - rowmin) % n_vars]
             for col in range(colmin, colmax + 1):
-                plot_coords = selected_coords.copy()
+                plot: Plot = self._plot_grid.getItem(row, col)
+                coords = selected_coords.copy()
                 if row_tile_dim != 'None':
                     tile_index = int((row - rowmin) / n_vars) % n_row_tiles
                     tile_coord = row_tile_coords.values[tile_index]
-                    plot_coords[row_tile_dim] = xr.DataArray(data=[tile_coord], dims=[row_tile_dim], attrs=row_tile_coords.attrs)
+                    coords[row_tile_dim] = xr.DataArray(data=[tile_coord], dims=[row_tile_dim], attrs=row_tile_coords.attrs)
                 if col_tile_dim != 'None':
                     tile_index = (col - colmin) % n_col_tiles
                     tile_coord = col_tile_coords.values[tile_index]
-                    plot_coords[col_tile_dim] = xr.DataArray(data=[tile_coord], dims=[col_tile_dim], attrs=col_tile_coords.attrs)
-                if plot_coords:
-                    coord_permutations = XarrayTreeNode.permutations(plot_coords)
+                    coords[col_tile_dim] = xr.DataArray(data=[tile_coord], dims=[col_tile_dim], attrs=col_tile_coords.attrs)
+                if coords:
+                    coord_permutations = XarrayTreeNode.permutations(coords)
                 else:
                     coord_permutations = [{}]
-                self._plot_info[row,col] = {
+                plot.info = {
                     'vars': [var_name],
-                    'coords': plot_coords,
+                    'coords': coords,
                     'coord_permutations': coord_permutations,
                 }
-        if DEBUG:
-            print(self._plot_info)
+                if DEBUG:
+                    print(plot.info)
         
         # axis labels
         self.update_axes_labels()
@@ -1241,19 +1250,11 @@ class XarrayGraph(QMainWindow):
                     col_label.setLabel(text=label_text, **tile_label_style)
     
     def update_axes_tick_font(self) -> None:
-        try:
-            rowmin, rowmax = self._grid_rowlim
-            colmin, colmax = self._grid_collim
-        except:
-            return
         axis_tick_font = QFont()
         axis_tick_font.setPointSize(self._axistick_fontsize_spinbox.value())
-        for row in range(rowmin, rowmax + 1):
-            for col in range(colmin, colmax + 1):
-                plot = self._plot_grid.getItem(row, col)
-                if plot is not None and issubclass(type(plot), pg.PlotItem):
-                    plot.getAxis('left').setTickFont(axis_tick_font)
-                    plot.getAxis('bottom').setTickFont(axis_tick_font)
+        for plot in self.plots():
+            plot.getAxis('left').setTickFont(axis_tick_font)
+            plot.getAxis('bottom').setTickFont(axis_tick_font)
     
     def update_grid_layout(self) -> None:
         try:
@@ -1279,92 +1280,105 @@ class XarrayGraph(QMainWindow):
                 plot.setPreferredWidth(viewbox_width + yaxis.width() if yaxis.isVisible() else viewbox_width)
                 plot.setPreferredHeight(viewbox_height + xaxis.height() if xaxis.isVisible() else viewbox_height)
     
-    def update_plot_items(self, grid_rows: list[int] = None, grid_cols: list[int] = None, item_types: list = None) -> None:
+    def update_plot_items(self, plots: list[Plot] = None, item_types: list = None) -> None:
+        if plots is None:
+            plots = self.plots()
+        default_line_width = self._linewidth_spinbox.value()
+        for plot in plots:
+            if plot is None or not issubclass(type(plot), pg.PlotItem):
+                continue
+            view: View = plot.getViewBox()
+                
+            if item_types is None or XYData in item_types:
+                # existing data items in plot
+                data_items = [item for item in plot.listDataItems() if isinstance(item, XYData)]
+                
+                # update data items in plot
+                count = 0
+                color_index = 0
+                for tree_item in self._selected_tree_items:
+                    if not tree_item.is_var():
+                        continue
+                    if 'vars' not in plot.info or tree_item.key not in plot.info['vars']:
+                        continue
+                    if tree_item.node is None:
+                        continue
+                    xarr, yarr = self.get_xy_data(tree_item.node, tree_item.key)
+                    if xarr is None or yarr is None:
+                        continue
+                    xdata: np.ndarray = xarr.values
+                    for coords in plot.info['coord_permutations']:
+                        # x,y data
+                        try:
+                            # generally yarr_coords should be exactly coords, but just in case...
+                            yarr_coords = {dim: dim_coords for dim, dim_coords in coords.items() if dim in yarr.dims}
+                            ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
+                            if len(ydata.shape) == 0:
+                                ydata = ydata.reshape((1,))
+                        except:
+                            continue
+                        
+                        # show data in plot
+                        if len(data_items) > count:
+                            # update existing data in plot
+                            data_item = data_items[count]
+                            data_item.setData(x=xdata, y=ydata)
+                        else:
+                            # add new data to plot
+                            data_item = XYData(x=xdata, y=ydata)
+                            plot.addItem(data_item)
+                            data_items.append(data_item)
+                        
+                        # store tree info
+                        data_item.info = {
+                            'tree_item': tree_item,
+                            'coords': coords,
+                        }
+                        
+                        # data style
+                        style = yarr.attrs.get('style', {})
+                        if 'LineWidth' not in style:
+                            style['LineWidth'] = default_line_width
+                        style = XYDataStyleDict(style)
+                        color_index = data_item.setStyleDict(style, colorIndex=color_index)
+                        
+                        # data name (limit to 50 characters)
+                        name: str = tree_item.node.path + tree_item.key
+                        name_parts: list[str] = name.split('/')
+                        name = name_parts[-1]
+                        for i in reversed(range(len(name_parts) - 1)):
+                            if i > 0 and len(name) + len(name_parts[i]) >= 50:
+                                name = '.../' + name
+                                break
+                            name = name_parts[i] + '/' + name
+                        data_item.setName(name)
+                        
+                        # next data item
+                        count += 1
+                
+                # remove extra data items from plot
+                while len(data_items) > count:
+                    data_item = data_items.pop()
+                    plot.removeItem(data_item)
+                    data_item.deleteLater()
+    
+    def plots(self, grid_rows: list[int] = None, grid_cols: list[int] = None) -> list[Plot]:
         try:
             rowmin, rowmax = self._grid_rowlim
             colmin, colmax = self._grid_collim
         except:
-            return
+            return []
         if grid_rows is None:
             grid_rows = range(rowmin, rowmax + 1)
         if grid_cols is None:
             grid_cols = range(colmin, colmax + 1)
-        
-        default_line_width = self._linewidth_spinbox.value()
+        plots = []
         for row in grid_rows:
             for col in grid_cols:
                 plot = self._plot_grid.getItem(row, col)
-                if plot is None or not issubclass(type(plot), pg.PlotItem):
-                    continue
-                view: View = plot.getViewBox()
-                info: dict = self._plot_info[row,col]
-                    
-                if item_types is None or XYData in item_types:
-                    # existing plot traces
-                    trace_items = [item for item in plot.listDataItems() if isinstance(item, XYData)]
-                    
-                    # update plot traces
-                    trace_count = 0
-                    color_index = 0
-                    for tree_item in self._selected_tree_items:
-                        if not tree_item.is_var():
-                            continue
-                        if 'vars' not in info or tree_item.key not in info['vars']:
-                            continue
-                        if tree_item.node is None:
-                            continue
-                        xarr, yarr = self.get_xy_data(tree_item.node, tree_item.key)
-                        if xarr is None or yarr is None:
-                            continue
-                        xdata: np.ndarray = xarr.values
-                        for coords in info['coord_permutations']:
-                            # trace data
-                            try:
-                                # generally yarr_coords should be exactly coords, but just in case...
-                                yarr_coords = {dim: dim_coords for dim, dim_coords in coords.items() if dim in yarr.dims}
-                                ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
-                                if len(ydata.shape) == 0:
-                                    ydata = ydata.reshape((1,))
-                            except:
-                                continue
-                            
-                            # show trace in plot
-                            if len(trace_items) > trace_count:
-                                # update existing trace in plot
-                                trace_item = trace_items[trace_count]
-                                trace_item.setData(x=xdata, y=ydata)
-                            else:
-                                # add new trace to plot
-                                trace_item = XYData(x=xdata, y=ydata)
-                                plot.addItem(trace_item)
-                                trace_items.append(trace_item)
-                            
-                            # trace style
-                            style = yarr.attrs.get('style', {})
-                            if 'LineWidth' not in style:
-                                style['LineWidth'] = default_line_width
-                            style = XYDataStyleDict(style)
-                            color_index = trace_item.setStyleDict(style, colorIndex=color_index)
-                            
-                            # trace name (limit to 50 characters)
-                            trace_name: str = tree_item.node.path + tree_item.key
-                            trace_name_parts: list[str] = trace_name.split('/')
-                            trace_name = trace_name_parts[-1]
-                            for i in reversed(range(len(trace_name_parts) - 1)):
-                                if i > 0 and len(trace_name) + len(trace_name_parts[i]) >= 50:
-                                    trace_name = '.../' + trace_name
-                                    break
-                                trace_name = trace_name_parts[i] + '/' + trace_name
-                            trace_item.setName(trace_name)
-                            
-                            # next trace
-                            trace_count += 1
-                    
-                    # remove extra plot traces
-                    while len(trace_items) > trace_count:
-                        trace_item = trace_items.pop()
-                        plot.removeItem(trace_item)
-                        trace_item.deleteLater()
+                if plot is not None and issubclass(type(plot), pg.PlotItem):
+                    plots.append(plot)
+        return plots
     
     def get_xy_data(self, node: XarrayTreeNode, var_name: str) -> tuple[xr.DataArray | None, xr.DataArray | None]:
         ds: xr.Dataset = node.dataset
@@ -1378,37 +1392,18 @@ class XarrayGraph(QMainWindow):
             return None, None
     
     def update_item_font(self):
-        try:
-            rowmin, rowmax = self._grid_rowlim
-            colmin, colmax = self._grid_collim
-        except:
-            return
-        for row in range(rowmin, rowmax + 1):
-            for col in range(colmin, colmax + 1):
-                plot = self._plot_grid.getItem(row, col)
-                if plot is not None and issubclass(type(plot), pg.PlotItem):
-                    view: View = plot.getViewBox()
-                    for item in view.allChildren():
-                        if isinstance(item, XAxisRegion):
-                            item.setFontSize(self._textitem_fontsize_spinbox.value())
+        for plot in self.plots():
+            view: View = plot.getViewBox()
+            for item in view.allChildren():
+                if isinstance(item, XAxisRegion):
+                    item.setFontSize(self._textitem_fontsize_spinbox.value())
 
-    def autoscale_plots(self, grid_rows: list[int] = None, grid_cols: list[int] = None) -> None:
-        try:
-            rowmin, rowmax = self._grid_rowlim
-            colmin, colmax = self._grid_collim
-        except:
-            return
-        if grid_rows is None:
-            grid_rows = range(rowmin, rowmax + 1)
-        if grid_cols is None:
-            grid_cols = range(colmin, colmax + 1)
-        
-        for row in grid_rows:
-            for col in grid_cols:
-                plot = self._plot_grid.getItem(row, col)
-                if plot is not None and issubclass(type(plot), pg.PlotItem):
-                    plot.autoRange()
-                    plot.enableAutoRange()
+    def autoscale_plots(self, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self.plots()
+        for plot in plots:
+            plot.autoRange()
+            plot.enableAutoRange()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         QWidget.resizeEvent(self, event)
@@ -1482,270 +1477,238 @@ class XarrayGraph(QMainWindow):
         if isinstance(item, XAxisRegion):
             pass # TODO: handle region change
     
-#     @Slot()
-#     def measure(self, plot: pg.PlotItem):
-#         dlg = QDialog(plot.vb.getViewWidget())
-#         dlg.setWindowTitle('Measure')
-
-#         measurementTypesList = QListWidget()
-#         measurementTypesList.addItems([
-#             'Mean', 
-#             'Median', 
-#             'Min', 
-#             'Max', 
-#             'AbsMax', 
-#             'Standard Deviation', 
-#             'Variance'
-#         ])
-#         measurementTypesList.setCurrentRow(0)
-
-#         resultNameLineEdit = QLineEdit()
-#         resultNameLineEdit.setPlaceholderText('defaults to type')
-
-#         measureInEachROICheckBox = QCheckBox('Measure in each visible ROI')
-#         measureInEachROICheckBox.setChecked(True)
-
-#         peakWidthSpinBox = QSpinBox()
-#         peakWidthSpinBox.setValue(0)
-
-#         btns = QDialogButtonBox()
-#         btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-#         btns.accepted.connect(dlg.accept)
-#         btns.rejected.connect(dlg.reject)
-
-#         name_form = QFormLayout()
-#         name_form.setContentsMargins(2, 2, 2, 2)
-#         name_form.setSpacing(2)
-#         name_form.addRow('Result Name', resultNameLineEdit)
-
-#         peak_options_group = QGroupBox('Min, Max, AbsMax')
-#         form = QFormLayout(peak_options_group)
-#         form.setContentsMargins(2, 2, 2, 2)
-#         form.setSpacing(2)
-#         form.addRow('Mean \u00B1Samples', peakWidthSpinBox)
-
-#         right_vbox = QVBoxLayout()
-#         right_vbox.addLayout(name_form)
-#         right_vbox.addWidget(measureInEachROICheckBox)
-#         right_vbox.addStretch()
-#         right_vbox.addWidget(peak_options_group)
-#         right_vbox.addStretch()
-
-#         layout = QVBoxLayout(dlg)
-#         main_hbox = QHBoxLayout()
-#         main_hbox.addWidget(measurementTypesList)
-#         main_hbox.addLayout(right_vbox)
-#         layout.addLayout(main_hbox)
-#         layout.addWidget(btns)
-
-#         dlg.setWindowModality(Qt.ApplicationModal)
-#         if dlg.exec() != QDialog.Accepted:
-#             return
-
-#         # measurement options
-#         measurementType = measurementTypesList.currentItem().text()
-#         resultName = resultNameLineEdit.text().strip()
-#         if resultName == '':
-#             resultName = measurementType
-#         peakWidth = peakWidthSpinBox.value()
+    def measure(self, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self.plots()
         
-#         # x,y data traces to measure
-#         xydata_items = [item for item in plot.vb.listItemsOfType(XYDataItem) if item.isVisible()]
-#         if not xydata_items:
-#             return
+        # name for measure
+        result_name = self._measure_name_edit.text().strip()
+        if not result_name:
+            result_name = self._measure_name_edit.placeholderText()
+                
+        # measure options
+        measure_type = self._measure_type_combobox.currentText()
+        if measure_type in ['Min', 'Max', 'AbsMax']:
+            peak_width = self._peak_width_spinbox.value()
         
-#         # x-axis ROIs
-#         xregions = [item.getRegion() for item in plot.vb.listItemsOfType(XAxisRegionItem) if item.isVisible()]
+        # measure in each plot
+        for plot in plots:
+            data_items = [item for item in plot.listDataItems() if isinstance(item, XYData)]
+            if not data_items:
+                continue
 
-#         # measurements for each data trace
-#         measurements = []
-#         for xydata_item in xydata_items:
-#             # get x,y data
-#             try:
-#                 xarr, var = self.get_xy_data(xydata_item._tree_item.node, xydata_item._tree_item.key)
-#                 xdata: np.ndarray = xarr.values
-#                 ydata: np.ndarray = var.sel(xydata_item._coords).values
-#                 if len(ydata.shape) == 0:
-#                     ydata = ydata.reshape((1,))
-#                 dims = var.dims
-#             except:
-#                 xdata = xydata_item.xData
-#                 ydata = xydata_item.yData
-#                 dims = [self.xdim]
-#             # mask for each measurement point
-#             masks = []
-#             if xregions and measureInEachROICheckBox.isChecked():
-#                 # one mask per xregion
-#                 for xregion in xregions:
-#                     xmin, xmax = xregion
-#                     mask = (xdata >= xmin) & (xdata <= xmax)
-#                     masks.append(mask)
-#             elif xregions:
-#                 # mask for combined xregions
-#                 mask = np.full(xdata.shape, False)
-#                 for xregion in xregions:
-#                     xmin, xmax = xregion
-#                     mask[(xdata >= xmin) & (xdata <= xmax)] = True
-#                 masks = [mask]
-#             else:
-#                 # mask for everything
-#                 mask = np.full(xdata.shape, True)
-#                 masks = [mask]
-#             # measure in each mask
-#             xmeasure = []
-#             ymeasure = []
-#             for mask in masks:
-#                 if not np.any(mask):
-#                     continue
-#                 x = xdata[mask]
-#                 y = ydata[mask]
-#                 if measurementType == 'Mean':
-#                     xmeasure.append(np.median(x))
-#                     ymeasure.append(np.mean(y))
-#                 elif measurementType == 'Median':
-#                     xmeasure.append(np.median(x))
-#                     ymeasure.append(np.median(y))
-#                 elif measurementType == 'Min':
-#                     i = np.argmin(y)
-#                     xmeasure.append(x[i])
-#                     if peakWidth == 0:
-#                         ymeasure.append(y[i])
-#                     else:
-#                         j = np.where(mask)[0][i]
-#                         start, stop = j, j + 1
-#                         for w in range(peakWidth):
-#                             if j - w >= 0 and mask[j - w] and start == j - w + 1:
-#                                 start = j - w
-#                             if j + w < len(mask) and mask[j + w] and stop == j + w:
-#                                 stop = j + w + 1
-#                         ymeasure.append(np.mean(ydata[start:stop]))
-#                 elif measurementType == 'Max':
-#                     i = np.argmax(y)
-#                     xmeasure.append(x[i])
-#                     if peakWidth == 0:
-#                         ymeasure.append(y[i])
-#                     else:
-#                         j = np.where(mask)[0][i]
-#                         start, stop = j, j + 1
-#                         for w in range(peakWidth):
-#                             if j - w >= 0 and mask[j - w] and start == j - w + 1:
-#                                 start = j - w
-#                             if j + w < len(mask) and mask[j + w] and stop == j + w:
-#                                 stop = j + w + 1
-#                         ymeasure.append(np.mean(ydata[start:stop]))
-#                 elif measurementType == 'AbsMax':
-#                     i = np.argmax(np.abs(y))
-#                     xmeasure.append(x[i])
-#                     if peakWidth == 0:
-#                         ymeasure.append(y[i])
-#                     else:
-#                         j = np.where(mask)[0][i]
-#                         start, stop = j, j + 1
-#                         for w in range(peakWidth):
-#                             if j - w >= 0 and mask[j - w] and start == j - w + 1:
-#                                 start = j - w
-#                             if j + w < len(mask) and mask[j + w] and stop == j + w:
-#                                 stop = j + w + 1
-#                         ymeasure.append(np.mean(ydata[start:stop]))
-#                 elif measurementType == 'Standard Deviation':
-#                     xmeasure.append(np.median(x))
-#                     ymeasure.append(np.std(y))
-#                 elif measurementType == 'Variance':
-#                     xmeasure.append(np.median(x))
-#                     ymeasure.append(np.var(y))
-#             if not ymeasure:
-#                 measurements.append(None)
-#                 continue
-#             xmeasure = np.array(xmeasure)
-#             ymeasure = np.array(ymeasure)
-#             order = np.argsort(xmeasure)
-#             xmeasure = xmeasure[order]
-#             ymeasure = ymeasure[order]
-#             shape =[1] * len(dims)
-#             shape[dims.index(self.xdim)] = len(ymeasure)
-#             coords = {}
-#             for dim, coord in xydata_item._coords.items():
-#                 attrs = self._selected_tree_coords[dim].attrs.copy()
-#                 if dim == self.xdim:
-#                     coords[dim] = (dim, xmeasure, attrs)
-#                 else:
-#                     coords[dim] = (dim, np.array([coord], dtype=type(coord)), attrs)
-#             if self.xdim not in coords:
-#                 attrs = self._selected_tree_coords[self.xdim].attrs.copy()
-#                 coords[self.xdim] = (self.xdim, xmeasure, attrs)
-#             measurement = xr.Dataset(
-#                 data_vars={
-#                     xydata_item._tree_item.key: (dims, ymeasure.reshape(shape), var.attrs.copy())
-#                 },
-#                 coords=coords
-#             )
-#             measurement.data_vars[xydata_item._tree_item.key].attrs['style'] = {
-#                 'LineWidth': 2,
-#                 'Marker': 'o'
-#             }
-#             measurements.append(measurement)
-#         numMeasurements = np.sum([1 for measurement in measurements if measurement is not None])
-#         if numMeasurements == 0:
-#             return
-        
-#         # preview measurements
-#         for measurement in measurements:
-#             if measurement is None:
-#                 continue
-#             var_name = list(measurement.data_vars)[0]
-#             var = measurement.data_vars[var_name]
-#             xdata = measurement.coords[self.xdim].values
-#             ydata = np.squeeze(var.values)
-#             if len(ydata.shape) == 0:
-#                 ydata = ydata.reshape((1,))
-#             measurement_item = XYDataItem(x=xdata, y=ydata)
-#             measurement_item.setStyle(XYDataStyleDict({
-#                 'Color': (255, 0, 0),
-#                 'LineWidth': 2,
-#                 'Marker': 'o',
-#             }))
-#             plot.addItem(measurement_item)
-#         answer = QMessageBox.question(plot.vb.getViewWidget(), 'Keep Measurements?', 'Keep measurements?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-#         if answer != QMessageBox.StandardButton.Yes:
-#             row, col, info = self.plot_loc_info(plot)
-#             self.update_plot_items(grid_rows=[row], grid_cols=[col], item_types=[XYDataItem])
-#             return
-        
-#         # add measurements to data tree
-#         parent_tree_nodes = [item._tree_item.node for item in xydata_items]
-#         measure_tree_nodes = []
-#         mergeApproved = None
-#         for parent_node, measurement in zip(parent_tree_nodes, measurements):
-#             # append measurement as child tree node
-#             if resultName in parent_node.children:
-#                 if mergeApproved is None:
-#                     answer = QMessageBox.question(plot.vb.getViewWidget(), 'Merge Result?', 'Merge measurements with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-#                     mergeApproved = (answer == QMessageBox.Yes)
-#                 if not mergeApproved:
-#                     continue
-#                 # merge measurement with existing child dataset (use measurement for any overlap)
-#                 existing_child_node: XarrayTreeNode = parent_node.children[resultName]
-#                 existing_child_node.dataset: xr.Dataset = measurement.combine_first(existing_child_node.dataset)
-#                 measure_tree_nodes.append(existing_child_node)
-#             else:
-#                 # append measurement as new child node
-#                 node = XarrayTreeNode(name=resultName, dataset=measurement, parent=parent_node)
-#                 measure_tree_nodes.append(node)
-        
-#         # update data tree
-#         self.data = self.data
+            # regions
+            view: View = plot.getViewBox()
+            regions: list[tuple[float, float]] = [item.getRegion() for item in view.allChildren() if isinstance(item, XAxisRegion) and item.isVisible()]
 
-#         # make sure newly added measurement nodes are selected and expanded
-#         model: XarrayTreeModel = self._dataTreeView.model()
-#         item: XarrayTreeItem = model.root
-#         while item is not None:
-#             for node in measure_tree_nodes:
-#                 if item.node is node and item.is_var():
-#                     index: QModelIndex = model.createIndex(item.row(), 0, item)
-#                     self._dataTreeView.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-#                     self._dataTreeView.setExpanded(model.parent(index), True)
-#             item = item.next_item_depth_first()
-    
+            # measure for each data item
+            plot._tmp_measures: list[xr.Dataset] = []
+            plot._tmp_measure_tree_items: list[XarrayTreeItem] = []
+
+            for data_item in data_items:
+                tree_item: XarrayTreeItem = data_item.info['tree_item']
+                data_coords: dict = data_item.info['coords']
+
+                # x,y data
+                xarr, yarr = self.get_xy_data(tree_item.node, tree_item.key)
+                if xarr is None or yarr is None:
+                    continue
+                xdata: np.ndarray = xarr.values
+                # generally yarr_coords should be exactly data_coords, but just in case...
+                yarr_coords = {dim: dim_coords for dim, dim_coords in data_coords.items() if dim in yarr.dims}
+                ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
+                if len(ydata.shape) == 0:
+                    ydata = ydata.reshape((1,))
+                
+                # dimensions
+                dims = yarr.dims
+                
+                # mask for each measurement point
+                masks = []
+                if regions and self._measure_per_visible_region_checkbox.isChecked():
+                    # one mask per region
+                    for region in regions:
+                        xmin, xmax = region
+                        mask = (xdata >= xmin) & (xdata <= xmax)
+                        masks.append(mask)
+                elif regions and self._measure_in_visible_regions_only_checkbox.isChecked():
+                    # mask for combined regions
+                    mask = np.full(xdata.shape, False)
+                    for region in regions:
+                        xmin, xmax = xregion
+                        mask[(xdata >= xmin) & (xdata <= xmax)] = True
+                    masks = [mask]
+                else:
+                    # mask for everything
+                    mask = np.full(xdata.shape, True)
+                    masks = [mask]
+                
+                # measure in each mask
+                xmeasure = []
+                ymeasure = []
+                for mask in masks:
+                    if not np.any(mask):
+                        continue
+                    x = xdata[mask]
+                    y = ydata[mask]
+                    if measure_type == 'Mean':
+                        xmeasure.append(np.median(x))
+                        ymeasure.append(np.mean(y))
+                    elif measure_type == 'Median':
+                        xmeasure.append(np.median(x))
+                        ymeasure.append(np.median(y))
+                    elif measure_type == 'Min':
+                        i = np.argmin(y)
+                        xmeasure.append(x[i])
+                        if peak_width == 0:
+                            ymeasure.append(y[i])
+                        else:
+                            j = np.where(mask)[0][i]
+                            start, stop = j, j + 1
+                            for w in range(peak_width):
+                                if j - w >= 0 and mask[j - w] and start == j - w + 1:
+                                    start = j - w
+                                if j + w < len(mask) and mask[j + w] and stop == j + w:
+                                    stop = j + w + 1
+                            ymeasure.append(np.mean(ydata[start:stop]))
+                    elif measure_type == 'Max':
+                        i = np.argmax(y)
+                        xmeasure.append(x[i])
+                        if peak_width == 0:
+                            ymeasure.append(y[i])
+                        else:
+                            j = np.where(mask)[0][i]
+                            start, stop = j, j + 1
+                            for w in range(peak_width):
+                                if j - w >= 0 and mask[j - w] and start == j - w + 1:
+                                    start = j - w
+                                if j + w < len(mask) and mask[j + w] and stop == j + w:
+                                    stop = j + w + 1
+                            ymeasure.append(np.mean(ydata[start:stop]))
+                    elif measure_type == 'AbsMax':
+                        i = np.argmax(np.abs(y))
+                        xmeasure.append(x[i])
+                        if peak_width == 0:
+                            ymeasure.append(y[i])
+                        else:
+                            j = np.where(mask)[0][i]
+                            start, stop = j, j + 1
+                            for w in range(peak_width):
+                                if j - w >= 0 and mask[j - w] and start == j - w + 1:
+                                    start = j - w
+                                if j + w < len(mask) and mask[j + w] and stop == j + w:
+                                    stop = j + w + 1
+                            ymeasure.append(np.mean(ydata[start:stop]))
+                    elif measure_type == 'Standard Deviation':
+                        xmeasure.append(np.median(x))
+                        ymeasure.append(np.std(y))
+                    elif measure_type == 'Variance':
+                        xmeasure.append(np.median(x))
+                        ymeasure.append(np.var(y))
+                
+                if not ymeasure:
+                    # measurements.append(None)
+                    continue
+                
+                # order measures by x
+                xmeasure = np.array(xmeasure)
+                ymeasure = np.array(ymeasure)
+                order = np.argsort(xmeasure)
+                xmeasure = xmeasure[order]
+                ymeasure = ymeasure[order]
+
+                # measures as xarray dataset
+                shape =[1] * len(dims)
+                shape[dims.index(self.xdim)] = len(ymeasure)
+                measure_coords = {}
+                for dim, coord in data_coords.items():
+                    attrs = self._selected_tree_coords[dim].attrs.copy()
+                    if dim == self.xdim:
+                        measure_coords[dim] = xr.DataArray(dims=[dim], data=xmeasure, attrs=attrs)
+                    else:
+                        coord_values = np.array(coord.values).reshape((1,))
+                        measure_coords[dim] = xr.DataArray(dims=[dim], data=coord_values, attrs=attrs)
+                if self.xdim not in measure_coords:
+                    attrs = self._selected_tree_coords[self.xdim].attrs.copy()
+                    measure_coords[self.xdim] = xr.DataArray(dims=[self.xdim], data=xmeasure, attrs=attrs)
+                attrs = yarr.attrs.copy()
+                if 'style' not in attrs:
+                    attrs['style'] = {}
+                attrs['style']['LineStyle'] = 'none'
+                attrs['style']['Marker'] = 'o'
+                attrs['style']['MarkerEdgeWidth'] = 2
+                measure = xr.Dataset(
+                    data_vars={
+                        tree_item.key: xr.DataArray(dims=dims, data=ymeasure.reshape(shape), attrs=attrs)
+                    },
+                    coords=measure_coords
+                )
+                plot._tmp_measures.append(measure)
+                plot._tmp_measure_tree_items.append(tree_item)
+        
+        # preview measurements
+        for plot in plots:
+            plot._tmp_measure_items = []
+            for measure in plot._tmp_measures:
+                var_name = list(measure.data_vars)[0]
+                var = measure.data_vars[var_name]
+                xdata = measure.coords[self.xdim].values
+                ydata = np.squeeze(var.values)
+                if len(ydata.shape) == 0:
+                    ydata = ydata.reshape((1,))
+                pen = pg.mkPen(color=(255, 0, 0), width=2)
+                measure_item = XYData(x=xdata, y=ydata, pen=pen, symbol='o', symbolSize=10, symbolPen=pen, symbolBrush=(255, 0, 0, 0))
+                plot.addItem(measure_item)
+                plot._tmp_measure_items.append(measure_item)
+        
+        # query user to keep measures
+        answer = QMessageBox.question(self, 'Keep Measures?', 'Keep measurements?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            for plot in plots:
+                for measure_item in plot._tmp_measure_items:
+                    plot.removeItem(measure_item)
+                    measure_item.deleteLater()
+                plot._tmp_measure_items = []
+                plot._tmp_measures = []
+                plot._tmp_measure_tree_items = []
+            return
+        
+        # add measures to data tree
+        measure_tree_nodes = []
+        merge_approved = None
+        for plot in plots:
+            for tree_item, measure in zip(plot._tmp_measure_tree_items, plot._tmp_measures):
+                parent_node: XarrayTreeNode = tree_item.node
+                # append measure as child tree node
+                if result_name in parent_node.children:
+                    if merge_approved is None:
+                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge measures with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        merge_approved = (answer == QMessageBox.Yes)
+                    if not merge_approved:
+                        continue
+                    # merge measurement with existing child dataset (use measurement for any overlap)
+                    existing_child_node: XarrayTreeNode = parent_node.children[result_name]
+                    existing_child_node.dataset: xr.Dataset = measure.combine_first(existing_child_node.dataset)
+                    measure_tree_nodes.append(existing_child_node)
+                else:
+                    # append measurement as new child node
+                    node = XarrayTreeNode(name=result_name, dataset=measure, parent=parent_node)
+                    measure_tree_nodes.append(node)
+        
+        # update data tree
+        self.data = self.data
+
+        # make sure newly added measure nodes are selected and expanded
+        model: XarrayTreeModel = self._data_treeview.model()
+        item: XarrayTreeItem = model.root
+        while item is not None:
+            for node in measure_tree_nodes:
+                if item.node is node and item.is_var():
+                    index: QModelIndex = model.createIndex(item.row(), 0, item)
+                    self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                    self._data_treeview.setExpanded(model.parent(index), True)
+            item = item.next_depth_first()
+
 #     @Slot()
 #     def curve_fit(self, plot: pg.PlotItem):
 #         options = {}
