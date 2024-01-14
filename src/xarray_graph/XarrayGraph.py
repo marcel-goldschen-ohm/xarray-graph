@@ -652,10 +652,14 @@ class XarrayGraph(QMainWindow):
         self._equation_params_table = QTableWidget(0, 5)
         self._equation_params_table.setHorizontalHeaderLabels(['Param', 'Value', 'Vary', 'Min', 'Max'])
         self._equation_params_table.verticalHeader().setVisible(False)
-        self._equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # self._equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         self._equation_eval_button = QPushButton('Evaluate')
-        self._equation_clear_button = QPushButton('Clear')
+        self._equation_eval_button.pressed.connect(lambda: self.curve_fit(eval_equation_only=True))
+
+        self._equation_clear_eval_button = QPushButton('Clear')
+        self._equation_clear_eval_button.pressed.connect(self.clear_curve_fits)
 
         self._equation_group = QGroupBox('Equation')
         grid = QGridLayout(self._equation_group)
@@ -664,7 +668,7 @@ class XarrayGraph(QMainWindow):
         grid.addWidget(self._equation_edit, 0, 0, 1, 2)
         grid.addWidget(self._equation_params_table, 1, 0, 1, 2)
         grid.addWidget(self._equation_eval_button, 2, 0)
-        grid.addWidget(self._equation_clear_button, 2, 1)
+        grid.addWidget(self._equation_clear_eval_button, 2, 1)
 
         self._curve_fit_optimize_in_visible_regions_checkbox = QCheckBox('Optimize in visible regions')
         self._curve_fit_optimize_in_visible_regions_checkbox.setChecked(True)
@@ -681,7 +685,8 @@ class XarrayGraph(QMainWindow):
         form.setHorizontalSpacing(5)
         form.addRow('Result name', self._curve_fit_name_edit)
 
-        self._fit_button = QPushButton('Fit')
+        self._curve_fit_button = QPushButton('Fit')
+        self._curve_fit_button.pressed.connect(self.curve_fit)
 
         fit_group = QGroupBox('Curve fit')
         vbox = QVBoxLayout(fit_group)
@@ -694,7 +699,7 @@ class XarrayGraph(QMainWindow):
         vbox.addWidget(self._curve_fit_optimize_in_visible_regions_checkbox)
         vbox.addWidget(self._curve_fit_evaluate_in_visible_regions_checkbox)
         vbox.addWidget(self._curve_fit_name_wrapper)
-        vbox.addWidget(self._fit_button)
+        vbox.addWidget(self._curve_fit_button)
         self.on_curve_fit_type_changed()
 
         panel = QWidget()
@@ -723,6 +728,7 @@ class XarrayGraph(QMainWindow):
     def on_curve_fit_equation_changed(self) -> None:
         equation = self._equation_edit.text().strip()
         if equation == '':
+            self._curve_fit_model = None
             param_names = []
         else:
             self._curve_fit_model = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
@@ -741,21 +747,46 @@ class XarrayGraph(QMainWindow):
         for row, name in enumerate(param_names):
             value = self._equation_params[name]['value']
             vary = self._equation_params[name]['vary']
-            min = self._equation_params[name]['min']
-            max = self._equation_params[name]['max']
+            value_min = self._equation_params[name]['min']
+            value_max = self._equation_params[name]['max']
 
             name_item = QTableWidgetItem(name)
+            name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             value_item = QTableWidgetItem(f'{value:.6g}')
             vary_item = QTableWidgetItem()
             vary_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             vary_item.setCheckState(Qt.CheckState.Checked if vary else Qt.CheckState.Unchecked)
-            min_item = QTableWidgetItem(str(min))
-            max_item = QTableWidgetItem(str(max))
+            min_item = QTableWidgetItem(str(value_min))
+            max_item = QTableWidgetItem(str(value_max))
 
             for col, item in enumerate([name_item, value_item, vary_item, min_item, max_item]):
                 self._equation_params_table.setItem(row, col, item)
 
         self._equation_params_table.resizeColumnsToContents()
+    
+    def _update_curve_fit_model(self) -> None:
+        for row in range(self._equation_params_table.rowCount()):
+            name = self._equation_params_table.item(row, 0).text()
+            try:
+                value = float(self._equation_params_table.item(row, 1).text())
+            except:
+                value = 0
+            vary = self._equation_params_table.item(row, 2).checkState() == Qt.CheckState.Checked
+            try:
+                value_min = float(self._equation_params_table.item(row, 3).text())
+            except:
+                value_min = -np.inf
+            try:
+                value_max = float(self._equation_params_table.item(row, 4).text())
+            except:
+                value_max = np.inf
+            self._equation_params[name] = {
+                'value': value,
+                'vary': vary,
+                'min': value_min,
+                'max': value_max
+            }
+            self._curve_fit_model.set_param_hint(name, **self._equation_params[name])
     
     def setup_settings_control_panel(self) -> None:
         button = QToolButton()
@@ -1566,7 +1597,6 @@ class XarrayGraph(QMainWindow):
                     x = xdata[mask]
                     y = ydata[mask]
                     if measure_type == 'Mean':
-                        print(existing_median(x), x)
                         xmeasure.append(existing_median(x))
                         ymeasure.append(np.mean(y))
                     elif measure_type == 'Median':
@@ -1609,7 +1639,6 @@ class XarrayGraph(QMainWindow):
                         ymeasure.append(np.var(y))
                 
                 if not ymeasure:
-                    # measurements.append(None)
                     continue
                 
                 # order measures by x
@@ -1667,9 +1696,9 @@ class XarrayGraph(QMainWindow):
         answer = QMessageBox.question(self, 'Keep Measures?', 'Keep measurements?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
             for plot in plots:
-                for measure_item in plot._tmp_measure_items:
-                    plot.removeItem(measure_item)
-                    measure_item.deleteLater()
+                for item in plot._tmp_measure_items:
+                    plot.removeItem(item)
+                    item.deleteLater()
                 plot._tmp_measure_items = []
                 plot._tmp_measures = []
                 plot._tmp_measure_tree_items = []
@@ -1711,472 +1740,206 @@ class XarrayGraph(QMainWindow):
                     self._data_treeview.setExpanded(model.parent(index), True)
             item = item.next_depth_first()
 
-#     @Slot()
-#     def curve_fit(self, plot: pg.PlotItem):
-#         options = {}
-#         dlg = CurveFitDialog(options, plot.vb.getViewWidget())
-#         dlg.setWindowTitle('Curve Fit')
-#         dlg.setWindowModality(Qt.ApplicationModal)
-#         if dlg.exec() != QDialog.Accepted:
-#             return
+    def curve_fit(self, plots: list[Plot] = None, eval_equation_only: bool = False) -> None:
+        if plots is None:
+            plots = self.plots()
         
-#         # fit options
-#         options: dict = dlg.options()
-#         resultName = options['resultName'].strip()
-#         if resultName == '':
-#             resultName = options['fitType']
-
-#         # x,y data traces to measure
-#         xydata_items = [item for item in plot.vb.listItemsOfType(XYDataItem) if item.isVisible()]
-#         if not xydata_items:
-#             return
+        # name for fit
+        result_name = self._curve_fit_name_edit.text().strip()
+        if not result_name:
+            result_name = self._curve_fit_name_edit.placeholderText()
+                
+        # fit options
+        fit_type = self._curve_fit_type_combobox.currentText()
+        if fit_type == 'Polynomial':
+            degree = self._polynomial_degree_spinbox.value()
+        elif fit_type == 'Spline':
+            segments = self._spline_segments_spinbox.value()
+        elif fit_type == 'Equation':
+            self._update_curve_fit_model()
+            params = self._curve_fit_model.make_params()
         
-#         # x-axis ROIs
-#         xregions = [item.getRegion() for item in plot.vb.listItemsOfType(XAxisRegionItem) if item.isVisible()]
+        # fit in each plot
+        for plot in plots:
+            data_items = [item for item in plot.listDataItems() if isinstance(item, XYData)]
+            if not data_items:
+                continue
 
-#         # init fit equation
-#         if 'equation' in options:
-#             equation = options['equation']
-#             fitModel = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
-#             for param in fitModel.param_names:
-#                 initialValue = options['params'][param]['value']
-#                 vary = options['params'][param]['vary']
-#                 lowerBound, upperBound = options['params'][param]['bounds']
-#                 if initialValue is None:
-#                     if not vary:
-#                         QErrorMessage(plot.vb.getViewWidget()).showMessage(f'Parameter {param} is fixed but has no initial value.')
-#                         return
-#                     initialValue = 1
-#                 if initialValue < lowerBound:
-#                     initialValue = lowerBound
-#                 if initialValue > upperBound:
-#                     initialValue = upperBound
-#                 hint = {}
-#                 hint['value'] = initialValue
-#                 if lowerBound != -np.inf:
-#                     hint['min'] = lowerBound
-#                 if upperBound != np.inf:
-#                     hint['max'] = upperBound
-#                 fitModel.set_param_hint(param, **hint)
-#             params = fitModel.make_params()
+            # regions
+            view: View = plot.getViewBox()
+            regions: list[tuple[float, float]] = [item.getRegion() for item in view.allChildren() if isinstance(item, XAxisRegion) and item.isVisible()]
 
-#         # fits for each data trace
-#         fits = []
-#         for xydata_item in xydata_items:
-#             # get x,y data
-#             try:
-#                 xarr, var = self.get_xy_data(xydata_item._tree_item.node, xydata_item._tree_item.key)
-#                 xdata: np.ndarray = xarr.values
-#                 ydata: np.ndarray = var.sel(xydata_item._coords).values
-#                 if len(ydata.shape) == 0:
-#                     ydata = ydata.reshape((1,))
-#                 dims = var.dims
-#             except:
-#                 xdata = xydata_item.xData
-#                 ydata = xydata_item.yData
-#                 dims = [self.xdim]
-#             # optimization mask
-#             if xregions and options['optimizeWithinROIsOnly']:
-#                 # mask for combined xregions
-#                 mask = np.full(xdata.shape, False)
-#                 for xregion in xregions:
-#                     xmin, xmax = xregion
-#                     mask[(xdata >= xmin) & (xdata <= xmax)] = True
-#                 xopt = xdata[mask]
-#                 yopt = ydata[mask]
-#             else:
-#                 # use everything
-#                 xopt = xdata
-#                 yopt = ydata
-#             # output mask
-#             if xregions and options['fitWithinROIsOnly']:
-#                 # mask for combined xregions
-#                 mask = np.full(xdata.shape, False)
-#                 for xregion in xregions:
-#                     xmin, xmax = xregion
-#                     mask[(xdata >= xmin) & (xdata <= xmax)] = True
-#                 xfit = xdata[mask]
-#             else:
-#                 # use everything
-#                 xfit = xdata
-#             # fit
-#             fit_attrs = {
-#                 'type': options['fitType']
-#             }
-#             if options['fitType'] == 'Mean':
-#                 yfit = np.full(len(xfit), np.mean(yopt))
-#             elif options['fitType'] == 'Median':
-#                 yfit = np.full(len(xfit), np.median(yopt))
-#             elif options['fitType'] == 'Polynomial':
-#                 degree = options['degree']
-#                 coef = np.polyfit(xopt, yopt, degree)
-#                 yfit = np.polyval(coef, xfit)
-#                 fit_attrs['degree'] = degree
-#                 fit_attrs['coefficients'] = coef
-#             elif options['fitType'] == 'Spline':
-#                 n_segments = options['segments']
-#                 segmentLength = max(1, int(len(yopt) / n_segments))
-#                 knots = xopt[segmentLength:-segmentLength:segmentLength]
-#                 if len(knots) < 2:
-#                     knots = xopt[[1, -2]]
-#                 knots, coef, degree = sp.interpolate.splrep(xopt, yopt, t=knots)
-#                 yfit = sp.interpolate.splev(xfit, (knots, coef, degree), der=0)
-#                 fit_attrs['segments'] = n_segments
-#                 fit_attrs['knots'] = knots
-#                 fit_attrs['coefficients'] = coef
-#                 fit_attrs['degree'] = degree
-#             elif 'equation' in options:
-#                 equation = options['equation']
-#                 result = fitModel.fit(yopt, params, x=xopt)
-#                 print('----------')
-#                 print(f'Fit: var={var.name}, coords={xydata_item._coords}')
-#                 print(result.fit_report())
-#                 print('----------')
-#                 yfit = fitModel.eval(result.params, x=xfit)
-#                 fit_attrs['equation'] = equation
-#                 fit_attrs['params'] = {
-#                     param: {
-#                         'value': float(result.params[param].value),
-#                         'stderr': float(result.params[param].stderr),
-#                         'init_value': float(result.params[param].init_value),
-#                         'vary': bool(result.params[param].vary),
-#                         'min': float(result.params[param].min),
-#                         'max': float(result.params[param].max)
-#                     }
-#                     for param in result.params
-#                 }
-#             else:
-#                 fits.append(None)
-#                 continue
-#             shape =[1] * len(dims)
-#             shape[dims.index(self.xdim)] = len(yfit)
-#             coords = {}
-#             for dim, coord in xydata_item._coords.items():
-#                 attrs = self._selected_tree_coords[dim].attrs.copy()
-#                 if dim == self.xdim:
-#                     coords[dim] = (dim, xfit, attrs)
-#                 else:
-#                     coords[dim] = (dim, np.array([coord], dtype=type(coord)), attrs)
-#             if self.xdim not in coords:
-#                 attrs = self._selected_tree_coords[self.xdim].attrs.copy()
-#                 coords[self.xdim] = (self.xdim, xfit, attrs)
-#             attrs = var.attrs.copy()
-#             if 'fit' not in attrs:
-#                 attrs['fit'] = {}
-#             coord_key = ', '.join([f'{dim}: {coord}' for dim, coord in xydata_item._coords.items()])
-#             attrs['fit'][coord_key] = fit_attrs
-#             fit = xr.Dataset(
-#                 data_vars={
-#                     xydata_item._tree_item.key: (dims, yfit.reshape(shape), attrs)
-#                 },
-#                 coords=coords
-#             )
-#             fits.append(fit)
-#         numFits = np.sum([1 for fit in fits if fit is not None])
-#         if numFits == 0:
-#             return
+            # fit for each data item
+            plot._tmp_fits: list[xr.Dataset] = []
+            plot._tmp_fit_tree_items: list[XarrayTreeItem] = []
+
+            for data_item in data_items:
+                tree_item: XarrayTreeItem = data_item.info['tree_item']
+                data_coords: dict = data_item.info['coords']
+
+                # x,y data
+                xarr, yarr = self.get_xy_data(tree_item.node, tree_item.key)
+                if xarr is None or yarr is None:
+                    continue
+                xdata: np.ndarray = xarr.values
+                # generally yarr_coords should be exactly data_coords, but just in case...
+                yarr_coords = {dim: dim_coords for dim, dim_coords in data_coords.items() if dim in yarr.dims}
+                ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
+                if len(ydata.shape) == 0:
+                    ydata = ydata.reshape((1,))
+                
+                # dimensions
+                dims = yarr.dims
+                
+                # region mask for fit optimization and/or evaluation
+                if regions and (self._curve_fit_optimize_in_visible_regions_checkbox.isChecked() or self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked()):
+                    # mask for combined regions
+                    regions_mask = np.full(xdata.shape, False)
+                    for region in regions:
+                        xmin, xmax = region
+                        regions_mask[(xdata >= xmin) & (xdata <= xmax)] = True
+
+                if regions and self._curve_fit_optimize_in_visible_regions_checkbox.isChecked():
+                    xinput = xdata[regions_mask]
+                    yinput = ydata[regions_mask]
+                else:
+                    xinput = xdata
+                    yinput = ydata
+
+                if regions and self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked():
+                    xoutput = xdata[regions_mask]
+                else:
+                    xoutput = xdata
+                
+                # fit
+                if fit_type == 'Mean':
+                    youtput = np.full(len(xoutput), np.mean(yinput))
+                elif fit_type == 'Median':
+                    youtput = np.full(len(xoutput), np.median(yinput))
+                elif fit_type == 'Polynomial':
+                    coef = np.polyfit(xinput, yinput, degree)
+                    youtput = np.polyval(coef, xoutput)
+                elif fit_type == 'Spline':
+                    segment_length = max(1, int(len(xinput) / segments))
+                    knots = xinput[segment_length:-segment_length:segment_length]
+                    if len(knots) < 2:
+                        knots = xinput[[1, -2]]
+                    knots, coef, degree = sp.interpolate.splrep(xinput, yinput, t=knots)
+                    youtput = sp.interpolate.splev(xoutput, (knots, coef, degree), der=0)
+                elif fit_type == 'Equation':
+                    result = self._curve_fit_model.fit(yinput, params=params, x=xinput)
+                    if DEBUG:
+                        print(result.fit_report())
+                    youtput = self._curve_fit_model.eval(params=result.params, x=xoutput)
+
+                # fit as xarray dataset
+                shape =[1] * len(dims)
+                shape[dims.index(self.xdim)] = len(xoutput)
+                fit_coords = {}
+                for dim, coord in data_coords.items():
+                    attrs = self._selected_tree_coords[dim].attrs.copy()
+                    if dim == self.xdim:
+                        fit_coords[dim] = xr.DataArray(dims=[dim], data=xoutput, attrs=attrs)
+                    else:
+                        coord_values = np.array(coord.values).reshape((1,))
+                        fit_coords[dim] = xr.DataArray(dims=[dim], data=coord_values, attrs=attrs)
+                if self.xdim not in fit_coords:
+                    attrs = self._selected_tree_coords[self.xdim].attrs.copy()
+                    fit_coords[self.xdim] = xr.DataArray(dims=[self.xdim], data=xoutput, attrs=attrs)
+                attrs = yarr.attrs.copy()
+                fit = xr.Dataset(
+                    data_vars={
+                        tree_item.key: xr.DataArray(dims=dims, data=youtput.reshape(shape), attrs=attrs)
+                    },
+                    coords=fit_coords
+                )
+                plot._tmp_fits.append(fit)
+                plot._tmp_fit_tree_items.append(tree_item)
         
-#         # preview fits
-#         for fit in fits:
-#             if fit is None:
-#                 continue
-#             var_name = list(fit.data_vars)[0]
-#             var = fit.data_vars[var_name]
-#             xdata = fit.coords[self.xdim].values
-#             ydata = np.squeeze(var.values)
-#             if len(ydata.shape) == 0:
-#                 ydata = ydata.reshape((1,))
-#             fit_item = XYDataItem(x=xdata, y=ydata)
-#             fit_item.set_style({
-#                 'Color': (255, 0, 0),
-#                 'LineWidth': 2,
-#             })
-#             plot.addItem(fit_item)
-#         answer = QMessageBox.question(plot.vb.getViewWidget(), 'Keep Fits?', 'Keep fits?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-#         if answer != QMessageBox.StandardButton.Yes:
-#             row, col, info = self.plot_loc_info(plot)
-#             self.update_plot_items(grid_rows=[row], grid_cols=[col], item_types=[XYDataItem])
-#             return
+        # preview fits
+        for plot in plots:
+            plot._tmp_fit_items = []
+            for fit in plot._tmp_fits:
+                var_name = list(fit.data_vars)[0]
+                var = fit.data_vars[var_name]
+                xdata = fit.coords[self.xdim].values
+                ydata = np.squeeze(var.values)
+                if len(ydata.shape) == 0:
+                    ydata = ydata.reshape((1,))
+                pen = pg.mkPen(color=(255, 0, 0), width=2)
+                fit_item = XYData(x=xdata, y=ydata, pen=pen)
+                plot.addItem(fit_item)
+                plot._tmp_fit_items.append(fit_item)
         
-#         # add fits to data tree
-#         parent_tree_nodes = [item._tree_item.node for item in xydata_items]
-#         fit_tree_nodes = []
-#         mergeApproved = None
-#         for parent_node, fit in zip(parent_tree_nodes, fits):
-#             # append fit as child tree node
-#             if resultName in parent_node.children:
-#                 if mergeApproved is None:
-#                     answer = QMessageBox.question(plot.vb.getViewWidget(), 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-#                     mergeApproved = (answer == QMessageBox.Yes)
-#                 if not mergeApproved:
-#                     continue
-#                 # merge fit with existing child dataset (use fit for any overlap)
-#                 existing_child_node: XarrayTreeNode = parent_node.children[resultName]
-#                 try:
-#                     var_name = list(fit.data_vars)[0]
-#                     existing_var = existing_child_node.dataset.data_vars[var_name]
-#                     fit_attrs = existing_var.attrs['fit']
-#                     for key, value in fit.data_vars[var_name].attrs['fit'].items():
-#                         fit_attrs[key] = value
-#                 except:
-#                     fit_attrs = fit.data_vars[var_name].attrs['fit']
-#                 existing_child_node.dataset: xr.Dataset = fit.combine_first(existing_child_node.dataset)
-#                 existing_child_node.dataset.data_vars[var_name].attrs['fit'] = fit_attrs
-#                 fit_tree_nodes.append(existing_child_node)
-#             else:
-#                 # append fit as new child node
-#                 node = XarrayTreeNode(name=resultName, dataset=fit, parent=parent_node)
-#                 fit_tree_nodes.append(node)
+        # update equation params table with final fit params
+        if fit_type == 'Equation':
+            for row in range(self._equation_params_table.rowCount()):
+                name = self._equation_params_table.item(row, 0).text()
+                if result.params[name].vary:
+                    value_item = self._equation_params_table.item(row, 1)
+                    value_item.setText(f'{result.params[name].value:.6g}')
+            self._equation_params_table.resizeColumnToContents(1)
+            if eval_equation_only:
+                return
         
-#         # update data tree
-#         self.data = self.data
+        # query user to keep fits
+        answer = QMessageBox.question(self, 'Keep Fits?', 'Keep fits?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            for plot in plots:
+                for item in plot._tmp_fit_items:
+                    plot.removeItem(item)
+                    item.deleteLater()
+                plot._tmp_fit_items = []
+                plot._tmp_fits = []
+                plot._tmp_fit_tree_items = []
+            return
+        
+        # add fits to data tree
+        fit_tree_nodes = []
+        merge_approved = None
+        for plot in plots:
+            for tree_item, fit in zip(plot._tmp_fit_tree_items, plot._tmp_fits):
+                parent_node: XarrayTreeNode = tree_item.node
+                # append measure as child tree node
+                if result_name in parent_node.children:
+                    if merge_approved is None:
+                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        merge_approved = (answer == QMessageBox.Yes)
+                    if not merge_approved:
+                        continue
+                    # merge measurement with existing child dataset (use measurement for any overlap)
+                    existing_child_node: XarrayTreeNode = parent_node.children[result_name]
+                    existing_child_node.dataset: xr.Dataset = fit.combine_first(existing_child_node.dataset)
+                    fit_tree_nodes.append(existing_child_node)
+                else:
+                    # append measurement as new child node
+                    node = XarrayTreeNode(name=result_name, dataset=fit, parent=parent_node)
+                    fit_tree_nodes.append(node)
+        
+        # update data tree
+        self.data = self.data
 
-#         # make sure newly added fit nodes are selected and expanded
-#         model: XarrayTreeModel = self._dataTreeView.model()
-#         item: XarrayTreeItem = model.root
-#         while item is not None:
-#             for node in fit_tree_nodes:
-#                 if item.node is node and item.is_var():
-#                     index: QModelIndex = model.createIndex(item.row(), 0, item)
-#                     self._dataTreeView.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-#                     self._dataTreeView.setExpanded(model.parent(index), True)
-#             item = item.next_item_depth_first()
-
-   
-# class CurveFitDialog(QDialog):
-#     def __init__(self, options: dict, *args, **kwargs):
-#         QDialog.__init__(self, *args, **kwargs)
-#         if options is None:
-#             options = {}
-
-#         self.fitTypes = {
-#             'Mean': '', 
-#             'Median': '', 
-#             'Line': 'a * x + b', 
-#             'Polynomial': '', 
-#             'Spline': '', 
-#             'Exponential Decay': 'a * exp(-b * x) + c', 
-#             'Exponential Rise': 'a * (1 - exp(-b * x)) + c', 
-#             'Hill Equation': 'a / (1 + (K / x)**n)', 
-#             'Custom': ''
-#             }
-#         self.fitTypeSelectionBox = QListWidget()
-#         self.fitTypeSelectionBox.addItems(self.fitTypes.keys())
-#         self.fitTypeSelectionBox.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
-#         self.fitTypeSelectionBox.currentItemChanged.connect(self.onEquationSelected)
-
-#         self.resultNameLineEdit = QLineEdit()
-#         self.resultNameLineEdit.setPlaceholderText('defaults to type')
-
-#         self.optimizeWithinROIsOnlyCheckBox = QCheckBox('Optimize within visible ROIs only')
-#         self.optimizeWithinROIsOnlyCheckBox.setChecked(True)
-
-#         self.fitWithinROIsOnlyCheckBox = QCheckBox('Fit within visible ROIs only')
-#         self.fitWithinROIsOnlyCheckBox.setChecked(False)
-
-#         self.equationEdit = QLineEdit()
-#         self.equationEdit.setPlaceholderText('a * x**2 + b')
-#         self.equationEdit.textEdited.connect(self.onEquationChanged)
-#         self._customEquation = ''
-
-#         self.paramNames = []
-#         self.paramInitialValueEdits = {}
-#         self.paramFixedCheckBoxes = {}
-#         self.paramLowerBoundEdits = {}
-#         self.paramUpperBoundEdits = {}
-
-#         self.paramsGrid = QGridLayout()
-#         self.paramsGrid.addWidget(QLabel('Parameter'), 0, 0)
-#         self.paramsGrid.addWidget(QLabel('Initial Value'), 0, 1)
-#         self.paramsGrid.addWidget(QLabel('Fixed'), 0, 2)
-#         self.paramsGrid.addWidget(QLabel('Lower Bound'), 0, 3)
-#         self.paramsGrid.addWidget(QLabel('Upper Bound'), 0, 4)
-
-#         name_form = QFormLayout()
-#         name_form.setContentsMargins(2, 2, 2, 2)
-#         name_form.setSpacing(2)
-#         name_form.addRow('Result Name', self.resultNameLineEdit)
-
-#         self.equationGroupBox = QGroupBox('Equation: y = f(x)')
-#         vbox = QVBoxLayout(self.equationGroupBox)
-#         vbox.setContentsMargins(5, 5, 5, 5)
-#         vbox.setSpacing(5)
-#         vbox.addWidget(self.equationEdit)
-#         vbox.addLayout(self.paramsGrid)
-
-#         self.polynomialDegreeSpinBox = QSpinBox()
-#         self.polynomialDegreeSpinBox.setValue(2)
-
-#         self.polynomialGroupBox = QGroupBox('Polynomial')
-#         form = QFormLayout(self.polynomialGroupBox)
-#         form.setContentsMargins(5, 5, 5, 5)
-#         form.setSpacing(5)
-#         form.addRow('Degree', self.polynomialDegreeSpinBox)
-
-#         self.splineNumSegmentsSpinBox = QSpinBox()
-#         self.splineNumSegmentsSpinBox.setValue(10)
-
-#         self.splineGroupBox = QGroupBox('Spline')
-#         form = QFormLayout(self.splineGroupBox)
-#         form.setContentsMargins(5, 5, 5, 5)
-#         form.setSpacing(5)
-#         form.addRow('# Segments', self.splineNumSegmentsSpinBox)
-
-#         btns = QDialogButtonBox()
-#         btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-#         btns.accepted.connect(self.accept)
-#         btns.rejected.connect(self.reject)
-
-#         vbox = QVBoxLayout()
-#         vbox.setContentsMargins(0, 0, 0, 0)
-#         vbox.setSpacing(5)
-#         vbox.addLayout(name_form)
-#         vbox.addWidget(self.optimizeWithinROIsOnlyCheckBox)
-#         vbox.addWidget(self.fitWithinROIsOnlyCheckBox)
-#         vbox.addStretch()
-#         vbox.addWidget(self.equationGroupBox)
-#         vbox.addWidget(self.polynomialGroupBox)
-#         vbox.addWidget(self.splineGroupBox)
-#         vbox.addStretch()
-
-#         hbox = QHBoxLayout()
-#         hbox.setContentsMargins(0, 0, 0, 0)
-#         hbox.setSpacing(5)
-#         hbox.addWidget(self.fitTypeSelectionBox)
-#         hbox.addLayout(vbox)
-
-#         mainLayout = QVBoxLayout(self)
-#         mainLayout.addLayout(hbox)
-#         mainLayout.addWidget(btns)
-
-#         if 'fitType' in options:
-#             index = list(self.fitTypes.keys()).index(options['fitType'])
-#             if index is not None and index != -1:
-#                 self.fitTypeSelectionBox.setCurrentRow(index)
-#                 self.onEquationSelected()
-#             if options['fitType'] == 'Custom' and 'equation' in options:
-#                 self.equationEdit.setText(options['equation'])
-#                 self._customEquation = options['equation']
+        # make sure newly added fit nodes are selected and expanded
+        model: XarrayTreeModel = self._data_treeview.model()
+        item: XarrayTreeItem = model.root
+        while item is not None:
+            for node in fit_tree_nodes:
+                if item.node is node and item.is_var():
+                    index: QModelIndex = model.createIndex(item.row(), 0, item)
+                    self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                    self._data_treeview.setExpanded(model.parent(index), True)
+            item = item.next_depth_first()
     
-#     def sizeHint(self):
-#         self.fitTypeSelectionBox.setMinimumWidth(self.fitTypeSelectionBox.sizeHintForColumn(0))
-#         return QSize(600, 400)
-    
-#     def onEquationSelected(self):
-#         fitType = self.fitTypeSelectionBox.currentItem().text()
-#         if fitType == 'Mean':
-#             self.equationGroupBox.setVisible(False)
-#             self.polynomialGroupBox.setVisible(False)
-#             self.splineGroupBox.setVisible(False)
-#         elif fitType == 'Median':
-#             self.equationGroupBox.setVisible(False)
-#             self.polynomialGroupBox.setVisible(False)
-#             self.splineGroupBox.setVisible(False)
-#         elif fitType == 'Polynomial':
-#             self.equationGroupBox.setVisible(False)
-#             self.polynomialGroupBox.setVisible(True)
-#             self.splineGroupBox.setVisible(False)
-#         elif fitType == 'Spline':
-#             self.equationGroupBox.setVisible(False)
-#             self.polynomialGroupBox.setVisible(False)
-#             self.splineGroupBox.setVisible(True)
-#         else:
-#             self.equationGroupBox.setVisible(True)
-#             self.polynomialGroupBox.setVisible(False)
-#             self.splineGroupBox.setVisible(False)
-#             if fitType == 'Custom':
-#                 self.equationEdit.setText(self._customEquation)
-#             else:
-#                 equation = self.fitTypes[fitType]
-#                 self.equationEdit.setText(equation)
-#             self.onEquationChanged()
-
-#     def onEquationChanged(self):
-#         equation = self.equationEdit.text().strip()
-#         # if '=' in equation:
-#         #     i = equation.rfind('=')
-#         #     if i >= 0:
-#         #         equation = equation[i+1:].strip()
-#         try:
-#             fitModel = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
-#             self.paramNames = fitModel.param_names
-
-#             fiTypeEquations = list(self.fitTypes.values())
-#             if equation in fiTypeEquations:
-#                 self.fitTypeSelectionBox.setCurrentRow(fiTypeEquations.index(equation))
-#             else:
-#                 self._customEquation = equation
-#                 self.fitTypeSelectionBox.setCurrentRow(list(self.fitTypes).index('Custom'))
-#         except:
-#             self.paramNames = []
-#         for name in self.paramNames:
-#             if name not in self.paramInitialValueEdits:
-#                 self.paramInitialValueEdits[name] = QLineEdit()
-#             if name not in self.paramFixedCheckBoxes:
-#                 self.paramFixedCheckBoxes[name] = QCheckBox()
-#             if name not in self.paramLowerBoundEdits:
-#                 self.paramLowerBoundEdits[name] = QLineEdit()
-#             if name not in self.paramUpperBoundEdits:
-#                 self.paramUpperBoundEdits[name] = QLineEdit()
-#         self.updateParamsGrid()
-    
-#     def clearParamsGrid(self):
-#         for row in range(1, self.paramsGrid.rowCount()):
-#             for col in range(self.paramsGrid.columnCount()):
-#                 item = self.paramsGrid.itemAtPosition(row, col)
-#                 if item:
-#                     widget = item.widget()
-#                     self.paramsGrid.removeItem(item)
-#                     widget.setParent(None)
-#                     widget.setVisible(False)
-    
-#     def updateParamsGrid(self):
-#         self.clearParamsGrid()
-#         for i, name in enumerate(self.paramNames):
-#             self.paramsGrid.addWidget(QLabel(name), i + 1, 0)
-#             self.paramsGrid.addWidget(self.paramInitialValueEdits[name], i + 1, 1)
-#             self.paramsGrid.addWidget(self.paramFixedCheckBoxes[name], i + 1, 2)
-#             self.paramsGrid.addWidget(self.paramLowerBoundEdits[name], i + 1, 3)
-#             self.paramsGrid.addWidget(self.paramUpperBoundEdits[name], i + 1, 4)
-#             self.paramInitialValueEdits[name].setVisible(True)
-#             self.paramFixedCheckBoxes[name].setVisible(True)
-#             self.paramLowerBoundEdits[name].setVisible(True)
-#             self.paramUpperBoundEdits[name].setVisible(True)
-    
-#     def options(self):
-#         options = {}
-#         fitType = self.fitTypeSelectionBox.currentItem().text()
-#         options['fitType'] = fitType
-#         if fitType == 'Polynomial':
-#             options['degree'] = self.polynomialDegreeSpinBox.value()
-#         elif fitType == 'Spline':
-#             options['segments'] = self.splineNumSegmentsSpinBox.value()
-#         elif fitType in [name for name, equation in self.fitTypes.items() if equation != '' or name == 'Custom']:
-#             options['equation'] = self.equationEdit.text().strip()
-#             options['params'] = {}
-#             for name in self.paramNames:
-#                 try:
-#                     value = float(self.paramInitialValueEdits[name].text())
-#                 except:
-#                     value = None
-#                 vary = not self.paramFixedCheckBoxes[name].isChecked()
-#                 try:
-#                     lowerBound = float(self.paramLowerBoundEdits[name].text())
-#                 except:
-#                     lowerBound = -np.inf
-#                 try:
-#                     upperBound = float(self.paramUpperBoundEdits[name].text())
-#                 except:
-#                     upperBound = np.inf
-#                 options['params'][name] = {
-#                     'value': value,
-#                     'vary': vary,
-#                     'bounds': (lowerBound, upperBound)
-#                 }
-#         options['optimizeWithinROIsOnly'] = self.optimizeWithinROIsOnlyCheckBox.isChecked()
-#         options['fitWithinROIsOnly'] = self.fitWithinROIsOnlyCheckBox.isChecked()
-#         options['resultName'] = self.resultNameLineEdit.text().strip()
-#         return options
+    def clear_curve_fits(self, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self.plots()
+        for plot in plots:
+            for item in plot._tmp_fit_items:
+                plot.removeItem(item)
+                item.deleteLater()
+            plot._tmp_fit_items = []
+            plot._tmp_fits = []
+            plot._tmp_fit_tree_items = []
 
 
 def test_live():
