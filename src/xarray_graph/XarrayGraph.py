@@ -4,7 +4,7 @@ TODO:
 - delete selected regions
 - update regions when plot item changed
 - update plot items when node renamed
-- i/o menu (actual i/o in xarray_tree)
+- i/o (actual i/o in xarray_tree?)
 - style manipulation
 """
 
@@ -275,20 +275,20 @@ class XarrayGraph(QMainWindow):
         return tiling_enabled
     
     def setup_ui(self) -> None:
-        toolbar_icon_size = QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE)
-        icon_button = QToolButton()
-        icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
+        self.setup_menubar()
 
         self._control_panel_toolbar = QToolBar()
         self._control_panel_toolbar.setOrientation(Qt.Orientation.Vertical)
         self._control_panel_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
-        self._control_panel_toolbar.setIconSize(toolbar_icon_size)
+        self._control_panel_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
         self._control_panel_toolbar.setMovable(False)
 
         self._plot_grid_toolbar = QToolBar()
         self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
-        self._plot_grid_toolbar.setIconSize(toolbar_icon_size)
+        self._plot_grid_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
         self._plot_grid_toolbar.setMovable(False)
+        icon_button = QToolButton()
+        icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
         self._plot_grid_toolbar.addWidget(icon_button)
 
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._plot_grid_toolbar)
@@ -314,6 +314,40 @@ class XarrayGraph(QMainWindow):
         self.setup_plot_grid_toolbar()
 
         self._control_panel.hide()
+    
+    def setup_menubar(self) -> None:
+        self._import_menu = QMenu(self.tr('&Import'))
+        for data_type in ['pCLAMP', 'HEKA', 'GOLab TEVC']:
+            self._import_menu.addAction(self.tr(f'Import {data_type}...'), lambda x=data_type: self.import_data(data_type=x))
+
+        self._file_menu = self.menuBar().addMenu(self.tr('&File'))
+        self._file_menu.addAction(self.tr('&New Window'), self.new_window, QKeySequence.New)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction(qta.icon('fa5s.folder-open'), self.tr('&Open...'), self.open, QKeySequence.Open)
+        self._file_menu.addSeparator()
+        self._file_menu.addMenu(self._import_menu)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction(qta.icon('fa5s.save'), self.tr('&Save'), self.save, QKeySequence.Save)
+        self._file_menu.addAction(qta.icon('fa5s.save'), self.tr('Save &As...'), self.save_as, QKeySequence.SaveAs)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction(self.tr('&Close Window'), self.close, QKeySequence.Close)
+    
+    def new_window(self) -> None:
+        win = XarrayGraph()
+        win.setWindowTitle(self.__class__.__name__)
+        win.show()
+    
+    def open(self, filepath: str = '') -> None:
+        pass # TODO: implement
+    
+    def save(self) -> None:
+        pass # TODO: implement
+    
+    def save_as(self, filepath: str = '') -> None:
+        pass # TODO: implement
+    
+    def import_data(self, filepath: str = '', data_type: str = '') -> None:
+        pass # TODO: implement
     
     def setup_plot_grid_toolbar(self) -> None:
         # widgets and toolbar actions for iterating dimension indices
