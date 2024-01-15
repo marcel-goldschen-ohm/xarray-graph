@@ -8,7 +8,6 @@ pip install PySide6 xarray-graph
 ```
 
 # TODO
-- named regions
-- measurements
-- curve fits
 - i/o
+- tests
+- docs
