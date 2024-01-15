@@ -1,7 +1,8 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- named regions
+- delete selected regions
+- update regions when plot item changed
 - update plot items when node renamed
 - i/o menu (actual i/o in xarray_tree)
 - style manipulation
@@ -253,6 +254,9 @@ class XarrayGraph(QMainWindow):
 
         # update plots
         self.on_var_selection_changed()
+
+        # update selected regions
+        self.select_regions()
     
     def set_xdim(self, xdim: str):
         self.xdim = xdim
@@ -470,9 +474,11 @@ class XarrayGraph(QMainWindow):
 
         self._name_regions_button = QPushButton('Name selected') # TODO: implement
         self._name_regions_button.setToolTip('Name selected regions')
+        self._name_regions_button.pressed.connect(self.name_regions)
 
         self._region_name_list = QListWidget() # TODO: implement
-        self._region_name_list.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._region_name_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self._region_name_list.itemSelectionChanged.connect(self.select_regions)
 
         selected_group = QGroupBox('Selected regions')
         grid = QGridLayout(selected_group)
@@ -1458,34 +1464,106 @@ class XarrayGraph(QMainWindow):
                         view.stopDrawingItems()
     
     def update_regions(self, which_regions: str = 'all', is_visible: bool | None = None, is_moveable: bool | None = None, clear: bool = False) -> None:
-        try:
-            rowmin, rowmax = self._grid_rowlim
-            colmin, colmax = self._grid_collim
-        except:
+        for plot in self.plots():
+            view: View = plot.getViewBox()
+            regions: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
+            if which_regions == 'all':
+                pass
+            elif which_regions == 'visible':
+                regions = [region for region in regions if region.isVisible()]
+            elif which_regions == 'hidden':
+                regions = [region for region in regions if not region.isVisible()]
+            if clear:
+                for region in regions:
+                    view.removeItem(region)
+                    region.deleteLater()
+                continue
+            if is_visible is not None:
+                for region in regions:
+                    region.setVisible(is_visible)
+            if is_moveable is not None:
+                for region in regions:
+                    region.setMovable(is_moveable)
+        if clear:
+            self._region_name_list.selectionModel().clear()
+    
+    def ensure_regions_in_tree(self) -> None:
+        if 'regions' not in self.data.children:
+            regions_node = XarrayTreeNode(name='regions', dataset=xr.Dataset(attrs={'regions': {}}), parent=self.data)
+            # update tree view
+            self._data_treeview.set_data(self.data)
             return
-        for row in range(rowmin, rowmax + 1):
-            for col in range(colmin, colmax + 1):
-                plot = self._plot_grid.getItem(row, col)
-                if plot is not None and issubclass(type(plot), pg.PlotItem):
-                    view: View = plot.getViewBox()
-                    regions: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
-                    if which_regions == 'all':
-                        pass
-                    elif which_regions == 'visible':
-                        regions = [region for region in regions if region.isVisible()]
-                    elif which_regions == 'hidden':
-                        regions = [region for region in regions if not region.isVisible()]
-                    if clear:
-                        for region in regions:
-                            view.removeItem(region)
-                            region.deleteLater()
-                        continue
-                    if is_visible is not None:
-                        for region in regions:
-                            region.setVisible(is_visible)
-                    if is_moveable is not None:
-                        for region in regions:
-                            region.setMovable(is_moveable)
+        
+        regions_node = self.data.children['regions']
+        if 'regions' not in regions_node.dataset.attrs:
+            regions_node.dataset.attrs['regions'] = {}
+    
+    def name_regions(self, name: str = '') -> None:
+        if name == '':
+            name, ok = QInputDialog.getText(self, 'Name Regions', 'Name selected regions:')
+            name = name.strip()
+            if not ok or name == '':
+                return
+        
+        self.ensure_regions_in_tree()
+        regions_attrs = self.data.children['regions'].dataset.attrs['regions']
+        xdim = self.xdim
+        if xdim not in regions_attrs:
+            regions_attrs[xdim] = {}
+        if name in regions_attrs[xdim]:
+            answer = QMessageBox.question(self, 'Overwrite Existing Name?', f'Name "{name}" already exists. Overwrite?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer == QMessageBox.No:
+                return
+        # will fill with selected regions
+        regions_attrs[xdim][name] = []
+        
+        for plot in self.plots():
+            view: View = plot.getViewBox()
+            region_items: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
+            for item in region_items:
+                item.setGroup(name)
+                regions_attrs[xdim][name].append({
+                    'region': list(item.getRegion()),
+                    'text': item.text(),
+                })
+        
+        names = [self._region_name_list.item(i).text() for i in range(self._region_name_list.count())]
+        if name not in names:
+            self._region_name_list.addItem(name)
+            names.append(name)
+        self._region_name_list.setCurrentRow(names.index(name))
+    
+    def select_regions(self, names: list[str] = None) -> None:
+        if self._region_name_list.count() == 0:
+            return
+        
+        if names is None:
+            names = []
+            for i in range(self._region_name_list.count()):
+                if self._region_name_list.item(i).isSelected():
+                    names.append(self._region_name_list.item(i).text())
+        
+        # clear current regions
+        self.update_regions(clear=True)
+        
+        # select regions
+        regions_attrs = self.data.children['regions'].dataset.attrs['regions']
+        xdim = self.xdim
+        
+        regions: list[dict] = []
+        for name in names:
+            try:
+                regions += regions_attrs[xdim][name]
+                self._region_name_list.selectionModel().select(self._region_name_list.findItems(name, Qt.MatchExactly)[0].index(), QItemSelectionModel.Select)
+            except:
+                continue
+        
+        for plot in self.plots():
+            view: View = plot.getViewBox()
+            for region in regions:
+                region_item = XAxisRegion(region['region'])
+                region_item.setText(region['text'])
+                view.addItem(region_item)
     
     @Slot(QGraphicsObject)
     def on_item_added_to_axes(self, item: QGraphicsObject):
