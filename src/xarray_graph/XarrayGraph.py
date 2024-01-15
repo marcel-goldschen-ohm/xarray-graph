@@ -5,6 +5,7 @@ TODO:
 - update regions when plot item changed
 - update plot items when node renamed
 - i/o (actual i/o in xarray_tree?)
+- trace math
 - style manipulation
 """
 
@@ -36,6 +37,23 @@ DEFAULT_AXIS_LABEL_FONT_SIZE = 12
 DEFAULT_AXIS_TICK_FONT_SIZE = 11
 DEFAULT_TEXT_ITEM_FONT_SIZE = 10
 DEFAULT_LINE_WIDTH = 1
+
+
+metric_scale_factors = {
+    'f': 1e-15, # femto
+    'p': 1e-12, # pico
+    'n': 1e-9, # nano
+    u'\u00B5': 1e-6, # micro
+    'm': 1e-3, # milli
+    'k': 1e3, # kilo
+    'M': 1e6, # mega
+    'G': 1e9, # giga
+    'T': 1e12, # tera
+    'P': 1e15, # peta
+    'E': 1e18, # exa
+    'Z': 1e21, # zetta
+    'Y': 1e24, # yotta
+}
 
 
 class XarrayGraph(QMainWindow):
@@ -104,7 +122,8 @@ class XarrayGraph(QMainWindow):
             XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
             self._data = root_node
         elif data is None:
-            self._data = None
+            empty_root_node = XarrayTreeNode(name='/', dataset=None)
+            self._data_treeview.set_data(empty_root_node)
         else:
             QMessageBox.warning(parent=self, title='Error', text=f'Unsupported data type: {type(data)}')
             return
@@ -347,11 +366,27 @@ class XarrayGraph(QMainWindow):
         pass # TODO: implement
     
     def import_data(self, filepath: str = '', data_type: str = '') -> None:
-        pass # TODO: implement
+        if data_type == 'pCLAMP':
+            return # TODO: implement
+        elif data_type == 'HEKA':
+            return # TODO: implement
+        elif data_type == 'GOLab TEVC':
+            data = import_golab_tevc(filepath)
+            if data is None:
+                return
+            self.data = data
+        self._data_treeview.expandAll()
+        self._data_treeview.resizeAllColumnsToContents()
+        self._data_treeview.selectAll()
     
     def setup_plot_grid_toolbar(self) -> None:
         # widgets and toolbar actions for iterating dimension indices
         self._dim_iter_things: dict[str, dict[str, QLabel | MultiValueSpinBox | QAction]] = {}
+
+        # expanding empty widget so buttons are right-aligned in toolbar
+        self._dim_iter_spacer = QWidget()
+        self._dim_iter_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._plot_grid_toolbar.addWidget(self._dim_iter_spacer)
 
         self._region_button = QToolButton()
         self._region_button.setIcon(qta.icon('mdi.arrow-expand-horizontal', options=[{'opacity': 0.5}]))
@@ -1026,6 +1061,7 @@ class XarrayGraph(QMainWindow):
             print('_iter_dims:', self._iter_dims)
         
         # update toolbar dim iter spin boxes (show/hide as needed)
+        n_vis = 0
         for dim in self._dim_iter_things:
             isVisible = dim in self._selected_dims and dim != self.xdim # and self._selected_sizes[dim] > 1
             self._dim_iter_things[dim]['labelAction'].setVisible(isVisible)
@@ -1037,6 +1073,11 @@ class XarrayGraph(QMainWindow):
                 spinbox.setIndexedValues(self._selected_tree_coords[dim].values)
                 spinbox.setSelectedValues(values)
                 spinbox.blockSignals(False)
+                n_vis += 1
+        if n_vis == 0:
+            self._dim_iter_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        else:
+            self._dim_iter_spacer.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
         if DEBUG:
             print('_dim_iter_things:', self._dim_iter_things)
 
@@ -2049,6 +2090,31 @@ class XarrayGraph(QMainWindow):
             plot._tmp_fit_items = []
             plot._tmp_fits = []
             plot._tmp_fit_tree_items = []
+
+
+def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> xr.Dataset:
+    if filepath == '':
+        filepath, _filter = QFileDialog.getOpenFileName(parent, 'Import GoLab TEVC', '', 'GoLab TEVC (*.mat)')
+        if filepath == '':
+            return None
+        matdict = sp.io.loadmat(filepath, simplify_cells=True)
+        current = matdict['current']
+        current_units = matdict['current_units']
+        if len(current_units) > 1:
+            prefix = current_units[0]
+            if prefix in metric_scale_factors:
+                current *= metric_scale_factors[prefix]
+                current_units = current_units[1:]
+        time = np.arange(len(current)) * matdict['time_interval_sec']
+        ds = xr.Dataset(
+            data_vars={
+                'current': (['time'], current, {'units': current_units}),
+            },
+            coords={
+                'time': (['time'], time, {'units': 's'}),
+            },
+        )
+        return ds
 
 
 def test_live():
