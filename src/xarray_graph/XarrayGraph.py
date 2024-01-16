@@ -1,15 +1,19 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
+- notes
 - delete selected regions
+- handle region name change?
 - update regions when plot item changed
 - update plot items when node renamed
 - i/o (actual i/o in xarray_tree?)
 - trace math
 - style manipulation
+-  fix bug referencing deleted graphics object?
 """
 
 from __future__ import annotations
+import os
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
@@ -63,7 +67,7 @@ class XarrayGraph(QMainWindow):
         QMainWindow.__init__(self, *args, **kwargs)
 
         # xarray data tree
-        self._data: XarrayTreeNode | None = None
+        self._root: XarrayTreeNode = XarrayTreeNode(name='/', dataset=xr.Dataset())
 
         # x-axis dimension to be plotted against
         self._xdim: str = 'time'
@@ -75,69 +79,21 @@ class XarrayGraph(QMainWindow):
         self.setup_ui()
     
     @property
-    def data(self) -> XarrayTreeNode | None:
-        return self._data
+    def root(self) -> XarrayTreeNode:
+        return self._root
     
-    @data.setter
-    def data(self, data: XarrayTreeNode | xr.Dataset | None):
+    @root.setter
+    def root(self, root: XarrayTreeNode):
         # set xarray tree
-        if isinstance(data, XarrayTreeNode):
-            self._data = data
-        elif isinstance(data, xr.Dataset):
-            # add data as child dataset of empty root node
-            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
-            XarrayTreeNode(name='dataset', dataset=data, parent=root_node)
-            self._data = root_node
-        elif isinstance(data, xr.DataArray):
-            # add data as child dataset of empty root node
-            ds = xr.Dataset(data_vars={data.name: data})
-            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
-            XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
-            self._data = root_node
-        elif isinstance(data, np.ndarray):
-            # add data as child dataset of empty root node
-            ds = xr.Dataset(data_vars={'y': xr.DataArray(data=data)})
-            print(ds)
-            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
-            XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
-            self._data = root_node
-            self.data.dump()
-        elif (isinstance(data, tuple) or isinstance(data, list)) and len(data) == 2:
-            x, y = data
-            if not isinstance(y, xr.DataArray):
-                if not isinstance(y, np.ndarray):
-                    y = np.array(y)
-                y = xr.DataArray(data=y)
-            if not isinstance(x, xr.DataArray):
-                if not isinstance(x, np.ndarray):
-                    x = np.array(x)
-                for dim in reversed(y.dims):
-                    if y.sizes[dim] == x.size:
-                        xdim = dim
-                        break
-                x = xr.DataArray(dims=[xdim], data=x)
-            # add data as child dataset of empty root node
-            ds = xr.Dataset(data_vars={'y': y}, coords={x.dims[0]: x})
-            root_node: XarrayTreeNode = XarrayTreeNode(name='/', dataset=None)
-            XarrayTreeNode(name='dataset', dataset=ds, parent=root_node)
-            self._data = root_node
-        elif data is None:
-            empty_root_node = XarrayTreeNode(name='/', dataset=None)
-            self._data_treeview.set_data(empty_root_node)
-        else:
-            QMessageBox.warning(parent=self, title='Error', text=f'Unsupported data type: {type(data)}')
-            return
-        if DEBUG:
-            print('self._data:')
-            self.data.dump()
+        self._root = root
         
         # update data tree view
-        self._data_treeview.set_data(self.data)
+        self._data_treeview.set_data(self.root)
 
         # store the merged coords for the entire tree
         self._tree_coords: dict[str, xr.DataArray] = {}
-        if self.data is not None:
-            node: XarrayTreeNode = self.data
+        if self.root is not None:
+            node: XarrayTreeNode = self.root
             while node is not None:
                 ds: xr.Dataset = node.dataset
                 if ds is not None:
@@ -160,7 +116,7 @@ class XarrayGraph(QMainWindow):
     def set_data(self, *args, **kwargs):
         x = y = None
         if len(args) == 1:
-            y = args
+            y = args[0]
         elif len(args) == 2:
             x, y = args
         if x is None:
@@ -169,31 +125,83 @@ class XarrayGraph(QMainWindow):
             y = kwargs.get('y', None)
         if y is None:
             return
-        if not isinstance(y, xr.Dataset) and not isinstance(y, xr.DataArray):
-            if not isinstance(y, np.ndarray):
-                y = np.array(y)
-            dims = kwargs.get('dims', [f'dim_{i}' for i in range(y.ndim)])
-            attrs = kwargs.get('attrs', {})
-            y = xr.DataArray(dims=dims, data=y, attrs=attrs)
-        if x is not None and not isinstance(x, xr.DataArray):
-            if not isinstance(x, np.ndarray):
-                x = np.array(x)
-            xdim = kwargs.get('xdim', None)
-            if xdim is None:
-                for dim in reversed(y.dims):
-                    if y.sizes[dim] == x.size:
-                        xdim = dim
-                        break
-            xattrs = kwargs.get('xattrs', {})
-            x = xr.DataArray(dims=[xdim], data=x, attrs=xattrs)
-        if x is None:
-            self.data = y
+        
+        if isinstance(y, XarrayTreeNode):
+            self.root = y
+            return
+        elif isinstance(y, xr.Dataset):
+            root = XarrayTreeNode(name='/', dataset=xr.Dataset())
+            XarrayTreeNode(name='data', dataset=y, parent=root)
+            self.root = root
         else:
-            self.data = x, y
-            self.xdim = xdim
-        self.autoscale_plots()
-        self._data_treeview.expandToDepth(1)
+            if isinstance(y, xr.DataArray):
+                ds = xr.Dataset(data_vars={y.name: y})
+            else:
+                ds = xr.Dataset(data_vars={'y': xr.DataArray(data=y)})
+            
+            if x is None:
+                xdim = ds.dims[-1]
+            elif isinstance(x, xr.DataArray):
+                xdim = x.dims[0]
+                ds.coords[xdim] = x
+            else:
+                xdim = kwargs.get('xdim', None)
+                if xdim is None:
+                    for dim in reversed(ds.dims):
+                        try:
+                            if ds.sizes[dim] == x.size:
+                                xdim = dim
+                                break
+                        except:
+                            if ds.sizes[dim] == len(x):
+                                xdim = dim
+                                break
+                ds.coords[xdim] = xr.DataArray(dims=[xdim], data=x)
+        
+            root = XarrayTreeNode(name='/', dataset=xr.Dataset())
+            XarrayTreeNode(name='data', dataset=ds, parent=root)
+            self.root = root
+        
+        self._data_treeview.expandAll()
         self._data_treeview.resizeAllColumnsToContents()
+        self._data_treeview.selectAll()
+        self.autoscale_plots()
+    
+    def import_data(self, filepath: str = '', filetype: str = '') -> None:
+        ds: xr.Dataset | None = None
+        if filetype == 'pCLAMP':
+            pass # TODO: implement
+        elif filetype == 'HEKA':
+            pass # TODO: implement
+        elif filetype == 'GOLab TEVC':
+            ds, filepath = import_golab_tevc(filepath)
+        if ds is None:
+            return
+        self.set_data(ds)
+        if 'regions' in ds.attrs:
+            self.metadata['regions'] = ds.attrs['regions']
+            del ds.attrs['regions']
+            region_names = [name for name in self.metadata['regions']['time']]
+            self._region_name_list.clear()
+            self._region_name_list.addItems(region_names)
+            self.select_regions(region_names)
+        if 'notes' in ds.attrs:
+            self.metadata['notes'] = ds.attrs['notes']
+            del ds.attrs['notes']
+            self.load_notes(self.metadata['notes'])
+        path, file = os.path.split(filepath)
+        self.setWindowTitle(file)
+    
+    def clear(self) -> None:
+        self.root = XarrayTreeNode(name='/', dataset=xr.Dataset())
+    
+    @property
+    def metadata(self) -> dict:
+        return self.root.dataset.attrs
+    
+    @metadata.setter
+    def metadata(self, metadata: dict):
+        self.root.dataset.attrs = metadata
     
     @property
     def xdim(self) -> str:
@@ -337,7 +345,7 @@ class XarrayGraph(QMainWindow):
     def setup_menubar(self) -> None:
         self._import_menu = QMenu(self.tr('&Import'))
         for data_type in ['pCLAMP', 'HEKA', 'GOLab TEVC']:
-            self._import_menu.addAction(self.tr(f'Import {data_type}...'), lambda x=data_type: self.import_data(data_type=x))
+            self._import_menu.addAction(self.tr(f'Import {data_type}...'), lambda x=data_type: self.import_data(filetype=x))
 
         self._file_menu = self.menuBar().addMenu(self.tr('&File'))
         self._file_menu.addAction(self.tr('&New Window'), self.new_window, QKeySequence.New)
@@ -364,20 +372,6 @@ class XarrayGraph(QMainWindow):
     
     def save_as(self, filepath: str = '') -> None:
         pass # TODO: implement
-    
-    def import_data(self, filepath: str = '', data_type: str = '') -> None:
-        if data_type == 'pCLAMP':
-            return # TODO: implement
-        elif data_type == 'HEKA':
-            return # TODO: implement
-        elif data_type == 'GOLab TEVC':
-            data = import_golab_tevc(filepath)
-            if data is None:
-                return
-            self.data = data
-        self._data_treeview.expandAll()
-        self._data_treeview.resizeAllColumnsToContents()
-        self._data_treeview.selectAll()
     
     def setup_plot_grid_toolbar(self) -> None:
         # widgets and toolbar actions for iterating dimension indices
@@ -410,6 +404,7 @@ class XarrayGraph(QMainWindow):
         self.setup_region_control_panel()
         self.setup_measure_control_panel()
         self.setup_curve_fit_control_panel()
+        self.setup_notes_control_panel()
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._control_panel_toolbar.addWidget(spacer)
@@ -426,7 +421,7 @@ class XarrayGraph(QMainWindow):
 
         self._data_treeview = XarrayTreeView()
         self._data_treeview.setSelectionMode(QAbstractItemView.MultiSelection)
-        root_node: XarrayTreeNode = self.data if self.data is not None else XarrayTreeNode('/', None)
+        root_node: XarrayTreeNode = self.root if self.root is not None else XarrayTreeNode('/', None)
         root_item = XarrayTreeItem(node=root_node, key=None)
         model: XarrayTreeModel = XarrayTreeModel(root_item)
         model._allowed_selections = ['var']
@@ -681,7 +676,7 @@ class XarrayGraph(QMainWindow):
         button.setIcon(qta.icon('mdi.chart-bell-curve-cumulative', options=[{'opacity': 0.5}]))
         button.setCheckable(True)
         button.setChecked(False)
-        button.setToolTip('Measure')
+        button.setToolTip('Curve fit')
         button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
         self._control_panel_toolbar.addWidget(button)
 
@@ -859,6 +854,31 @@ class XarrayGraph(QMainWindow):
                 'max': value_max
             }
             self._curve_fit_model.set_param_hint(name, **self._equation_params[name])
+    
+    def setup_notes_control_panel(self) -> None:
+        button = QToolButton()
+        button.setIcon(qta.icon('mdi.notebook-outline', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Notes')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
+
+        self._notes_edit = QTextEdit()
+        self._notes_edit.setTabChangesFocus(False)
+        self._notes_edit.setAcceptRichText(False)
+        self._notes_edit.textChanged.connect(self.save_notes)
+
+        self._control_panel.addWidget(self._notes_edit)
+    
+    def save_notes(self) -> None:
+        notes = self._notes_edit.toPlainText()
+        self.metadata['notes'] = notes
+    
+    def load_notes(self, notes = None) -> None:
+        if notes is None:
+            notes = self.metadata.get('notes', '')
+        self._notes_edit.setPlainText(notes)
     
     def setup_settings_control_panel(self) -> None:
         button = QToolButton()
@@ -1562,17 +1582,6 @@ class XarrayGraph(QMainWindow):
         if clear:
             self._region_name_list.selectionModel().clear()
     
-    def ensure_regions_in_tree(self) -> None:
-        if 'regions' not in self.data.children:
-            regions_node = XarrayTreeNode(name='regions', dataset=xr.Dataset(attrs={'regions': {}}), parent=self.data)
-            # update tree view
-            self._data_treeview.set_data(self.data)
-            return
-        
-        regions_node = self.data.children['regions']
-        if 'regions' not in regions_node.dataset.attrs:
-            regions_node.dataset.attrs['regions'] = {}
-    
     def name_regions(self, name: str = '') -> None:
         if name == '':
             name, ok = QInputDialog.getText(self, 'Name Regions', 'Name selected regions:')
@@ -1580,24 +1589,24 @@ class XarrayGraph(QMainWindow):
             if not ok or name == '':
                 return
         
-        self.ensure_regions_in_tree()
-        regions_attrs = self.data.children['regions'].dataset.attrs['regions']
+        if 'regions' not in self.metadata:
+            self.metadata['regions'] = {}
         xdim = self.xdim
-        if xdim not in regions_attrs:
-            regions_attrs[xdim] = {}
-        if name in regions_attrs[xdim]:
+        if xdim not in self.metadata['regions']:
+            self.metadata['regions'][xdim] = {}
+        if name in self.metadata['regions'][xdim]:
             answer = QMessageBox.question(self, 'Overwrite Existing Name?', f'Name "{name}" already exists. Overwrite?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if answer == QMessageBox.No:
                 return
         # will fill with selected regions
-        regions_attrs[xdim][name] = []
+        self.metadata['regions'][xdim][name] = []
         
         for plot in self.plots():
             view: View = plot.getViewBox()
             region_items: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
             for item in region_items:
                 item.setGroup(name)
-                regions_attrs[xdim][name].append({
+                self.metadata['regions'][xdim][name].append({
                     'region': list(item.getRegion()),
                     'text': item.text(),
                 })
@@ -1622,13 +1631,11 @@ class XarrayGraph(QMainWindow):
         self.update_regions(clear=True)
         
         # select regions
-        regions_attrs = self.data.children['regions'].dataset.attrs['regions']
-        xdim = self.xdim
-        
         regions: list[dict] = []
+        xdim = self.xdim
         for name in names:
             try:
-                regions += regions_attrs[xdim][name]
+                regions += self.metadata['regions'][xdim][name]
                 self._region_name_list.selectionModel().select(self._region_name_list.findItems(name, Qt.MatchExactly)[0].index(), QItemSelectionModel.Select)
             except:
                 continue
@@ -1877,7 +1884,7 @@ class XarrayGraph(QMainWindow):
                     measure_tree_nodes.append(node)
         
         # update data tree
-        self.data = self.data
+        self.root = self.root
 
         # make sure newly added measure nodes are selected and expanded
         model: XarrayTreeModel = self._data_treeview.model()
@@ -2067,7 +2074,7 @@ class XarrayGraph(QMainWindow):
                     fit_tree_nodes.append(node)
         
         # update data tree
-        self.data = self.data
+        self.root = self.root
 
         # make sure newly added fit nodes are selected and expanded
         model: XarrayTreeModel = self._data_treeview.model()
@@ -2092,29 +2099,41 @@ class XarrayGraph(QMainWindow):
             plot._tmp_fit_tree_items = []
 
 
-def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> xr.Dataset:
+def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, filepath]:
     if filepath == '':
         filepath, _filter = QFileDialog.getOpenFileName(parent, 'Import GoLab TEVC', '', 'GoLab TEVC (*.mat)')
         if filepath == '':
             return None
-        matdict = sp.io.loadmat(filepath, simplify_cells=True)
-        current = matdict['current']
-        current_units = matdict['current_units']
-        if len(current_units) > 1:
-            prefix = current_units[0]
-            if prefix in metric_scale_factors:
-                current *= metric_scale_factors[prefix]
-                current_units = current_units[1:]
-        time = np.arange(len(current)) * matdict['time_interval_sec']
-        ds = xr.Dataset(
-            data_vars={
-                'current': (['time'], current, {'units': current_units}),
-            },
-            coords={
-                'time': (['time'], time, {'units': 's'}),
-            },
-        )
-        return ds
+    matdict = sp.io.loadmat(filepath, simplify_cells=True)
+    # print(matdict)
+    current = matdict['current']
+    current_units = matdict['current_units']
+    if len(current_units) > 1:
+        prefix = current_units[0]
+        if prefix in metric_scale_factors:
+            current *= metric_scale_factors[prefix]
+            current_units = current_units[1:]
+    time = np.arange(len(current)) * matdict['time_interval_sec']
+    ds = xr.Dataset(
+        data_vars={
+            'current': (['time'], current, {'units': current_units}),
+        },
+        coords={
+            'time': (['time'], time, {'units': 's'}),
+        },
+    )
+    if 'events' in matdict and matdict['events']:
+        ds.attrs['regions'] = {'time': {'import': []}}
+        for event in matdict['events']:
+            time = event['time_sec']
+            text = event['text']
+            ds.attrs['regions']['time']['import'].append({
+                'region': [time, time],
+                'text': text,
+            })
+    if 'notes' in matdict:
+        ds.attrs['notes'] = matdict['notes']
+    return ds, filepath
 
 
 def test_live():
@@ -2156,7 +2175,7 @@ def test_live():
     baselined_node = XarrayTreeNode(name='baselined', dataset=baselined_ds, parent=raw_node)
     scaled_node = XarrayTreeNode(name='scaled', dataset=scaled_ds, parent=baselined_node)
 
-    ui.data = root_node
+    ui.root = root_node
 
     # ui.data = np.linspace(0, 5, 100), np.random.random((3, 10, 100))
     # ui.set_data([1, 3, 5, 7, 9], [10, 13, 56, 47, 29])
