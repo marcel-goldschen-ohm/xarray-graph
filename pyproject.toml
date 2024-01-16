@@ -38,6 +38,10 @@ homepage = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 repository = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 
 
+[project.scripts]
+xrg = "xarray_graph.__main__:main"
+
+
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
