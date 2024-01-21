@@ -1,8 +1,10 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
+- update regions when data selection changes
+- measure peaks
 - i/o (actual i/o in xarray_tree?)
-- trace math
+- trace math (still has bugs)
 - style manipulation
 """
 
@@ -106,6 +108,9 @@ class XarrayGraph(QMainWindow):
         # reset xdim in case dims have changed
         # also updates dim spinboxes and plot grid
         self.xdim = self.xdim
+
+        # populate array math selections
+        self._update_array_math_comboboxes()
     
     def set_data(self, *args, **kwargs):
         x = y = None
@@ -411,6 +416,7 @@ class XarrayGraph(QMainWindow):
         self.setup_data_control_panel()
         self.setup_grid_control_panel()
         self.setup_region_control_panel()
+        self.setup_math_control_panel()
         self.setup_measure_control_panel()
         self.setup_curve_fit_control_panel()
         self.setup_notes_control_panel()
@@ -421,7 +427,7 @@ class XarrayGraph(QMainWindow):
     
     def setup_data_control_panel(self) -> None:
         button = QToolButton()
-        button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.7}]))
+        button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.5}]))
         button.setCheckable(True)
         button.setChecked(False)
         button.setToolTip('Data browser')
@@ -711,6 +717,107 @@ class XarrayGraph(QMainWindow):
                 item.deleteLater()
         self._update_region_label_list()
     
+    def setup_math_control_panel(self) -> None:
+        button = QToolButton()
+        button.setIcon(qta.icon('ph.math-operations', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Math')
+        button.released.connect(lambda i=self._control_panel.count(): self.toggle_control_panel(i))
+        self._control_panel_toolbar.addWidget(button)
+
+        self._math_result_name_edit = QLineEdit()
+        self._math_result_name_edit.setPlaceholderText('result')
+
+        self._math_lhs_combobox = QComboBox()
+        self._math_lhs_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        self._math_rhs_combobox = QComboBox()
+        self._math_rhs_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        self._math_operator_combobox = QComboBox()
+        self._math_operator_combobox.addItems(['+', '-', '*', '/'])
+        self._math_operator_combobox.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+
+        self._math_eval_button = QPushButton('Evaluate')
+        self._math_eval_button.clicked.connect(self.eval_array_math)
+
+        math_group = QGroupBox('Array math')
+        grid = QGridLayout(math_group)
+        grid.setContentsMargins(3, 3, 3, 3)
+        grid.setSpacing(5)
+        grid.addWidget(self._math_result_name_edit, 0, 0, 1, 2)
+        grid.addWidget(QLabel('='), 1, 0)
+        grid.addWidget(self._math_lhs_combobox, 1, 1)
+        grid.addWidget(self._math_operator_combobox, 2, 0)
+        grid.addWidget(self._math_rhs_combobox, 2, 1)
+        grid.addWidget(self._math_eval_button, 3, 0, 1, 2)
+
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(20)
+        vbox.addWidget(math_group)
+        vbox.addStretch()
+
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
+    
+    def _update_array_math_comboboxes(self) -> None:
+        var_items = []
+        item = self._data_treeview.model().root
+        while item is not None:
+            if item.is_var():
+                var_items += [item.name_from_path(maxchar=100)]
+            item = item.next_depth_first()
+        self._math_lhs_combobox.clear()
+        self._math_rhs_combobox.clear()
+        self._math_lhs_combobox.addItems(var_items)
+        self._math_rhs_combobox.addItems(var_items)
+    
+    def eval_array_math(self) -> None:
+        var_items = []
+        item = self._data_treeview.model().root
+        while item is not None:
+            if item.is_var():
+                var_items += [item]
+            item = item.next_depth_first()
+        lhs_item = var_items[self._math_lhs_combobox.currentIndex()]
+        rhs_item = var_items[self._math_rhs_combobox.currentIndex()]
+        lhs = lhs_item.node.inherited_data(lhs_item.key)
+        rhs = rhs_item.node.inherited_data(rhs_item.key)
+        op = self._math_operator_combobox.currentText()
+        # TODO: limit vars to the intersection of their coords
+        if op == '+':
+            result = lhs + rhs
+        elif op == '-':
+            result = lhs - rhs
+        elif op == '*':
+            result = lhs * rhs
+        elif op == '/':
+            result = lhs / rhs
+        # append result as child of lhs_item
+        # TODO: handle result name collisions
+        result_name = self._math_result_name_edit.text().strip()
+        result_node = XarrayTreeNode(name=result_name, data=result, parent=lhs_item.node)
+        
+        # update data tree
+        self.root = self.root
+
+        # make sure newly added node is selected and expanded
+        model: XarrayTreeModel = self._data_treeview.model()
+        item: XarrayTreeItem = model.root
+        while item is not None:
+            if item.node is result_node and item.is_var():
+                index: QModelIndex = model.createIndex(item.row(), 0, item)
+                self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                self._data_treeview.setExpanded(model.parent(index), True)
+            item = item.next_depth_first()
+    
     def setup_measure_control_panel(self) -> None:
         button = QToolButton()
         button.setIcon(qta.icon('mdi6.chart-scatter-plot', options=[{'opacity': 0.5}]))
@@ -744,7 +851,7 @@ class XarrayGraph(QMainWindow):
         self._peak_type_combobox.addItems(['Min', 'Max'])
         self._peak_type_combobox.setCurrentText('Max')
 
-        self._peak_threshold_spinbox = QDoubleSpinBox()
+        self._peak_threshold_edit = QLineEdit('0')
 
         self._peak_options_wrapper = QWidget()
         form = QFormLayout(self._peak_options_wrapper)
@@ -752,7 +859,7 @@ class XarrayGraph(QMainWindow):
         form.setSpacing(0)
         form.setHorizontalSpacing(5)
         form.addRow('Peak type', self._peak_type_combobox)
-        form.addRow('Peak threshold', self._peak_threshold_spinbox)
+        form.addRow('Peak threshold', self._peak_threshold_edit)
 
         self._measure_in_visible_regions_only_checkbox = QCheckBox('In visible regions only')
         self._measure_in_visible_regions_only_checkbox.setChecked(True)
@@ -1834,7 +1941,7 @@ class XarrayGraph(QMainWindow):
                 # ensures picking an existing data point for the central value
                 i = np.argpartition(x, len(x) // 2)[len(x) // 2]
                 return x[i]
-        elif measure_type in ['Min', 'Max', 'AbsMax']:
+        if measure_type in ['Min', 'Max', 'AbsMax', 'Peaks']:
             peak_width = self._peak_width_spinbox.value()
             if peak_width > 0:
                 def get_peak_index_range(mask, center_index):
@@ -1845,6 +1952,9 @@ class XarrayGraph(QMainWindow):
                         if center_index + w < len(mask) and mask[center_index + w] and stop == center_index + w:
                             stop = center_index + w + 1
                     return start, stop
+        if measure_type == 'Peaks':
+            peak_threshold = float(self._peak_threshold_edit.text())
+            peak_type = self._peak_type_combobox.currentText()
         
         # measure in each plot
         for plot in plots:
@@ -1940,7 +2050,7 @@ class XarrayGraph(QMainWindow):
                             start, stop = get_peak_index_range(mask, center_index)
                             ymeasure.append(np.mean(ydata[start:stop]))
                     elif measure_type == 'Peaks':
-                        pass # TODO
+                        pass # TODO: find peaks
                     elif measure_type == 'Standard Deviation':
                         xmeasure.append(existing_median(x))
                         ymeasure.append(np.std(y))
