@@ -1,7 +1,6 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- update regions when data selection changes
 - measure peaks
 - i/o (actual i/o in xarray_tree?)
 - trace math (still has bugs)
@@ -284,9 +283,6 @@ class XarrayGraph(QMainWindow):
 
         # update plots
         self.on_var_selection_changed()
-
-        # update selected regions
-        self._on_selected_region_labels_changed()
     
     def set_xdim(self, xdim: str):
         self.xdim = xdim
@@ -300,7 +296,6 @@ class XarrayGraph(QMainWindow):
     
     @property
     def regions(self) -> list[dict]:
-        # self.metadata['regions'][dim][name][i] = {region: [xmin, xmax], text: str, is_moveable: bool}
         if 'regions' not in self.metadata:
             self.metadata['regions'] = []
         return self.metadata['regions']
@@ -617,12 +612,14 @@ class XarrayGraph(QMainWindow):
     def _on_selected_region_labels_changed(self) -> None:
         selected_labels = [item.text() for item in self._region_label_list.selectedItems()]
         xdim = self.xdim
-        self.clear_region_items(clear_unsaved_regions=False)
+        self.clear_region_items(clear_selected_region_labels=False)
         regions = [region for region in self.regions if region['label'] in selected_labels and region['dim'] == xdim]
         for region in regions:
             self.add_region_item(region)
     
     def add_region_item(self, region: dict) -> None:
+        if region not in self.regions:
+            self.regions.append(region)
         for plot in self.plots():
             view: View = plot.getViewBox()
             region_item = XAxisRegion(region['region'])
@@ -635,30 +632,13 @@ class XarrayGraph(QMainWindow):
             # so this will cover changes to text and group region properties too
             region_item.sigRegionChangeFinished.connect(self.on_region_item_changed)
     
-    def clear_region_items(self, clear_unsaved_regions: bool = None, clear_selected_region_labels: bool = False) -> None:
-        if clear_unsaved_regions is None:
-            any_unsaved_regions = False
-            for plot in self.plots():
-                view: View = plot.getViewBox()
-                region_items: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
-                for region_item in region_items:
-                    if region_item._data not in self.regions:
-                        any_unsaved_regions = True
-                        break
-                if any_unsaved_regions:
-                    break
-            if any_unsaved_regions:
-                reply = QMessageBox.question(self, 'Unsaved regions', 'There are unsaved regions. Clear unsaved regions? Otherwise they will persist.', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-                clear_unsaved_regions = (reply == QMessageBox.Yes)
-            else:
-                clear_unsaved_regions = False
+    def clear_region_items(self, clear_selected_region_labels: bool = False) -> None:
         for plot in self.plots():
             view: View = plot.getViewBox()
             region_items: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
             for region_item in region_items:
-                if region_item._data in self.regions or clear_unsaved_regions or region_item._data['dim'] != self.xdim:
-                    view.removeItem(region_item)
-                    region_item.deleteLater()
+                view.removeItem(region_item)
+                region_item.deleteLater()
         if clear_selected_region_labels:
             self._region_label_list.clearSelection()
     
@@ -695,8 +675,8 @@ class XarrayGraph(QMainWindow):
             for item in region_items:
                 item.setLabel(label)
                 item._data['label'] = item.label()
-                if item._data not in self.regions:
-                    self.regions.append(item._data)
+                # if item._data not in self.regions:
+                #     self.regions.append(item._data)
         
         labels = [self._region_label_list.item(i).text() for i in range(self._region_label_list.count())]
         if label not in labels:
@@ -707,6 +687,9 @@ class XarrayGraph(QMainWindow):
             self.set_selected_region_labels(selected_labels)
     
     def delete_selected_regions(self) -> None:
+        reply = QMessageBox.question(self, 'Delete regions', 'Delete selected regions?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
         for plot in self.plots():
             view: View = plot.getViewBox()
             region_items: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
@@ -1382,6 +1365,9 @@ class XarrayGraph(QMainWindow):
         # update index selection
         self.on_index_selection_changed()
 
+        # update selected regions
+        self._on_selected_region_labels_changed()
+
     def on_index_selection_changed(self) -> None:
         # selected coords for all non-x-axis dims (from toolbar spin boxes)
         self._selected_coords: dict[str, xr.DataArray] = {}
@@ -1824,94 +1810,36 @@ class XarrayGraph(QMainWindow):
         if clear:
             self._region_label_list.selectionModel().clear()
     
-    # def name_regions(self, name: str = '') -> None:
-    #     if name == '':
-    #         name, ok = QInputDialog.getText(self, 'Name Regions', 'Name selected regions:')
-    #         name = name.strip()
-    #         if not ok or name == '':
-    #             return
-        
-    #     xdim = self.xdim
-    #     if xdim not in self.regions:
-    #         self.regions[xdim] = {}
-    #     if name in self.metadata['regions'][xdim]:
-    #         answer = QMessageBox.question(self, 'Overwrite Existing Name?', f'Name "{name}" already exists. Overwrite?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-    #         if answer == QMessageBox.No:
-    #             return
-    #     # will fill with selected regions
-    #     self.regions[xdim][name] = []
-        
-    #     for plot in self.plots():
-    #         view: View = plot.getViewBox()
-    #         region_items: list[XAxisRegion] = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
-    #         for item in region_items:
-    #             item.setGroup(name)
-    #             self.regions[xdim][name].append({
-    #                 'region': list(item.getRegion()),
-    #                 'text': item.text(),
-    #             })
-        
-    #     names = [self._region_label_list.item(i).text() for i in range(self._region_label_list.count())]
-    #     self._region_label_list.blockSignals(True)
-    #     if name not in names:
-    #         self._region_label_list.addItem(name)
-    #         names.append(name)
-    #     for i in range(self._region_label_list.count()):
-    #         item = self._region_label_list.item(i)
-    #         item.setSelected(item.text() == name)
-    #     self._region_label_list.blockSignals(False)
-    
-    # def select_regions(self, names: list[str] = None) -> None:
-    #     if self._region_label_list.count() == 0:
-    #         return
-        
-    #     if names is None:
-    #         names = []
-    #         for i in range(self._region_label_list.count()):
-    #             item = self._region_label_list.item(i)
-    #             if item.isSelected():
-    #                 names.append(item.text())
-        
-    #     # clear current regions
-    #     self.update_regions(clear=True)
-        
-    #     # select regions
-    #     xdim = self.xdim
-    #     for name in names:
-    #         try:
-    #             regions = self.regions[xdim][name]
-    #             for plot in self.plots():
-    #                 view: View = plot.getViewBox()
-    #                 for region in regions:
-    #                     region_item = XAxisRegion(region['region'])
-    #                     region_item.setText(region['text'])
-    #                     region_item.setGroup(name)
-    #                     view.addItem(region_item)
-    #         except:
-    #             continue
-        
-    #     self._region_label_list.blockSignals(True)
-    #     for i in range(self._region_label_list.count()):
-    #         item = self._region_label_list.item(i)
-    #         item.setSelected(item.text() in names)
-    #     self._region_label_list.blockSignals(False)
-    
     @Slot(QGraphicsObject)
     def on_item_added_to_axes(self, item: QGraphicsObject):
         view: View = self.sender()
         plot: Plot = view.parentItem()
         if isinstance(item, XAxisRegion):
+            region_labels = [region['label'] for region in self.regions]
+            xmin, xmax = item.getRegion()
+            label = f'{xmin:.6f}-{xmax:.6f}'
+            n = 2
+            while label in region_labels:
+                label += f'_{n}'
+                n += 1
             region = {
                 'dim': self.xdim,
-                'label': None,
+                'label': label,
                 'region': list(item.getRegion()),
                 'text': item.text(),
             }
+            self.regions.append(region)
             # remove the added region item and readd it so that it is added correctly as a region to all plots
             view.removeItem(item)
             item.deleteLater()
             self.add_region_item(region)
-            # # stop drawing regions (draw one at a time)
+            # update labeled regions list
+            self._update_region_label_list()
+            selected_labels = [item.text() for item in self._region_label_list.selectedItems()]
+            if region['label'] not in selected_labels:
+                selected_labels.append(region['label'])
+                self.set_selected_region_labels(selected_labels)
+            # stop drawing regions (draw one at a time)
             self.draw_region(False)
 
     # @Slot()
