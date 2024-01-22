@@ -771,8 +771,8 @@ class XarrayGraph(QMainWindow):
             item = item.next_depth_first()
         lhs_item = var_items[self._math_lhs_combobox.currentIndex()]
         rhs_item = var_items[self._math_rhs_combobox.currentIndex()]
-        lhs = lhs_item.node.inherited_data(lhs_item.key)
-        rhs = rhs_item.node.inherited_data(rhs_item.key)
+        lhs: xr.DataArray = lhs_item.node.inherited_data(lhs_item.key)
+        rhs: xr.DataArray = rhs_item.node.inherited_data(rhs_item.key)
         op = self._math_operator_combobox.currentText()
         # TODO: limit vars to the intersection of their coords
         if op == '+':
@@ -786,7 +786,8 @@ class XarrayGraph(QMainWindow):
         # append result as child of lhs_item
         # TODO: handle result name collisions
         result_name = self._math_result_name_edit.text().strip()
-        result_node = XarrayTreeNode(name=result_name, data=result, parent=lhs_item.node)
+        ds = xr.Dataset(data_vars={result.name: result})
+        result_node = XarrayTreeNode(name=result_name, dataset=ds, parent=lhs_item.node)
         
         # update data tree
         self.root = self.root
