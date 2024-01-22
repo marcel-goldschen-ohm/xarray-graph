@@ -1,10 +1,20 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- measure peaks
-- i/o (actual i/o in xarray_tree?)
-- trace math: sanity checks needed
-- style manipulation
+- zarr i/o (implement in xarray_tree)
+- rename dims (implement in xarray_treeview?)
+- drag items to rearrange tree heirarchy (implement in xarray_treeview)
+- define all undefined coords by inheriting them (implement in xarray_tree)
+- remove all unneeded coords that can be inherited (implement in xarray_tree)
+- array math: update comboboxes on tree change
+- array math: sanity checks needed
+- array math: handle merging of results
+- style: store user styling in metadata
+- style: set style by trace, array, dataset, or variable name?
+- style: store region styling in metadata
+- style: set style for regions by label
+- measure peaks: implement
+- filter, smooth, etc.: implement
 """
 
 from __future__ import annotations
@@ -119,8 +129,9 @@ class XarrayGraph(QMainWindow):
         self.xdim = self.xdim
 
         # metadata
-        self.metadata['dtype'] = 'XarrayGraph==' + XARRAY_GRAPH_VERSION
-        print(self.metadata['dtype'])
+        self.metadata['XarrayGraph'] = {
+            'version': XARRAY_GRAPH_VERSION,
+        }
 
         # populate array math selections
         self._update_array_math_comboboxes()
@@ -184,9 +195,13 @@ class XarrayGraph(QMainWindow):
     def import_data(self, filepath: str = '', filetype: str = '') -> None:
         ds: xr.Dataset | None = None
         if filetype == 'pCLAMP':
-            pass # TODO: implement
+            # TODO: implement
+            QMessageBox.warning(self, 'Import pCLAMP', 'Importing pCLAMP files is not yet implemented.')
+            return
         elif filetype == 'HEKA':
-            pass # TODO: implement
+            # TODO: implement
+            QMessageBox.warning(self, 'Import HEKA', 'Importing HEKA files is not yet implemented.')
+            return
         elif filetype == 'GOLab TEVC':
             ds, filepath = import_golab_tevc(filepath)
         if ds is None:
@@ -195,10 +210,10 @@ class XarrayGraph(QMainWindow):
         if 'regions' in ds.attrs:
             self.metadata['regions'] = ds.attrs['regions']
             del ds.attrs['regions']
-            region_names = [name for name in self.metadata['regions']['time']]
+            region_labels = [region['label'] for region in self.metadata['regions']]
             self._region_label_list.clear()
-            self._region_label_list.addItems(region_names)
-            self.select_regions(region_names)
+            self._region_label_list.addItems(region_labels)
+            self.set_selected_region_labels(region_labels)
         if 'notes' in ds.attrs:
             self.metadata['notes'] = ds.attrs['notes']
             del ds.attrs['notes']
@@ -324,6 +339,9 @@ class XarrayGraph(QMainWindow):
         tiling_enabled: bool = row_tile_dim in self._iter_dims or col_tile_dim in self._iter_dims
         return tiling_enabled
     
+    def refresh(self) -> None:
+        self.root = self.root
+    
     def setup_ui(self) -> None:
         self.setup_menubar()
 
@@ -339,6 +357,7 @@ class XarrayGraph(QMainWindow):
         self._plot_grid_toolbar.setMovable(False)
         icon_button = QToolButton()
         icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
+        icon_button.pressed.connect(self.refresh)
         self._plot_grid_toolbar.addWidget(icon_button)
 
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._plot_grid_toolbar)
@@ -388,13 +407,26 @@ class XarrayGraph(QMainWindow):
         win.show()
     
     def open(self, filepath: str = '') -> None:
-        pass # TODO: implement
+        if filepath == '':
+            filepath, _filter = QFileDialog.getOpenFileName(self, 'Open from Zarr heirarchy...')
+            if filepath == '':
+                return None
+        self.root.from_zarr(filepath)
+        self.root = self.root  # ensures UI reset for new data
+        self._filepath = filepath
+        self.setWindowTitle(os.path.split(filepath)[1])
     
     def save(self) -> None:
-        pass # TODO: implement
+        self.save_as(self._filepath)
     
     def save_as(self, filepath: str = '') -> None:
-        pass # TODO: implement
+        if filepath == '':
+            filepath, _filter = QFileDialog.getSaveFileName(self, 'Save to Zarr heirarchy...')
+            if filepath == '':
+                return None
+        self.root.to_zarr(filepath)
+        self._filepath = filepath
+        self.setWindowTitle(os.path.split(filepath)[1])
     
     def setup_plot_grid_toolbar(self) -> None:
         # widgets and toolbar actions for iterating dimension indices
@@ -745,7 +777,9 @@ class XarrayGraph(QMainWindow):
         grid.setContentsMargins(3, 3, 3, 3)
         grid.setSpacing(5)
         grid.addWidget(self._math_result_name_edit, 0, 0, 1, 2)
-        grid.addWidget(QLabel('='), 1, 0)
+        equals_label = QLabel('=')
+        equals_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(equals_label, 1, 0)
         grid.addWidget(self._math_lhs_combobox, 1, 1)
         grid.addWidget(self._math_operator_combobox, 2, 0)
         grid.addWidget(self._math_rhs_combobox, 2, 1)
@@ -1027,7 +1061,7 @@ class XarrayGraph(QMainWindow):
         fit_type = self._curve_fit_type_combobox.currentText()
         self._polynomial_options_wrapper.setVisible(fit_type == 'Polynomial')
         self._spline_options_wrapper.setVisible(fit_type == 'Spline')
-        self._equation_group.setVisible(fit_type not in ['Mean', 'Median', 'Line', 'Polynomial', 'Spline'])
+        self._equation_group.setVisible(fit_type == 'Equation')
         if self._equation_group.isVisible():
             self._equation_params_table.resizeColumnsToContents()
         self._curve_fit_name_edit.setPlaceholderText(fit_type)
@@ -2306,7 +2340,7 @@ class XarrayGraph(QMainWindow):
             plot._tmp_fit_tree_items = []
 
 
-def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, filepath]:
+def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, str]:
     if filepath == '':
         filepath, _filter = QFileDialog.getOpenFileName(parent, 'Import GoLab TEVC', '', 'GoLab TEVC (*.mat)')
         if filepath == '':
@@ -2330,11 +2364,13 @@ def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Da
         },
     )
     if 'events' in matdict and matdict['events']:
-        ds.attrs['regions'] = {'time': {'import': []}}
+        ds.attrs['regions'] = []
         for event in matdict['events']:
             time = event['time_sec']
             text = event['text']
-            ds.attrs['regions']['time']['import'].append({
+            ds.attrs['regions'].append({
+                'dim': 'time',
+                'label': f'{time:.6f}',
                 'region': [time, time],
                 'text': text,
             })
