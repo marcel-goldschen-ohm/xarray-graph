@@ -3,7 +3,7 @@
 TODO:
 - measure peaks
 - i/o (actual i/o in xarray_tree?)
-- trace math (still has bugs)
+- trace math: sanity checks needed
 - style manipulation
 """
 
@@ -539,7 +539,7 @@ class XarrayGraph(QMainWindow):
         self._unlock_regions_button.setToolTip('Unlock selected regions')
         self._unlock_regions_button.clicked.connect(lambda: self.update_regions(is_moveable=True))
 
-        self._clear_regions_button = QPushButton('Clear')
+        self._clear_regions_button = QPushButton('Unselect')
         self._clear_regions_button.setToolTip('Clear region selection')
         self._clear_regions_button.clicked.connect(lambda: self.clear_region_items(clear_selected_region_labels=True))
 
@@ -547,7 +547,7 @@ class XarrayGraph(QMainWindow):
         self._delete_regions_button.setToolTip('Delete selected regions')
         self._delete_regions_button.clicked.connect(self.delete_selected_regions)
 
-        self._label_regions_button = QPushButton('Label selected regions')
+        self._label_regions_button = QPushButton('Label')
         self._label_regions_button.setToolTip('Label selected regions')
         self._label_regions_button.pressed.connect(self.label_selected_regions)
 
@@ -557,29 +557,32 @@ class XarrayGraph(QMainWindow):
 
         self._selected_regions = []
 
-        selected_group = QGroupBox('Selected regions')
+        selected_group = QGroupBox('Selection')
         grid = QGridLayout(selected_group)
         grid.setContentsMargins(3, 3, 3, 3)
         grid.setSpacing(5)
-        grid.addWidget(self._hide_regions_button, 0, 0)
-        grid.addWidget(self._show_regions_button, 1, 0)
-        grid.addWidget(self._lock_regions_button, 0, 1)
+        grid.addWidget(self._label_regions_button, 0, 0)
+        grid.addWidget(self._delete_regions_button, 0, 1)
+        # grid.addWidget(self._hide_regions_button, 0, 0)
+        # grid.addWidget(self._show_regions_button, 0, 1)
+        grid.addWidget(self._lock_regions_button, 1, 0)
         grid.addWidget(self._unlock_regions_button, 1, 1)
-        grid.addWidget(self._clear_regions_button, 2, 0)
-        grid.addWidget(self._delete_regions_button, 2, 1)
+        # grid.addWidget(self._clear_regions_button, 2, 0)
+        # grid.addWidget(self._delete_regions_button, 2, 1)
 
-        labeled_group = QGroupBox('Labeled regions')
+        labeled_group = QGroupBox('X axis regions')
         vbox = QVBoxLayout(labeled_group)
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
-        vbox.addWidget(self._label_regions_button)
+        vbox.addWidget(selected_group)
+        # vbox.addWidget(self._label_regions_button)
         vbox.addWidget(self._region_label_list)
 
         panel = QWidget()
         vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(5, 5, 5, 5)
         vbox.setSpacing(20)
-        vbox.addWidget(selected_group)
+        # vbox.addWidget(selected_group)
         vbox.addWidget(labeled_group)
         vbox.addStretch()
 
@@ -678,9 +681,7 @@ class XarrayGraph(QMainWindow):
                 # if item._data not in self.regions:
                 #     self.regions.append(item._data)
         
-        labels = [self._region_label_list.item(i).text() for i in range(self._region_label_list.count())]
-        if label not in labels:
-            self._update_region_label_list()
+        self._update_region_label_list()
         selected_labels = [item.text() for item in self._region_label_list.selectedItems()]
         if label not in selected_labels:
             selected_labels.append(label)
