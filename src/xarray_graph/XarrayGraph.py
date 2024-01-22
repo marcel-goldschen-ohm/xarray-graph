@@ -25,6 +25,16 @@ from pyqtgraph_ext import *
 from xarray_treeview import *
 
 
+# version info (stored in metadata in case needed later)
+from importlib.metadata import version
+XARRAY_GRAPH_VERSION = version('xarray-graph')
+try:
+    i = re.search(r'[a-zA-Z]', XARRAY_GRAPH_VERSION).start()
+    XARRAY_GRAPH_VERSION = XARRAY_GRAPH_VERSION[:i].rstrip('.')
+except:
+    pass
+
+
 # Currently, color is handled by the widgets themselves.
 # pg.setConfigOption('background', (240, 240, 240))
 # pg.setConfigOption('foreground', (0, 0, 0))
@@ -107,6 +117,10 @@ class XarrayGraph(QMainWindow):
         # reset xdim in case dims have changed
         # also updates dim spinboxes and plot grid
         self.xdim = self.xdim
+
+        # metadata
+        self.metadata['dtype'] = 'XarrayGraph==' + XARRAY_GRAPH_VERSION
+        print(self.metadata['dtype'])
 
         # populate array math selections
         self._update_array_math_comboboxes()
