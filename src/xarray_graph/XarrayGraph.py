@@ -408,16 +408,18 @@ class XarrayGraph(QMainWindow):
     
     def open(self, filepath: str = '') -> None:
         if filepath == '':
-            filepath, _filter = QFileDialog.getOpenFileName(self, 'Open from Zarr heirarchy...')
+            filepath = QFileDialog.getExistingDirectory(self, 'Open from Zarr heirarchy...')
             if filepath == '':
                 return None
-        self.root.from_zarr(filepath)
-        self.root = self.root  # ensures UI reset for new data
+        self.root = XarrayTreeNode.from_zarr(filepath)
         self._filepath = filepath
         self.setWindowTitle(os.path.split(filepath)[1])
     
     def save(self) -> None:
-        self.save_as(self._filepath)
+        if hasattr(self, '_filepath'):
+            self.save_as(self._filepath)
+        else:
+            self.save_as()
     
     def save_as(self, filepath: str = '') -> None:
         if filepath == '':
@@ -468,7 +470,7 @@ class XarrayGraph(QMainWindow):
     
     def setup_data_control_panel(self) -> None:
         button = QToolButton()
-        button.setIcon(qta.icon('ph.eye-thin', options=[{'opacity': 0.5}]))
+        button.setIcon(qta.icon('ph.eye', options=[{'opacity': 0.5}]))
         button.setCheckable(True)
         button.setChecked(False)
         button.setToolTip('Data browser')
