@@ -1,7 +1,8 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- zarr i/o (implement in xarray_tree)
+- fix bug: measure Min, Max, AbsMax
+- fix bug: deleteing region item does not remove region from self.regions
 - rename dims (implement in xarray_treeview?)
 - drag items to rearrange tree heirarchy (implement in xarray_treeview)
 - define all undefined coords by inheriting them (implement in xarray_tree)
@@ -2396,8 +2397,12 @@ def test_live():
         },
         coords={
             'time': ('time', np.arange(n) * 0.01, {'units': 's'}),
+            # 'nottime': ('time', np.arange(n) * 0.1, {'units': 's'}),
         },
     )
+    # print(raw_ds.sel(time=[0.01, 0.02]))
+    # print(raw_ds.sel(time=np.isin(raw_ds.nottime, [0.1, 0.2])))
+    # return
 
     baselined_ds = xr.Dataset(
         data_vars={
