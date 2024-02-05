@@ -16,6 +16,7 @@ TODO:
 - style: set style for regions by label
 - measure peaks: implement
 - filter, smooth, etc.: implement
+- add python console to UI
 """
 
 from __future__ import annotations
