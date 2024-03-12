@@ -30,7 +30,8 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from pyqt_ext import *
+from pyqt_ext.widgets import *
+from pyqt_ext.graph import *
 import pyqtgraph as pg
 from pyqtgraph_ext import *
 from xarray_treeview import *
@@ -42,7 +43,7 @@ XARRAY_GRAPH_VERSION = version('xarray-graph')
 try:
     i = re.search(r'[a-zA-Z]', XARRAY_GRAPH_VERSION).start()
     XARRAY_GRAPH_VERSION = XARRAY_GRAPH_VERSION[:i].rstrip('.')
-except:
+except Exception:
     pass
 
 
@@ -116,17 +117,18 @@ class XarrayGraph(QMainWindow):
             elif isinstance(data, np.ndarray):
                 data = DataTree(ds=xr.Dataset(data_vars={'data': data}))
             else:
+                # assume list or tuple of two np.ndarrays (x, y)
                 try:
                     x, y = data
                     data = DataTree(ds=xr.Dataset(data_vars={'y': ('x', y)}, coords={'x': ('x', x)}))
-                except:
+                except Exception:
                     raise ValueError('XarrayGraph.data.setter: Invalid input.')
         
         # set xarray tree
         self._data = data
         
         # update data tree view
-        self._data_treeview.setRoot(self.data)
+        self._data_treeview.setTree(self.data)
 
         # store the combined coords for the entire tree
         self._combined_coords: xr.Dataset = self._get_combined_coords()
