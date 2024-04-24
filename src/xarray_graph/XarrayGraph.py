@@ -128,7 +128,8 @@ class XarrayGraph(QMainWindow):
         self._data = data
         
         # update data tree view
-        self._data_treeview.setTree(self.data)
+        root: XarrayTreeItem = XarrayTreeItem(self.data)
+        self._data_treeview.model().setRoot(root)
 
         # store the combined coords for the entire tree
         self._combined_coords: xr.Dataset = self._get_combined_coords()
@@ -263,7 +264,7 @@ class XarrayGraph(QMainWindow):
         win.setWindowTitle(self.__class__.__name__)
         win.show()
     
-    def open(self, filepath: str = '') -> None:
+    def load(self, filepath: str = '') -> None:
         if filepath == '':
             filepath = QFileDialog.getExistingDirectory(self, 'Open from Xarray data store...')
             if filepath == '':
@@ -585,8 +586,8 @@ class XarrayGraph(QMainWindow):
             colmin, colmax = self._grid_collim
             axis_tick_font = QFont()
             axis_tick_font.setPointSize(self._axistick_fontsize_spinbox.value())
-            for row in range(max(rowmax + 1, self._plot_grid.rowCount())):
-                for col in range(max(colmax + 1, self._plot_grid.columnCount())):
+            for row in range(rowmin, max(rowmax + 1, self._plot_grid.rowCount())):
+                for col in range(colmin, max(colmax + 1, self._plot_grid.columnCount())):
                     item = self._plot_grid.getItem(row, col)
                     if rowmin <= row <= rowmax and colmin <= col <= colmax:
                         if item is not None and not issubclass(type(item), pg.PlotItem):
@@ -613,7 +614,7 @@ class XarrayGraph(QMainWindow):
             
             self._link_axes()
             self._update_axes_tick_font()
-
+        
         # assign vars and coords to each plot
         rowmin, rowmax = self._grid_rowlim
         colmin, colmax = self._grid_collim
@@ -847,11 +848,11 @@ class XarrayGraph(QMainWindow):
                         }
                         
                         # graph style
-                        style = yarr.attrs.get('style', {})
-                        if 'LineWidth' not in style:
-                            style['LineWidth'] = default_line_width
-                        style = GraphStyle(style)
-                        color_index = graph.setGraphStyle(style, colorIndex=color_index)
+                        # style = yarr.attrs.get('style', {})
+                        # if 'LineWidth' not in style:
+                        #     style['LineWidth'] = default_line_width
+                        # style = GraphStyle(style)
+                        # color_index = graph.setGraphStyle(style, colorIndex=color_index)
                         
                         # graph name (limit to 50 characters)
                         name = item.path
@@ -956,7 +957,7 @@ class XarrayGraph(QMainWindow):
         self._file_menu = self.menuBar().addMenu(self.tr('&File'))
         self._file_menu.addAction(self.tr('&New Window'), self.new_window, QKeySequence.New)
         self._file_menu.addSeparator()
-        self._file_menu.addAction(qta.icon('fa5s.folder-open'), self.tr('&Open...'), self.open, QKeySequence.Open)
+        self._file_menu.addAction(qta.icon('fa5s.folder-open'), self.tr('&Open...'), self.load, QKeySequence.Open)
         self._file_menu.addSeparator()
         self._file_menu.addMenu(self._import_menu)
         self._file_menu.addSeparator()
