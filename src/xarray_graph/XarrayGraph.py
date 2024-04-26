@@ -1,6 +1,8 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
+- datatree: edit var style attr with dialog from context menu
+
 - fix bug: measure Min, Max, AbsMax
 - fix bug: deleteing region item does not remove region from self.regions
 - rename dims (implement in xarray_treeview?)
@@ -128,8 +130,7 @@ class XarrayGraph(QMainWindow):
         self._data = data
         
         # update data tree view
-        root: XarrayTreeItem = XarrayTreeItem(self.data)
-        self._data_treeview.model().setRoot(root)
+        self._data_treeview.setTree(self.data)
 
         # store the combined coords for the entire tree
         self._combined_coords: xr.Dataset = self._get_combined_coords()
@@ -411,8 +412,26 @@ class XarrayGraph(QMainWindow):
     def _on_tree_selection_changed(self) -> None:
         # selected tree items
         self._selected_items: list[XarrayTreeItem] = self._data_treeview.selectedItems()
+        self._selected_dataset_items = [item for item in self._selected_items if item.is_node()]
+        self._selected_items = [item for item in self._selected_items if item.is_var()]
         if DEBUG:
             print('_selected_items:', [item.path for item in self._selected_items])
+            print('_selected_dataset_items:', [item.path for item in self._selected_dataset_items])
+        
+        # update selected dataset info panels
+        while self._main_area_layout.count() > 1:
+            self._main_area_layout.takeAt(1).widget().deleteLater()
+        for item in self._selected_dataset_items:
+            widget = QGroupBox(item.path)
+            layout = QVBoxLayout(widget)
+            layout.setContentsMargins(5, 5, 5, 5)
+            layout.setSpacing(5)
+            textEdit = QTextEdit()
+            textEdit.setPlainText(str(item.node.ds))
+            textEdit.setReadOnly(True)
+            layout.addWidget(textEdit)
+            self._main_area_layout.addWidget(widget)
+        self._plot_grid.setVisible(len(self._selected_items) > 0)
         
         # store the combined coords for the entire selection
         if self._selected_items:
@@ -817,6 +836,10 @@ class XarrayGraph(QMainWindow):
                         xdata: np.ndarray = xarr.values
                     except:
                         continue
+                    style = yarr.attrs.get('style', {})
+                    if 'linewidth' not in style:
+                        style['linewidth'] = default_line_width
+                    style = GraphStyle(style)
                     for coords in plot._info['coord_permutations']:
                         # x,y data
                         try:
@@ -848,11 +871,7 @@ class XarrayGraph(QMainWindow):
                         }
                         
                         # graph style
-                        # style = yarr.attrs.get('style', {})
-                        # if 'LineWidth' not in style:
-                        #     style['LineWidth'] = default_line_width
-                        # style = GraphStyle(style)
-                        # color_index = graph.setGraphStyle(style, colorIndex=color_index)
+                        graph.setGraphStyle(style, colorIndex=color_index)
                         
                         # graph name (limit to 50 characters)
                         name = item.path
@@ -864,6 +883,9 @@ class XarrayGraph(QMainWindow):
                         
                         # next graph item
                         count += 1
+                    
+                    # next dataset
+                    color_index += 1
                 
                 # remove extra graph items from plot
                 while len(graphs) > count:
@@ -934,9 +956,16 @@ class XarrayGraph(QMainWindow):
         self._grid_rowlim = ()
         self._grid_collim = ()
 
+        self._main_area = QWidget()
+        self._main_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._main_area_layout = QVBoxLayout(self._main_area)
+        self._main_area_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_area_layout.setSpacing(0)
+        self._main_area_layout.addWidget(self._plot_grid)
+
         hsplitter = QSplitter(Qt.Orientation.Horizontal)
         hsplitter.addWidget(self._control_panel)
-        hsplitter.addWidget(self._plot_grid)
+        hsplitter.addWidget(self._main_area)
         hsplitter.setStretchFactor(0, 0)
         hsplitter.setStretchFactor(1, 1)
         hsplitter.setHandleWidth(1)
@@ -1026,10 +1055,11 @@ class XarrayGraph(QMainWindow):
         self._control_panel_toolbar.addWidget(button)
 
         self._data_treeview = XarrayTreeView()
-        self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         root: XarrayTreeItem = XarrayTreeItem(node=self.data, key=None)
         model: XarrayTreeModel = XarrayTreeModel(root)
-        model.setAllowedSelections(['var'])
+        model.setShowDetailsColumn(False)
+        self._data_treeview.setShowCoords(False)
         self._data_treeview.setModel(model)
         self._data_treeview.selectionWasChanged.connect(self._on_tree_selection_changed)
 
@@ -1065,7 +1095,7 @@ class XarrayGraph(QMainWindow):
         self._link_xaxis_checkbox.setChecked(True)
         # self._link_xaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
 
-        self._link_yaxis_checkbox = QCheckBox('Link Y axes')
+        self._link_yaxis_checkbox = QCheckBox('Link Y axes (per variable)')
         self._link_yaxis_checkbox.setChecked(True)
         # self._link_yaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
 
@@ -1079,7 +1109,7 @@ class XarrayGraph(QMainWindow):
         self._col_tile_combobox.setCurrentText('None')
         # self._col_tile_combobox.currentTextChanged.connect(self.update_plot_grid)
 
-        link_group = QGroupBox('Link axis')
+        link_group = QGroupBox('Link axes')
         vbox = QVBoxLayout(link_group)
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(3)
@@ -1118,57 +1148,70 @@ class XarrayGraph(QMainWindow):
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
 
-        self._lock_regions_button = QPushButton('Lock')
-        self._lock_regions_button.setToolTip('Lock selected regions')
-        self._lock_regions_button.clicked.connect(lambda: self._update_selected_regions(movable=False))
+        # self._lock_regions_button = QPushButton('Lock')
+        # self._lock_regions_button.setToolTip('Lock selected regions')
+        # self._lock_regions_button.clicked.connect(lambda: self._update_selected_regions(movable=False))
 
-        self._unlock_regions_button = QPushButton('Unlock')
-        self._unlock_regions_button.setToolTip('Unlock selected regions')
-        self._unlock_regions_button.clicked.connect(lambda: self._update_selected_regions(movable=True))
+        # self._unlock_regions_button = QPushButton('Unlock')
+        # self._unlock_regions_button.setToolTip('Unlock selected regions')
+        # self._unlock_regions_button.clicked.connect(lambda: self._update_selected_regions(movable=True))
 
-        self._delete_regions_button = QPushButton('Delete')
-        self._delete_regions_button.setToolTip('Delete selected regions')
-        self._delete_regions_button.clicked.connect(self._delete_selected_regions)
+        # self._delete_regions_button = QPushButton('Delete')
+        # self._delete_regions_button.setToolTip('Delete selected regions')
+        # self._delete_regions_button.clicked.connect(self._delete_selected_regions)
 
-        self._label_regions_button = QPushButton('Label')
-        self._label_regions_button.setToolTip('Label selected regions')
-        self._label_regions_button.pressed.connect(self._label_selected_regions)
+        # self._label_regions_button = QPushButton('Label')
+        # self._label_regions_button.setToolTip('Label selected regions')
+        # self._label_regions_button.pressed.connect(self._label_selected_regions)
 
-        self._region_label_list = QListWidget()
-        self._region_label_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        self._region_label_list.itemSelectionChanged.connect(self._on_selected_region_labels_changed)
+        # self._region_label_list = QListWidget()
+        # self._region_label_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        # self._region_label_list.itemSelectionChanged.connect(self._on_selected_region_labels_changed)
 
-        self._selected_regions = []
+        # self._selected_regions = []
 
-        selected_group = QGroupBox('Selected')
-        grid = QGridLayout(selected_group)
-        grid.setContentsMargins(3, 3, 3, 3)
-        grid.setSpacing(5)
-        grid.addWidget(self._label_regions_button, 0, 0)
-        grid.addWidget(self._delete_regions_button, 0, 1)
-        grid.addWidget(self._lock_regions_button, 1, 0)
-        grid.addWidget(self._unlock_regions_button, 1, 1)
+        # selected_group = QGroupBox('Selected')
+        # grid = QGridLayout(selected_group)
+        # grid.setContentsMargins(3, 3, 3, 3)
+        # grid.setSpacing(5)
+        # grid.addWidget(self._label_regions_button, 0, 0)
+        # grid.addWidget(self._delete_regions_button, 0, 1)
+        # grid.addWidget(self._lock_regions_button, 1, 0)
+        # grid.addWidget(self._unlock_regions_button, 1, 1)
 
-        labeled_group = QGroupBox('X axis regions')
-        vbox = QVBoxLayout(labeled_group)
-        vbox.setContentsMargins(3, 3, 3, 3)
-        vbox.setSpacing(5)
-        vbox.addWidget(selected_group)
-        vbox.addWidget(self._region_label_list)
+        # labeled_group = QGroupBox('X axis regions')
+        # vbox = QVBoxLayout(labeled_group)
+        # vbox.setContentsMargins(3, 3, 3, 3)
+        # vbox.setSpacing(5)
+        # vbox.addWidget(selected_group)
+        # vbox.addWidget(self._region_label_list)
+
+        # panel = QWidget()
+        # vbox = QVBoxLayout(panel)
+        # vbox.setContentsMargins(5, 5, 5, 5)
+        # vbox.setSpacing(20)
+        # vbox.addWidget(labeled_group)
+        # vbox.addStretch()
+
+        # scroll_area = QScrollArea()
+        # scroll_area.setFrameShape(QFrame.NoFrame)
+        # scroll_area.setWidget(panel)
+        # scroll_area.setWidgetResizable(True)
+
+        # self._control_panel.addWidget(scroll_area)
+
+        root = XAxisRegionTreeItem(self.regions)
+        model = AxisRegionDndTreeModel(root)
+        view = XAxisRegionTreeView()
+        view.setModel(model)
 
         panel = QWidget()
         vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(5, 5, 5, 5)
         vbox.setSpacing(20)
-        vbox.addWidget(labeled_group)
-        vbox.addStretch()
+        vbox.addWidget(view)
 
-        scroll_area = QScrollArea()
-        scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(panel)
-        scroll_area.setWidgetResizable(True)
-
-        self._control_panel.addWidget(scroll_area)
+        self._control_panel.addWidget(panel)
     
     def _setup_math_control_panel(self) -> None:
         button = QToolButton()
@@ -1265,11 +1308,13 @@ class XarrayGraph(QMainWindow):
         form.addRow('Peak type', self._peak_type_combobox)
         form.addRow('Peak threshold', self._peak_threshold_edit)
 
-        self._measure_in_visible_regions_only_checkbox = QCheckBox('In visible regions only')
+        self._measure_in_visible_regions_only_checkbox = QCheckBox('Within selected regions')
         self._measure_in_visible_regions_only_checkbox.setChecked(True)
 
-        self._measure_per_visible_region_checkbox = QCheckBox('In each visible region')
+        self._measure_per_visible_region_checkbox = QCheckBox('Within each selected region')
         self._measure_per_visible_region_checkbox.setChecked(True)
+        self._measure_in_visible_regions_only_checkbox.setEnabled(not self._measure_per_visible_region_checkbox.isChecked)
+        self._measure_per_visible_region_checkbox.stateChanged.connect(lambda state: self._measure_in_visible_regions_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
 
         self._measure_name_edit = QLineEdit()
 
