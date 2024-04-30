@@ -63,6 +63,11 @@ DEFAULT_LINE_WIDTH = 1
 
 
 metric_scale_factors = {
+    'q': 1e-30, # quecto
+    'r': 1e-27, # ronto
+    'y': 1e-24, # yocto
+    'z': 1e-21, # zepto
+    'a': 1e-18, # atto
     'f': 1e-15, # femto
     'p': 1e-12, # pico
     'n': 1e-9, # nano
@@ -76,6 +81,8 @@ metric_scale_factors = {
     'E': 1e18, # exa
     'Z': 1e21, # zetta
     'Y': 1e24, # yotta
+    'R': 1e27, # ronna
+    'Q': 1e30, # quetta
 }
 
 
@@ -759,6 +766,7 @@ class XarrayGraph(QMainWindow):
             row_label = self._plot_grid.getItem(row, 0)
             if (row_label is not None) and ((row_tile_dim == 'None') or not isinstance(row_label, pg.AxisItem)):
                 self._plot_grid.removeItem(row_label)
+                row_label.deleteLater()
                 row_label = None
             if row_tile_dim != 'None':
                 tile_coord = plot._info['coords'][row_tile_dim].values[0]
@@ -781,6 +789,7 @@ class XarrayGraph(QMainWindow):
             col_label = self._plot_grid.getItem(rowmax + 1, col)
             if (col_label is not None) and ((col_tile_dim == 'None') or not isinstance(col_label, pg.AxisItem)):
                 self._plot_grid.removeItem(col_label)
+                col_label.deleteLater()
                 col_label = None
             if col_tile_dim != 'None':
                 tile_coord = plot._info['coords'][col_tile_dim].values[0]
@@ -793,6 +802,11 @@ class XarrayGraph(QMainWindow):
                     col_label.setLabel(text=label_text, **tile_label_style)
                 else:
                     col_label.setLabel(text=label_text, **tile_label_style)
+        # clear row label for bottom left corner
+        row_label = self._plot_grid.getItem(rowmax + 1, 0)
+        if row_label is not None:
+            self._plot_grid.removeItem(row_label)
+            row_label.deleteLater()
     
     def _update_axes_tick_font(self) -> None:
         axis_tick_font = QFont()
@@ -1068,21 +1082,21 @@ class XarrayGraph(QMainWindow):
 
         self._link_xaxis_checkbox = QCheckBox('Link X axes')
         self._link_xaxis_checkbox.setChecked(True)
-        # self._link_xaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
+        self._link_xaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
 
         self._link_yaxis_checkbox = QCheckBox('Link Y axes (per variable)')
         self._link_yaxis_checkbox.setChecked(True)
-        # self._link_yaxis_checkbox.stateChanged.connect(lambda: self.link_axes())
+        self._link_yaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
 
         self._row_tile_combobox = QComboBox()
         self._row_tile_combobox.addItems(['None'])
         self._row_tile_combobox.setCurrentText('None')
-        # self._row_tile_combobox.currentTextChanged.connect(self.update_plot_grid)
+        self._row_tile_combobox.currentTextChanged.connect(self._update_plot_grid)
 
         self._col_tile_combobox = QComboBox()
         self._col_tile_combobox.addItems(['None'])
         self._col_tile_combobox.setCurrentText('None')
-        # self._col_tile_combobox.currentTextChanged.connect(self.update_plot_grid)
+        self._col_tile_combobox.currentTextChanged.connect(self._update_plot_grid)
 
         link_group = QGroupBox('Link axes')
         vbox = QVBoxLayout(link_group)
@@ -1201,8 +1215,8 @@ class XarrayGraph(QMainWindow):
         self._measure_type_combobox.addItems(['Mean', 'Median'])
         self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
         self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
-        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
-        self._measure_type_combobox.addItems(['Peaks'])
+        # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        # self._measure_type_combobox.addItems(['Peaks'])
         self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
         self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
         self._measure_type_combobox.currentIndexChanged.connect(self._on_measure_type_changed)
@@ -1210,10 +1224,10 @@ class XarrayGraph(QMainWindow):
         self._peak_half_width_spinbox = QSpinBox()
         self._peak_half_width_spinbox.setValue(0)
 
-        self._peak_width_wrapper = QWidget()
-        form = QFormLayout(self._peak_width_wrapper)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(0)
+        self._peak_width_group = QGroupBox()
+        form = QFormLayout(self._peak_width_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
         form.setHorizontalSpacing(5)
         form.addRow('Average +/- samples', self._peak_half_width_spinbox)
 
@@ -1223,10 +1237,10 @@ class XarrayGraph(QMainWindow):
 
         self._peak_threshold_edit = QLineEdit('0')
 
-        self._peak_options_wrapper = QWidget()
-        form = QFormLayout(self._peak_options_wrapper)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(0)
+        self._peak_group = QGroupBox()
+        form = QFormLayout(self._peak_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
         form.setHorizontalSpacing(5)
         form.addRow('Peak type', self._peak_type_combobox)
         form.addRow('Peak threshold', self._peak_threshold_edit)
@@ -1256,8 +1270,8 @@ class XarrayGraph(QMainWindow):
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
         vbox.addWidget(self._measure_type_combobox)
-        vbox.addWidget(self._peak_options_wrapper)
-        vbox.addWidget(self._peak_width_wrapper)
+        vbox.addWidget(self._peak_group)
+        vbox.addWidget(self._peak_width_group)
         vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
         vbox.addWidget(self._measure_per_visible_region_checkbox)
         vbox.addWidget(self._measure_name_wrapper)
@@ -1299,10 +1313,10 @@ class XarrayGraph(QMainWindow):
         self._polynomial_degree_spinbox = QSpinBox()
         self._polynomial_degree_spinbox.setValue(2)
 
-        self._polynomial_options_wrapper = QWidget()
-        form = QFormLayout(self._polynomial_options_wrapper)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(0)
+        self._polynomial_group = QGroupBox()
+        form = QFormLayout(self._polynomial_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
         form.setHorizontalSpacing(5)
         form.addRow('Polynomial degree', self._polynomial_degree_spinbox)
 
@@ -1310,10 +1324,10 @@ class XarrayGraph(QMainWindow):
         self._spline_segments_spinbox.setValue(10)
         self._spline_segments_spinbox.setMinimum(1)
 
-        self._spline_options_wrapper = QWidget()
-        form = QFormLayout(self._spline_options_wrapper)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(0)
+        self._spline_group = QGroupBox()
+        form = QFormLayout(self._spline_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
         form.setHorizontalSpacing(5)
         form.addRow('Spline segments', self._spline_segments_spinbox)
 
@@ -1327,21 +1341,18 @@ class XarrayGraph(QMainWindow):
         self._equation_params_table.setHorizontalHeaderLabels(['Param', 'Value', 'Vary', 'Min', 'Max'])
         self._equation_params_table.verticalHeader().setVisible(False)
         self._equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self._equation_params_table.model().dataChanged.connect(self._update_curve_fit_preview)
 
-        self._equation_eval_button = QPushButton('Evaluate')
-        # self._equation_eval_button.pressed.connect(lambda: self.curve_fit(eval_equation_only=True))
+        self._equation_preview_checkbox = QCheckBox('Preview')
+        self._equation_preview_checkbox.stateChanged.connect(self._update_curve_fit_preview)
 
-        self._equation_clear_eval_button = QPushButton('Clear')
-        self._equation_clear_eval_button.pressed.connect(self._clear_tmp_curve_fits)
-
-        self._equation_group = QGroupBox('Equation')
-        grid = QGridLayout(self._equation_group)
-        grid.setContentsMargins(3, 3, 3, 3)
-        grid.setSpacing(3)
-        grid.addWidget(self._equation_edit, 0, 0, 1, 2)
-        grid.addWidget(self._equation_params_table, 1, 0, 1, 2)
-        grid.addWidget(self._equation_eval_button, 2, 0)
-        grid.addWidget(self._equation_clear_eval_button, 2, 1)
+        self._equation_group = QGroupBox()
+        vbox = QVBoxLayout(self._equation_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(3)
+        vbox.addWidget(self._equation_edit)
+        vbox.addWidget(self._equation_params_table)
+        vbox.addWidget(self._equation_preview_checkbox)
 
         self._curve_fit_optimize_in_regions_checkbox = QCheckBox('Optimize within selected regions')
         self._curve_fit_optimize_in_regions_checkbox.setChecked(True)
@@ -1359,15 +1370,15 @@ class XarrayGraph(QMainWindow):
         form.addRow('Result name', self._curve_fit_name_edit)
 
         self._curve_fit_button = QPushButton('Fit')
-        # self._curve_fit_button.pressed.connect(self.curve_fit)
+        self._curve_fit_button.pressed.connect(self.curve_fit)
 
         fit_group = QGroupBox('Curve fit')
         vbox = QVBoxLayout(fit_group)
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
         vbox.addWidget(self._curve_fit_type_combobox)
-        vbox.addWidget(self._polynomial_options_wrapper)
-        vbox.addWidget(self._spline_options_wrapper)
+        vbox.addWidget(self._polynomial_group)
+        vbox.addWidget(self._spline_group)
         vbox.addWidget(self._equation_group)
         vbox.addWidget(self._curve_fit_optimize_in_regions_checkbox)
         vbox.addWidget(self._curve_fit_evaluate_in_regions_checkbox)
@@ -1505,14 +1516,14 @@ class XarrayGraph(QMainWindow):
     
     def _on_measure_type_changed(self) -> None:
         measure_type = self._measure_type_combobox.currentText()
-        self._peak_options_wrapper.setVisible(measure_type == 'Peaks')
-        self._peak_width_wrapper.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
+        self._peak_group.setVisible(measure_type == 'Peaks')
+        self._peak_width_group.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
         self._measure_name_edit.setPlaceholderText(measure_type)
     
     def _on_curve_fit_type_changed(self) -> None:
         fit_type = self._curve_fit_type_combobox.currentText()
-        self._polynomial_options_wrapper.setVisible(fit_type == 'Polynomial')
-        self._spline_options_wrapper.setVisible(fit_type == 'Spline')
+        self._polynomial_group.setVisible(fit_type == 'Polynomial')
+        self._spline_group.setVisible(fit_type == 'Spline')
         self._equation_group.setVisible(fit_type == 'Equation')
         if self._equation_group.isVisible():
             self._equation_params_table.resizeColumnsToContents()
@@ -1581,16 +1592,26 @@ class XarrayGraph(QMainWindow):
             }
             self._curve_fit_model.set_param_hint(name, **self._equation_params[name])
     
+    def _update_curve_fit_preview(self) -> None:
+        show: bool = self._equation_preview_checkbox.isChecked()
+        if show:
+            self.preview_curve_fit()
+        else:
+            self._clear_tmp_curve_fits()
+    
     def _clear_tmp_curve_fits(self, plots: list[Plot] = None) -> None:
         if plots is None:
             plots = self._plots()
         for plot in plots:
-            if not hasattr(plot, '_tmp_fit_items'):
+            if not hasattr(plot, '_tmp_fit_graphs'):
                 continue
-            for item in plot._tmp_fit_items:
-                plot.removeItem(item)
-                item.deleteLater()
-            plot._tmp_fit_items = []
+            for graph in plot._tmp_fit_graphs:
+                try:
+                    plot.removeItem(graph)
+                    graph.deleteLater()
+                except:
+                    pass
+            plot._tmp_fit_graphs = []
             # plot._tmp_fits = []
             # plot._tmp_fit_tree_items = []
     
@@ -1730,8 +1751,12 @@ class XarrayGraph(QMainWindow):
             plot._tmp_measure_tree_items: list[XarrayTreeItem] = []
 
             for graph in graphs:
-                tree_item: XarrayTreeItem = graph._info['item']
-                data_coords: dict = graph._info['coords']
+                try:
+                    tree_item: XarrayTreeItem = graph._info['item']
+                    data_coords: dict = graph._info['coords']
+                except:
+                    # graph not associated with data tree item
+                    continue
 
                 # x,y data
                 try:
@@ -1845,11 +1870,6 @@ class XarrayGraph(QMainWindow):
                     attrs = self._selected_coords[self.xdim].attrs.copy()
                     measure_coords[self.xdim] = xr.DataArray(dims=[self.xdim], data=xmeasure, attrs=attrs)
                 attrs = yarr.attrs.copy()
-                if 'style' not in attrs:
-                    attrs['style'] = {}
-                attrs['style']['linestyle'] = 'none'
-                attrs['style']['marker'] = 'o'
-                attrs['style']['markeredgewidth'] = 2
                 measure = xr.Dataset(
                     data_vars={
                         tree_item.key: xr.DataArray(dims=dims, data=ymeasure.reshape(shape), attrs=attrs)
@@ -1903,7 +1923,7 @@ class XarrayGraph(QMainWindow):
                         continue
                     # merge measurement with existing child dataset (use measurement for any overlap)
                     existing_child_node: DataTree = parent_node.children[result_name]
-                    existing_child_node.ds: xr.Dataset = measure.combine_first(existing_child_node.to_dataset())
+                    existing_child_node.ds = measure.combine_first(existing_child_node.to_dataset())
                     measure_tree_nodes.append(existing_child_node)
                 else:
                     # append measurement as new child node
@@ -1922,195 +1942,213 @@ class XarrayGraph(QMainWindow):
                     self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
                     self._data_treeview.setExpanded(model.parent(index), True)
 
-    # def curve_fit(self, plots: list[Plot] = None, eval_equation_only: bool = False) -> None:
-    #     if plots is None:
-    #         plots = self.plots()
+    def preview_curve_fit(self, plots: list[Plot] = None) -> None:
+        self.curve_fit(plots=plots, eval_equation_only=True)
+    
+    def curve_fit(self, plots: list[Plot] = None, eval_equation_only: bool = False) -> None:
+        if plots is None:
+            plots = self._plots()
         
-    #     # name for fit
-    #     result_name = self._curve_fit_name_edit.text().strip()
-    #     if not result_name:
-    #         result_name = self._curve_fit_name_edit.placeholderText()
+        # name for fit
+        result_name = self._curve_fit_name_edit.text().strip()
+        if not result_name:
+            result_name = self._curve_fit_name_edit.placeholderText()
                 
-    #     # fit options
-    #     fit_type = self._curve_fit_type_combobox.currentText()
-    #     if fit_type == 'Polynomial':
-    #         degree = self._polynomial_degree_spinbox.value()
-    #     elif fit_type == 'Spline':
-    #         segments = self._spline_segments_spinbox.value()
-    #     elif fit_type == 'Equation':
-    #         self._update_curve_fit_model()
-    #         params = self._curve_fit_model.make_params()
+        # fit options
+        fit_type = self._curve_fit_type_combobox.currentText()
+        if fit_type == 'Polynomial':
+            degree = self._polynomial_degree_spinbox.value()
+        elif fit_type == 'Spline':
+            segments = self._spline_segments_spinbox.value()
+        elif fit_type == 'Equation':
+            self._update_curve_fit_model()
+            params = self._curve_fit_model.make_params()
+
+        # clear any temporary fits
+        self._clear_tmp_curve_fits(plots)
         
-    #     # fit in each plot
-    #     for plot in plots:
-    #         data_items = [item for item in plot.listDataItems() if isinstance(item, XYData)]
-    #         if not data_items:
-    #             continue
+        # fit in each plot
+        for plot in plots:
+            graphs = [item for item in plot.listDataItems() if isinstance(item, Graph)]
+            if not graphs:
+                continue
 
-    #         # regions
-    #         view: View = plot.getViewBox()
-    #         regions: list[tuple[float, float]] = [item.getRegion() for item in view.allChildren() if isinstance(item, XAxisRegion) and item.isVisible()]
+            # regions
+            view: View = plot.getViewBox()
+            regions: list[tuple[float, float]] = [item.getRegion() for item in view.allChildren() if isinstance(item, XAxisRegion) and item.isVisible()]
 
-    #         # fit for each data item
-    #         plot._tmp_fits: list[xr.Dataset] = []
-    #         plot._tmp_fit_tree_items: list[XarrayTreeItem] = []
+            # fit for each data item
+            plot._tmp_fits: list[xr.Dataset] = []
+            plot._tmp_fit_tree_items: list[XarrayTreeItem] = []
 
-    #         for data_item in data_items:
-    #             tree_item: XarrayTreeItem = data_item.info['tree_item']
-    #             data_coords: dict = data_item.info['coords']
+            for graph in graphs:
+                try:
+                    tree_item: XarrayTreeItem = graph._info['item']
+                    data_coords: dict = graph._info['coords']
+                except:
+                    # graph not associated with data tree item
+                    continue
 
-    #             # x,y data
-    #             xarr, yarr = self.get_xy_data(tree_item.node, tree_item.key)
-    #             if xarr is None or yarr is None:
-    #                 continue
-    #             xdata: np.ndarray = xarr.values
-    #             # generally yarr_coords should be exactly data_coords, but just in case...
-    #             yarr_coords = {dim: dim_coords for dim, dim_coords in data_coords.items() if dim in yarr.dims}
-    #             ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
-    #             if len(ydata.shape) == 0:
-    #                 ydata = ydata.reshape((1,))
+                # x,y data
+                try:
+                    yarr = tree_item.node.ds.data_vars[tree_item.key]
+                    xarr = tree_item.node.ds.coords[self.xdim]
+                    xdata: np.ndarray = xarr.values
+
+                    # generally yarr_coords should be exactly data_coords, but just in case...
+                    yarr_coords = {dim: dim_coords for dim, dim_coords in data_coords.items() if dim in yarr.dims}
+                    ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
+                    if len(ydata.shape) == 0:
+                        ydata = ydata.reshape((1,))
+                except:
+                    continue
                 
-    #             # dimensions
-    #             dims = yarr.dims
+                # dimensions
+                dims = yarr.dims
                 
-    #             # region mask for fit optimization and/or evaluation
-    #             if regions and (self._curve_fit_optimize_in_visible_regions_checkbox.isChecked() or self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked()):
-    #                 # mask for combined regions
-    #                 regions_mask = np.full(xdata.shape, False)
-    #                 for region in regions:
-    #                     xmin, xmax = region
-    #                     regions_mask[(xdata >= xmin) & (xdata <= xmax)] = True
+                # region mask for fit optimization and/or evaluation
+                if regions and (self._curve_fit_optimize_in_visible_regions_checkbox.isChecked() or self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked()):
+                    # mask for combined regions
+                    regions_mask = np.full(xdata.shape, False)
+                    for region in regions:
+                        xmin, xmax = region
+                        regions_mask[(xdata >= xmin) & (xdata <= xmax)] = True
 
-    #             if regions and self._curve_fit_optimize_in_visible_regions_checkbox.isChecked():
-    #                 xinput = xdata[regions_mask]
-    #                 yinput = ydata[regions_mask]
-    #             else:
-    #                 xinput = xdata
-    #                 yinput = ydata
+                if regions and self._curve_fit_optimize_in_visible_regions_checkbox.isChecked():
+                    xinput = xdata[regions_mask]
+                    yinput = ydata[regions_mask]
+                else:
+                    xinput = xdata
+                    yinput = ydata
 
-    #             if regions and self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked():
-    #                 xoutput = xdata[regions_mask]
-    #             else:
-    #                 xoutput = xdata
+                if regions and self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked():
+                    xoutput = xdata[regions_mask]
+                else:
+                    xoutput = xdata
                 
-    #             # fit
-    #             if fit_type == 'Mean':
-    #                 youtput = np.full(len(xoutput), np.mean(yinput))
-    #             elif fit_type == 'Median':
-    #                 youtput = np.full(len(xoutput), np.median(yinput))
-    #             elif fit_type == 'Polynomial':
-    #                 coef = np.polyfit(xinput, yinput, degree)
-    #                 youtput = np.polyval(coef, xoutput)
-    #             elif fit_type == 'Spline':
-    #                 segment_length = max(1, int(len(xinput) / segments))
-    #                 knots = xinput[segment_length:-segment_length:segment_length]
-    #                 if len(knots) < 2:
-    #                     knots = xinput[[1, -2]]
-    #                 knots, coef, degree = sp.interpolate.splrep(xinput, yinput, t=knots)
-    #                 youtput = sp.interpolate.splev(xoutput, (knots, coef, degree), der=0)
-    #             elif fit_type == 'Equation':
-    #                 result = self._curve_fit_model.fit(yinput, params=params, x=xinput)
-    #                 if DEBUG:
-    #                     print(result.fit_report())
-    #                 youtput = self._curve_fit_model.eval(params=result.params, x=xoutput)
+                # fit
+                if fit_type == 'Mean':
+                    youtput = np.full(len(xoutput), np.mean(yinput))
+                elif fit_type == 'Median':
+                    youtput = np.full(len(xoutput), np.median(yinput))
+                elif fit_type == 'Polynomial':
+                    coef = np.polyfit(xinput, yinput, degree)
+                    youtput = np.polyval(coef, xoutput)
+                elif fit_type == 'Spline':
+                    segment_length = max(1, int(len(xinput) / segments))
+                    knots = xinput[segment_length:-segment_length:segment_length]
+                    if len(knots) < 2:
+                        knots = xinput[[1, -2]]
+                    knots, coef, degree = sp.interpolate.splrep(xinput, yinput, t=knots)
+                    youtput = sp.interpolate.splev(xoutput, (knots, coef, degree), der=0)
+                elif fit_type == 'Equation':
+                    if eval_equation_only:
+                        youtput = self._curve_fit_model.eval(params=params, x=xoutput)
+                    else:
+                        result = self._curve_fit_model.fit(yinput, params=params, x=xinput)
+                        if DEBUG:
+                            print(result.fit_report())
+                        youtput = self._curve_fit_model.eval(params=result.params, x=xoutput)
 
-    #             # fit as xarray dataset
-    #             shape =[1] * len(dims)
-    #             shape[dims.index(self.xdim)] = len(xoutput)
-    #             fit_coords = {}
-    #             for dim, coord in data_coords.items():
-    #                 attrs = self._selected_tree_coords[dim].attrs.copy()
-    #                 if dim == self.xdim:
-    #                     fit_coords[dim] = xr.DataArray(dims=[dim], data=xoutput, attrs=attrs)
-    #                 else:
-    #                     coord_values = np.array(coord.values).reshape((1,))
-    #                     fit_coords[dim] = xr.DataArray(dims=[dim], data=coord_values, attrs=attrs)
-    #             if self.xdim not in fit_coords:
-    #                 attrs = self._selected_tree_coords[self.xdim].attrs.copy()
-    #                 fit_coords[self.xdim] = xr.DataArray(dims=[self.xdim], data=xoutput, attrs=attrs)
-    #             attrs = yarr.attrs.copy()
-    #             fit = xr.Dataset(
-    #                 data_vars={
-    #                     tree_item.key: xr.DataArray(dims=dims, data=youtput.reshape(shape), attrs=attrs)
-    #                 },
-    #                 coords=fit_coords
-    #             )
-    #             plot._tmp_fits.append(fit)
-    #             plot._tmp_fit_tree_items.append(tree_item)
+                # fit as xarray dataset
+                shape =[1] * len(dims)
+                shape[dims.index(self.xdim)] = len(xoutput)
+                fit_coords = {}
+                for dim, coord in data_coords.items():
+                    attrs = self._selected_coords[dim].attrs.copy()
+                    if dim == self.xdim:
+                        fit_coords[dim] = xr.DataArray(dims=[dim], data=xoutput, attrs=attrs)
+                    else:
+                        coord_values = np.array(coord).reshape((1,))
+                        fit_coords[dim] = xr.DataArray(dims=[dim], data=coord_values, attrs=attrs)
+                if self.xdim not in fit_coords:
+                    attrs = self._selected_coords[self.xdim].attrs.copy()
+                    fit_coords[self.xdim] = xr.DataArray(dims=[self.xdim], data=xoutput, attrs=attrs)
+                attrs = yarr.attrs.copy()
+                fit = xr.Dataset(
+                    data_vars={
+                        tree_item.key: xr.DataArray(dims=dims, data=youtput.reshape(shape), attrs=attrs)
+                    },
+                    coords=fit_coords
+                )
+                plot._tmp_fits.append(fit)
+                plot._tmp_fit_tree_items.append(tree_item)
         
-    #     # preview fits
-    #     for plot in plots:
-    #         plot._tmp_fit_items = []
-    #         for fit in plot._tmp_fits:
-    #             var_name = list(fit.data_vars)[0]
-    #             var = fit.data_vars[var_name]
-    #             xdata = fit.coords[self.xdim].values
-    #             ydata = np.squeeze(var.values)
-    #             if len(ydata.shape) == 0:
-    #                 ydata = ydata.reshape((1,))
-    #             pen = pg.mkPen(color=(255, 0, 0), width=2)
-    #             fit_item = XYData(x=xdata, y=ydata, pen=pen)
-    #             plot.addItem(fit_item)
-    #             plot._tmp_fit_items.append(fit_item)
+        # preview fits
+        for plot in plots:
+            plot._tmp_fit_graphs = []
+            for fit in plot._tmp_fits:
+                var_name = list(fit.data_vars)[0]
+                var = fit.data_vars[var_name]
+                xdata = fit.coords[self.xdim].values
+                ydata = np.squeeze(var.values)
+                if len(ydata.shape) == 0:
+                    ydata = ydata.reshape((1,))
+                pen = pg.mkPen(color=(255, 0, 0), width=2)
+                fit_graph = Graph(x=xdata, y=ydata, pen=pen)
+                plot.addItem(fit_graph)
+                plot._tmp_fit_graphs.append(fit_graph)
         
-    #     # update equation params table with final fit params
-    #     if fit_type == 'Equation':
-    #         for row in range(self._equation_params_table.rowCount()):
-    #             name = self._equation_params_table.item(row, 0).text()
-    #             if result.params[name].vary:
-    #                 value_item = self._equation_params_table.item(row, 1)
-    #                 value_item.setText(f'{result.params[name].value:.6g}')
-    #         self._equation_params_table.resizeColumnToContents(1)
-    #         if eval_equation_only:
-    #             return
+        # update equation params table with final fit params
+        if fit_type == 'Equation':
+            if eval_equation_only:
+                return
+            for row in range(self._equation_params_table.rowCount()):
+                name = self._equation_params_table.item(row, 0).text()
+                if result.params[name].vary:
+                    value_item = self._equation_params_table.item(row, 1)
+                    value_item.setText(f'{result.params[name].value:.6g}')
+            self._equation_params_table.resizeColumnToContents(1)
         
-    #     # query user to keep fits
-    #     answer = QMessageBox.question(self, 'Keep Fits?', 'Keep fits?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-    #     if answer != QMessageBox.StandardButton.Yes:
-    #         for plot in plots:
-    #             for item in plot._tmp_fit_items:
-    #                 plot.removeItem(item)
-    #                 item.deleteLater()
-    #             plot._tmp_fit_items = []
-    #             plot._tmp_fits = []
-    #             plot._tmp_fit_tree_items = []
-    #         return
+        # query user to keep fits
+        answer = QMessageBox.question(self, 'Keep Fits?', 'Keep fits?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            for plot in plots:
+                if not self._equation_preview_checkbox.isChecked():
+                    for graph in plot._tmp_fit_graphs:
+                        plot.removeItem(graph)
+                        graph.deleteLater()
+                    plot._tmp_fit_graphs = []
+                plot._tmp_fits = []
+                plot._tmp_fit_tree_items = []
+            return
         
-    #     # add fits to data tree
-    #     fit_tree_nodes = []
-    #     merge_approved = None
-    #     for plot in plots:
-    #         for tree_item, fit in zip(plot._tmp_fit_tree_items, plot._tmp_fits):
-    #             parent_node: XarrayTreeNode = tree_item.node
-    #             # append measure as child tree node
-    #             if result_name in parent_node.children:
-    #                 if merge_approved is None:
-    #                     answer = QMessageBox.question(self, 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-    #                     merge_approved = (answer == QMessageBox.Yes)
-    #                 if not merge_approved:
-    #                     continue
-    #                 # merge measurement with existing child dataset (use measurement for any overlap)
-    #                 existing_child_node: XarrayTreeNode = parent_node.children[result_name]
-    #                 existing_child_node.dataset: xr.Dataset = fit.combine_first(existing_child_node.dataset)
-    #                 fit_tree_nodes.append(existing_child_node)
-    #             else:
-    #                 # append measurement as new child node
-    #                 node = XarrayTreeNode(name=result_name, dataset=fit, parent=parent_node)
-    #                 fit_tree_nodes.append(node)
+        # add fits to data tree
+        fit_tree_nodes = []
+        merge_approved = None
+        for plot in plots:
+            for tree_item, fit in zip(plot._tmp_fit_tree_items, plot._tmp_fits):
+                parent_node: DataTree = tree_item.node
+                # append measure as child tree node
+                if result_name in parent_node.children:
+                    if merge_approved is None:
+                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        merge_approved = (answer == QMessageBox.Yes)
+                    if not merge_approved:
+                        continue
+                    # merge measurement with existing child dataset (use measurement for any overlap)
+                    existing_child_node: DataTree = parent_node.children[result_name]
+                    existing_child_node.ds = fit.combine_first(existing_child_node.to_dataset())
+                    fit_tree_nodes.append(existing_child_node)
+                else:
+                    # append measurement as new child node
+                    node = DataTree(name=result_name, data=fit, parent=parent_node)
+                    fit_tree_nodes.append(node)
         
-    #     # update data tree
-    #     self.data = self.data
+        # update data tree
+        self.data = self.data
 
-    #     # make sure newly added fit nodes are selected and expanded
-    #     model: XarrayTreeModel = self._data_treeview.model()
-    #     item: XarrayTreeItem = model.root
-    #     while item is not None:
-    #         for node in fit_tree_nodes:
-    #             if item.node is node and item.is_var():
-    #                 index: QModelIndex = model.createIndex(item.row(), 0, item)
-    #                 self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-    #                 self._data_treeview.setExpanded(model.parent(index), True)
-    #         item = item.next_depth_first()
+        # make sure newly added fit nodes are selected and expanded
+        model: XarrayTreeModel = self._data_treeview.model()
+        for item in model.root().depth_first():
+            for node in fit_tree_nodes:
+                if item.node is node and item.is_var():
+                    index: QModelIndex = model.createIndex(item.sibling_index, 0, item)
+                    self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                    self._data_treeview.setExpanded(model.parent(index), True)
+        
+        # disable preview checkbox
+        self._equation_preview_checkbox.setChecked(False)
 
 
 def permutations(coords: dict) -> list[dict]:
