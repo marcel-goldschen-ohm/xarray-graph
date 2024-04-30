@@ -1034,6 +1034,17 @@ class XarrayGraph(QMainWindow):
             if i != index:
                 button.setChecked(False)
     
+    def _show_control_panel_at(self, index: int) -> None:
+        actions = self._control_panel_toolbar.actions()
+        widgets = [self._control_panel_toolbar.widgetForAction(action) for action in actions]
+        buttons = [widget for widget in widgets if isinstance(widget, QToolButton)]
+        buttons[index].setChecked(True)
+        self._control_panel.setCurrentIndex(index)
+        self._control_panel.setVisible(True)
+        for i, button in enumerate(buttons):
+            if i != index:
+                button.setChecked(False)
+    
     def _setup_data_control_panel(self) -> None:
         button = QToolButton()
         button.setIcon(qta.icon('ph.eye', options=[{'opacity': 0.5}]))

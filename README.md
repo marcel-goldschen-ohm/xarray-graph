@@ -7,6 +7,11 @@ Should work with PySide6, PyQt6, or PyQt5.
 pip install PySide6 xarray-graph
 ```
 
+# Run
+```shell
+xarray-graph
+```
+
 # TODO
 - i/o
 - tests
