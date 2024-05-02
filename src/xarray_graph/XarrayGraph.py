@@ -1054,7 +1054,8 @@ class XarrayGraph(QMainWindow):
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
 
-        self._data_treeview = XarrayTreeView()
+        self._data_treeviewer = XarrayTreeViewer()
+        self._data_treeview = self._data_treeviewer.view()
         self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         root: XarrayTreeItem = XarrayTreeItem(node=self.data, key=None)
         model: XarrayTreeModel = XarrayTreeModel(root)
@@ -1062,6 +1063,7 @@ class XarrayGraph(QMainWindow):
         self._data_treeview.setShowCoords(False)
         self._data_treeview.setModel(model)
         self._data_treeview.selectionWasChanged.connect(self._on_tree_selection_changed)
+        self._data_treeviewer.setSizes([100, 1])
 
         self._xdim_combobox = QComboBox()
         self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
@@ -1071,7 +1073,7 @@ class XarrayGraph(QMainWindow):
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(0)
 
-        vbox.addWidget(self._data_treeview)
+        vbox.addWidget(self._data_treeviewer)
 
         form = QFormLayout()
         form.setContentsMargins(5, 3, 0, 3)
