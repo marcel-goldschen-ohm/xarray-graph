@@ -42,11 +42,6 @@ from xarray_treeview import *
 # version info (stored in metadata in case needed later)
 from importlib.metadata import version
 XARRAY_GRAPH_VERSION = version('xarray-graph')
-try:
-    i = re.search(r'[a-zA-Z]', XARRAY_GRAPH_VERSION).start()
-    XARRAY_GRAPH_VERSION = XARRAY_GRAPH_VERSION[:i].rstrip('.')
-except Exception:
-    pass
 
 
 # Currently, color is handled by the widgets themselves.
@@ -120,16 +115,16 @@ class XarrayGraph(QMainWindow):
             if data is None:
                 data = DataTree()
             elif isinstance(data, xr.Dataset):
-                data = DataTree(ds=data)
+                data = DataTree(data=data)
             elif isinstance(data, xr.DataArray):
-                data = DataTree(ds=xr.Dataset(data_vars={data.name: data}))
+                data = DataTree(data=xr.Dataset(data_vars={data.name: data}))
             elif isinstance(data, np.ndarray):
-                data = DataTree(ds=xr.Dataset(data_vars={'data': data}))
+                data = DataTree(data=xr.Dataset(data_vars={'data': data}))
             else:
                 # assume list or tuple of two np.ndarrays (x, y)
                 try:
                     x, y = data
-                    data = DataTree(ds=xr.Dataset(data_vars={'y': ('x', y)}, coords={'x': ('x', x)}))
+                    data = DataTree(data=xr.Dataset(data_vars={'y': ('x', y)}, coords={'x': ('x', x)}))
                 except Exception:
                     raise ValueError('XarrayGraph.data.setter: Invalid input.')
         
@@ -150,6 +145,12 @@ class XarrayGraph(QMainWindow):
 
         # metadata
         self.attrs['xarray-graph-version'] = XARRAY_GRAPH_VERSION
+
+        # regions tree view
+        self._region_treeview.model().setRoot(AxisRegionTreeItem(self.regions))
+
+        # notes
+        self._notes_edit.setPlainText(self.attrs.get('notes', ''))
 
         # populate array math selections
         # self._update_array_math_comboboxes()
@@ -297,31 +298,20 @@ class XarrayGraph(QMainWindow):
         self.setWindowTitle(os.path.split(filepath)[1])
     
     def import_data(self, filepath: str = '', filetype: str = '') -> None:
-        # ds: xr.Dataset | None = None
-        # if filetype == 'pCLAMP':
-        #     # TODO: implement
-        #     QMessageBox.warning(self, 'Import pCLAMP', 'Importing pCLAMP files is not yet implemented.')
-        #     return
-        # elif filetype == 'HEKA':
-        #     # TODO: implement
-        #     QMessageBox.warning(self, 'Import HEKA', 'Importing HEKA files is not yet implemented.')
-        #     return
-        # elif filetype == 'GOLab TEVC':
-        #     ds, filepath = import_golab_tevc(filepath)
-        # if ds is None:
-        #     return
-        # self.set_data(ds)
-        # if 'regions' in ds.attrs:
-        #     self.metadata['regions'] = ds.attrs['regions']
-        #     del ds.attrs['regions']
-        #     region_labels = [region['label'] for region in self.metadata['regions']]
-        #     self._region_label_list.clear()
-        #     self._region_label_list.addItems(region_labels)
-        #     self.set_selected_region_labels(region_labels)
-        # if 'notes' in ds.attrs:
-        #     self.metadata['notes'] = ds.attrs['notes']
-        #     del ds.attrs['notes']
-        #     self.load_notes(self.metadata['notes'])
+        ds: xr.Dataset | None = None
+        if filetype == 'pCLAMP':
+            # TODO: implement
+            QMessageBox.warning(self, 'Import pCLAMP', 'Importing pCLAMP files is not yet implemented.')
+            return
+        elif filetype == 'HEKA':
+            # TODO: implement
+            QMessageBox.warning(self, 'Import HEKA', 'Importing HEKA files is not yet implemented.')
+            return
+        elif filetype == 'GOLab TEVC':
+            ds, filepath = import_golab_tevc(filepath)
+        if ds is None:
+            return
+        self.data = ds
         self._filepath = os.path.splitext(filepath)[0]
         self.setWindowTitle(os.path.split(filepath)[1])
     
@@ -2209,43 +2199,41 @@ def permutations(coords: dict) -> list[dict]:
     return permutations
 
 
-# def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, str]:
-#     if filepath == '':
-#         filepath, _filter = QFileDialog.getOpenFileName(parent, 'Import GoLab TEVC', '', 'GoLab TEVC (*.mat)')
-#         if filepath == '':
-#             return None
-#     matdict = sp.io.loadmat(filepath, simplify_cells=True)
-#     # print(matdict)
-#     current = matdict['current']
-#     current_units = matdict['current_units']
-#     if len(current_units) > 1:
-#         prefix = current_units[0]
-#         if prefix in metric_scale_factors:
-#             current *= metric_scale_factors[prefix]
-#             current_units = current_units[1:]
-#     time = np.arange(len(current)) * matdict['time_interval_sec']
-#     ds = xr.Dataset(
-#         data_vars={
-#             'current': (['time'], current, {'units': current_units}),
-#         },
-#         coords={
-#             'time': (['time'], time, {'units': 's'}),
-#         },
-#     )
-#     if 'events' in matdict and matdict['events']:
-#         ds.attrs['regions'] = []
-#         for event in matdict['events']:
-#             time = event['time_sec']
-#             text = event['text']
-#             ds.attrs['regions'].append({
-#                 'dim': 'time',
-#                 'label': f'{time:.6f}',
-#                 'region': [time, time],
-#                 'text': text,
-#             })
-#     if 'notes' in matdict:
-#         ds.attrs['notes'] = matdict['notes']
-#     return ds, filepath
+def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, str]:
+    if filepath == '':
+        filepath, _filter = QFileDialog.getOpenFileName(parent, 'Import GoLab TEVC', '', 'GoLab TEVC (*.mat)')
+        if filepath == '':
+            return None
+    matdict = sp.io.loadmat(filepath, simplify_cells=True)
+    # print(matdict)
+    current = matdict['current']
+    current_units = matdict['current_units']
+    if len(current_units) > 1:
+        prefix = current_units[0]
+        if prefix in metric_scale_factors:
+            current *= metric_scale_factors[prefix]
+            current_units = current_units[1:]
+    time = np.arange(len(current)) * matdict['time_interval_sec']
+    ds = xr.Dataset(
+        data_vars={
+            'current': (['time'], current, {'units': current_units}),
+        },
+        coords={
+            'time': (['time'], time, {'units': 's'}),
+        },
+    )
+    if 'events' in matdict and matdict['events']:
+        ds.attrs['regions'] = []
+        for event in matdict['events']:
+            time = event['time_sec']
+            text = event['text']
+            ds.attrs['regions'].append({
+                'region': {'time': [time, time]},
+                'text': text,
+            })
+    if 'notes' in matdict:
+        ds.attrs['notes'] = matdict['notes']
+    return ds, filepath
 
 
 def test_live():
