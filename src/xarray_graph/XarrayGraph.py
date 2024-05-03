@@ -278,7 +278,7 @@ class XarrayGraph(QMainWindow):
             filepath = QFileDialog.getExistingDirectory(self, 'Open from Xarray data store...')
             if filepath == '':
                 return None
-        self.data = open_datatree(filepath)
+        self.data = open_datatree(filepath, 'zarr')
         self._filepath = filepath
         self.setWindowTitle(os.path.split(filepath)[1])
     
