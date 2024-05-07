@@ -905,8 +905,9 @@ class XarrayGraph(QMainWindow):
             item.deleteLater()
             self.add_region(region)
             
-            # stop drawing regions (draw one at a time)
-            self._set_region_drawing_mode(False)
+            # stop drawing regions (draw one at a time)?
+            if self._draw_single_region_action.isChecked():
+                self._set_region_drawing_mode(False)
 
     def _setup_ui(self) -> None:
         self._setup_menubar()
@@ -916,11 +917,13 @@ class XarrayGraph(QMainWindow):
         self._control_panel_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
         self._control_panel_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
         self._control_panel_toolbar.setMovable(False)
+        self._control_panel_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
 
         self._plot_grid_toolbar = QToolBar()
         self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
         self._plot_grid_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
         self._plot_grid_toolbar.setMovable(False)
+        self._plot_grid_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
         icon_button = QToolButton()
         icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
         icon_button.pressed.connect(self.refresh)
@@ -990,6 +993,18 @@ class XarrayGraph(QMainWindow):
         self._region_button.setChecked(False)
         self._region_button.clicked.connect(self._set_region_drawing_mode)
         self._action_after_dim_iter_things = self._plot_grid_toolbar.addWidget(self._region_button)
+
+        self._region_button_menu = QMenu()
+        self._draw_single_region_action = QAction('Draw single region', self._region_button_menu, checkable=True, checked=True)
+        self._draw_multiple_regions_action = QAction('Draw multiple regions', self._region_button_menu, checkable=True, checked=False)
+        self._region_button_menu.addAction(self._draw_single_region_action)
+        self._region_button_menu.addAction(self._draw_multiple_regions_action)
+        group = QActionGroup(self._region_button_menu)
+        group.addAction(self._draw_single_region_action)
+        group.addAction(self._draw_multiple_regions_action)
+        group.setExclusive(True)
+        self._region_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._region_button.customContextMenuRequested.connect(lambda pos: self._region_button_menu.exec_(self._region_button.mapToGlobal(pos)))
 
         self._home_button = QToolButton()
         self._home_button.setIcon(qta.icon('mdi.home-outline', options=[{'opacity': 0.5}]))
@@ -1496,6 +1511,13 @@ class XarrayGraph(QMainWindow):
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
+    
+    # def _show_region_context_menu(self, pos: QPoint) -> None:
+    #     if not hasattr(self, '_region_button_menu'):
+    #         self._region_button_menu = QMenu()
+    #     menu = QMenu()
+    #     menu.addAction('Draw X-axis regions until unchecked', self.clear_regions)
+    #     menu.exec(self.sender().mapToGlobal(pos))
     
     def _set_region_drawing_mode(self, draw: bool | None = None) -> None:
         if draw is None:
