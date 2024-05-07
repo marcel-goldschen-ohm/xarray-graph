@@ -153,7 +153,7 @@ class XarrayGraph(QMainWindow):
         self._notes_edit.setPlainText(self.attrs.get('notes', ''))
 
         # populate array math selections
-        # self._update_array_math_comboboxes()
+        self._update_array_math_comboboxes()
     
     @property
     def dims(self) -> list[str]:
@@ -1191,7 +1191,7 @@ class XarrayGraph(QMainWindow):
         self._math_operator_combobox.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
 
         self._math_eval_button = QPushButton('Evaluate')
-        # self._math_eval_button.clicked.connect(self.eval_array_math)
+        self._math_eval_button.pressed.connect(self.eval_array_math)
 
         math_group = QGroupBox('Array math')
         grid = QGridLayout(math_group)
@@ -1512,13 +1512,6 @@ class XarrayGraph(QMainWindow):
 
         self._control_panel.addWidget(scroll_area)
     
-    # def _show_region_context_menu(self, pos: QPoint) -> None:
-    #     if not hasattr(self, '_region_button_menu'):
-    #         self._region_button_menu = QMenu()
-    #     menu = QMenu()
-    #     menu.addAction('Draw X-axis regions until unchecked', self.clear_regions)
-    #     menu.exec(self.sender().mapToGlobal(pos))
-    
     def _set_region_drawing_mode(self, draw: bool | None = None) -> None:
         if draw is None:
             draw = self._region_button.isChecked()
@@ -1667,57 +1660,48 @@ class XarrayGraph(QMainWindow):
                 if isinstance(item, XAxisRegion):
                     item.setFontSize(self._textitem_fontsize_spinbox.value())
 
-    # def _update_array_math_comboboxes(self) -> None:
-    #     var_items = []
-    #     item = self._data_treeview.model().root
-    #     while item is not None:
-    #         if item.is_var():
-    #             var_items += [item.name_from_path(maxchar=100)]
-    #         item = item.next_depth_first()
-    #     self._math_lhs_combobox.clear()
-    #     self._math_rhs_combobox.clear()
-    #     self._math_lhs_combobox.addItems(var_items)
-    #     self._math_rhs_combobox.addItems(var_items)
+    def _update_array_math_comboboxes(self) -> None:
+        var_paths = [item.path for item in self._data_treeview.model().root().depth_first() if item.is_var()]
+        for i in range(len(var_paths)):
+            if len(var_paths[i]) > 100:
+                var_paths[i] = '...' + var_paths[i][-97:]
+        self._math_lhs_combobox.clear()
+        self._math_rhs_combobox.clear()
+        self._math_lhs_combobox.addItems(var_paths)
+        self._math_rhs_combobox.addItems(var_paths)
     
-    # def eval_array_math(self) -> None:
-    #     var_items = []
-    #     item = self._data_treeview.model().root
-    #     while item is not None:
-    #         if item.is_var():
-    #             var_items += [item]
-    #         item = item.next_depth_first()
-    #     lhs_item = var_items[self._math_lhs_combobox.currentIndex()]
-    #     rhs_item = var_items[self._math_rhs_combobox.currentIndex()]
-    #     lhs: xr.DataArray = lhs_item.node.inherited_data(lhs_item.key)
-    #     rhs: xr.DataArray = rhs_item.node.inherited_data(rhs_item.key)
-    #     op = self._math_operator_combobox.currentText()
-    #     # TODO: limit vars to the intersection of their coords
-    #     if op == '+':
-    #         result = lhs + rhs
-    #     elif op == '-':
-    #         result = lhs - rhs
-    #     elif op == '*':
-    #         result = lhs * rhs
-    #     elif op == '/':
-    #         result = lhs / rhs
-    #     # append result as child of lhs_item
-    #     # TODO: handle result name collisions
-    #     result_name = self._math_result_name_edit.text().strip()
-    #     ds = xr.Dataset(data_vars={result.name: result})
-    #     result_node = XarrayTreeNode(name=result_name, dataset=ds, parent=lhs_item.node)
+    def eval_array_math(self) -> None:
+        var_items = [item for item in self._data_treeview.model().root().depth_first() if item.is_var()]
+        lhs_item = var_items[self._math_lhs_combobox.currentIndex()]
+        rhs_item = var_items[self._math_rhs_combobox.currentIndex()]
+        lhs: xr.DataArray = lhs_item.node[lhs_item.key]
+        rhs: xr.DataArray = rhs_item.node[rhs_item.key]
+        op = self._math_operator_combobox.currentText()
+        if op == '+':
+            result = lhs + rhs
+        elif op == '-':
+            result = lhs - rhs
+        elif op == '*':
+            result = lhs * rhs
+        elif op == '/':
+            result = lhs / rhs
+        # append result as child of lhs_item
+        result_name = self._math_result_name_edit.text().strip()
+        if result_name == '':
+            result_name = self._math_result_name_edit.placeholderText()
+        result_ds = xr.Dataset(data_vars={result.name: result})
+        result_node = DataTree(name=result_name, data=result_ds, parent=lhs_item.node)
         
-    #     # update data tree
-    #     self.data = self.data
+        # update data tree
+        self.data = self.data
 
-    #     # make sure newly added node is selected and expanded
-    #     model: XarrayTreeModel = self._data_treeview.model()
-    #     item: XarrayTreeItem = model.root
-    #     while item is not None:
-    #         if item.node is result_node and item.is_var():
-    #             index: QModelIndex = model.createIndex(item.row(), 0, item)
-    #             self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-    #             self._data_treeview.setExpanded(model.parent(index), True)
-    #         item = item.next_depth_first()
+        # make sure newly added fit nodes are selected and expanded
+        model: XarrayTreeModel = self._data_treeview.model()
+        for item in model.root().depth_first():
+            if item.node is result_node and item.is_var():
+                index: QModelIndex = model.createIndex(item.sibling_index, 0, item)
+                self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                self._data_treeview.setExpanded(model.parent(index), True)
     
     # # @Slot()
     # # def on_axes_item_changed(self):
