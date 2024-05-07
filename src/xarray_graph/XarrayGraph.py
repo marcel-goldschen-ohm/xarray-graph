@@ -1725,7 +1725,7 @@ class XarrayGraph(QMainWindow):
                 i = np.argpartition(x, len(x) // 2)[len(x) // 2]
                 return x[i]
         if measure_type in ['Min', 'Max', 'AbsMax', 'Peaks']:
-            peak_width = self._peak_width_spinbox.value()
+            peak_width = self._peak_half_width_spinbox.value()
             if peak_width > 0:
                 def get_peak_index_range(mask, center_index):
                     start, stop = center_index, center_index + 1
@@ -2010,21 +2010,21 @@ class XarrayGraph(QMainWindow):
                 dims = yarr.dims
                 
                 # region mask for fit optimization and/or evaluation
-                if regions and (self._curve_fit_optimize_in_visible_regions_checkbox.isChecked() or self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked()):
+                if regions and (self._curve_fit_optimize_in_regions_checkbox.isChecked() or self._curve_fit_evaluate_in_regions_checkbox.isChecked()):
                     # mask for combined regions
                     regions_mask = np.full(xdata.shape, False)
                     for region in regions:
                         xmin, xmax = region
                         regions_mask[(xdata >= xmin) & (xdata <= xmax)] = True
 
-                if regions and self._curve_fit_optimize_in_visible_regions_checkbox.isChecked():
+                if regions and self._curve_fit_optimize_in_regions_checkbox.isChecked():
                     xinput = xdata[regions_mask]
                     yinput = ydata[regions_mask]
                 else:
                     xinput = xdata
                     yinput = ydata
 
-                if regions and self._curve_fit_evaluate_in_visible_regions_checkbox.isChecked():
+                if regions and self._curve_fit_evaluate_in_regions_checkbox.isChecked():
                     xoutput = xdata[regions_mask]
                 else:
                     xoutput = xdata
