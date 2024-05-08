@@ -1069,7 +1069,6 @@ class XarrayGraph(QMainWindow):
         self._data_treeview.setModel(model)
         self._data_treeview.selectionWasChanged.connect(self._on_tree_selection_changed)
         self._data_treeviewer.setSizes([100, 1])
-        self._data_treeviewer.metadata_tabs.setCurrentIndex(1)
 
         self._xdim_combobox = QComboBox()
         self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
