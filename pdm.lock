@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:1c4c30e72ea270be03846cdb8878e8befd174b07bcb787985eb415d120d60c1a"
+content_hash = "sha256:96a3f5d70d1490e9b3df938bab808d04aae3da6da90c7ffe483e580e53705652"
 
 [[package]]
 name = "asteval"
@@ -162,7 +162,7 @@ files = [
 
 [[package]]
 name = "pyqt-ext"
-version = "1.2.0"
+version = "1.2.5"
 requires_python = ">=3.9"
 summary = "Collection of PyQt/PySide widgets/tools"
 groups = ["default"]
@@ -172,8 +172,8 @@ dependencies = [
     "qtpy>=2.4.1",
 ]
 files = [
-    {file = "pyqt_ext-1.2.0-py3-none-any.whl", hash = "sha256:586f268abd50ff16cdf3b412c8e5e1ad788206282ca14e39671ea30b1b1958a5"},
-    {file = "pyqt_ext-1.2.0.tar.gz", hash = "sha256:0a417fa86ee4b0e017c2cd2d1a036ca42523463f96531b3a9b8f6f715f8223fa"},
+    {file = "pyqt_ext-1.2.5-py3-none-any.whl", hash = "sha256:2bb8fb462fa846c42a39c42477267ae97d0b70cb12bfb7014dda62aa08d66c40"},
+    {file = "pyqt_ext-1.2.5.tar.gz", hash = "sha256:84c7bad20b5cc644766247808f1adb0df2ed88f538ba19f5ea2013448a4b6d7e"},
 ]
 
 [[package]]
@@ -192,20 +192,20 @@ files = [
 
 [[package]]
 name = "pyqtgraph-ext"
-version = "1.2.0"
+version = "1.2.6"
 requires_python = ">=3.9"
 summary = "Collection of PyQtGraph widgets/tools."
 groups = ["default"]
 dependencies = [
     "numpy>=1.26.2",
-    "pyqt-ext>=1.1.0",
+    "pyqt-ext>=1.2.5",
     "pyqtgraph>=0.13.3",
     "qtawesome>=1.3.0",
     "qtpy>=2.4.1",
 ]
 files = [
-    {file = "pyqtgraph_ext-1.2.0-py3-none-any.whl", hash = "sha256:a173652a8385423fe14af6bab852e632986c06ff9c45fb00c0a1dd4eb1831d5a"},
-    {file = "pyqtgraph_ext-1.2.0.tar.gz", hash = "sha256:bdca9d091795f203f9c7ecb9e8d793538cce981c05ba6e51b3266111ac436948"},
+    {file = "pyqtgraph_ext-1.2.6-py3-none-any.whl", hash = "sha256:b5980a3c97444d71a7f7fff240ede7d0241a0e41b6b393d6f7c614c0225037ad"},
+    {file = "pyqtgraph_ext-1.2.6.tar.gz", hash = "sha256:bf3b4d7c4c195664c1bcd0d45bae9106cf99600e04a0693d331841793648c296"},
 ]
 
 [[package]]
@@ -349,37 +349,35 @@ files = [
 ]
 
 [[package]]
-name = "xarray-tree"
-version = "0.1.1"
+name = "xarray-datatree"
+version = "0.0.14"
 requires_python = ">=3.9"
-summary = "Tree of Xarray datasets."
+summary = "Hierarchical tree-like data structures for xarray"
 groups = ["default"]
 dependencies = [
-    "lmfit>=1.2.2",
-    "numpy>=1.26.2",
-    "scipy>=1.11.4",
+    "packaging",
     "xarray>=2023.12.0",
 ]
 files = [
-    {file = "xarray_tree-0.1.1-py3-none-any.whl", hash = "sha256:e2b94cae120262bd3aae8aded9d0c026acd30a75a7abc6c28b2f2c9ba331672e"},
-    {file = "xarray_tree-0.1.1.tar.gz", hash = "sha256:f0517c317d885f570e315f5205244e669a5f3322754e88cf79a673779fa13cf2"},
+    {file = "xarray-datatree-0.0.14.tar.gz", hash = "sha256:26169af35b0df0d17652e229cef210decf0711dd88e33419142edc6674113af4"},
+    {file = "xarray_datatree-0.0.14-py3-none-any.whl", hash = "sha256:07f5d0d9a03a3220d732e1c764ee60f2c5110f884a290b2af371f92952379166"},
 ]
 
 [[package]]
 name = "xarray-treeview"
-version = "1.2.0"
+version = "1.2.6"
 requires_python = ">=3.9"
 summary = "PyQt/PySide model/view for tree of Xarray datasets."
 groups = ["default"]
 dependencies = [
     "numpy>=1.26.2",
-    "pyqt-ext>=1.1.0",
+    "pyqt-ext>=1.2.5",
     "qtawesome>=1.3.0",
     "qtpy>=2.4.1",
-    "xarray-tree>=0.1.0",
+    "xarray-datatree>=0.0.14",
     "xarray>=2023.12.0",
 ]
 files = [
-    {file = "xarray_treeview-1.2.0-py3-none-any.whl", hash = "sha256:a575cbe3e3aef3686aa0d0669bcb4e3c0d6acb3061193fc01a20ea7be8b5b297"},
-    {file = "xarray_treeview-1.2.0.tar.gz", hash = "sha256:b7c8ad229c9cae26875a79002a79d28909620931f9cbef1c94173a95b09843d2"},
+    {file = "xarray_treeview-1.2.6-py3-none-any.whl", hash = "sha256:e8e7cf442978ed5d3feb4897fe6eced3fb7b2e9c33cc5eb7331054636f38176a"},
+    {file = "xarray_treeview-1.2.6.tar.gz", hash = "sha256:e0306723f9371249a231f24b75abbd5e66329c18d246df6f6b4b7cd2e96000d0"},
 ]

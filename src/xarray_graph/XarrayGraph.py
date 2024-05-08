@@ -24,6 +24,8 @@ TODO:
 from __future__ import annotations
 import os, re
 import numpy as np
+import qtconsole.manager
+import qtconsole.rich_jupyter_widget
 import scipy as sp
 import xarray as xr
 from datatree import DataTree, open_datatree
@@ -329,6 +331,9 @@ class XarrayGraph(QMainWindow):
         QWidget.resizeEvent(self, event)
         self._update_grid_layout()
  
+    def toggle_console(self) -> None:
+        self._console.setVisible(not self._console.isVisible())
+    
     def _get_combined_coords(self, nodes: list[DataTree] = None) -> xr.Dataset:
         # return the combined coords for the input tree nodes (defaults to the entire tree)
         # There should NOT be any missing dimensions in the returned dataset. 
@@ -938,6 +943,9 @@ class XarrayGraph(QMainWindow):
         self._grid_rowlim = ()
         self._grid_collim = ()
 
+        self._setup_control_panel_toolbar()
+        self._setup_plot_grid_toolbar()
+
         self._main_area = QWidget()
         self._main_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._main_area_layout = QVBoxLayout(self._main_area)
@@ -945,20 +953,25 @@ class XarrayGraph(QMainWindow):
         self._main_area_layout.setSpacing(0)
         self._main_area_layout.addWidget(self._plot_grid)
 
+        vsplitter = QSplitter(Qt.Orientation.Vertical)
+        vsplitter.addWidget(self._main_area)
+        vsplitter.addWidget(self._console)
+        vsplitter.setHandleWidth(1)
+        vsplitter.setCollapsible(1, False)
+
         hsplitter = QSplitter(Qt.Orientation.Horizontal)
         hsplitter.addWidget(self._control_panel)
-        hsplitter.addWidget(self._main_area)
+        hsplitter.addWidget(vsplitter)
         hsplitter.setStretchFactor(0, 0)
         hsplitter.setStretchFactor(1, 1)
         hsplitter.setHandleWidth(1)
+        hsplitter.setCollapsible(0, False)
         hsplitter.setSizes([250])
 
         self.setCentralWidget(hsplitter)
 
-        self._setup_control_panel_toolbar()
-        self._setup_plot_grid_toolbar()
-
         self._control_panel.hide()
+        self._console.hide()
     
     def _setup_menubar(self) -> None:
         self._import_menu = QMenu(self.tr('&Import'))
@@ -1026,11 +1039,12 @@ class XarrayGraph(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._control_panel_toolbar.addWidget(spacer)
         self._setup_settings_control_panel()
+        self._setup_console()
     
     def _toggle_control_panel_at(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
         widgets = [self._control_panel_toolbar.widgetForAction(action) for action in actions]
-        buttons = [widget for widget in widgets if isinstance(widget, QToolButton)]
+        buttons = [widget for widget in widgets if isinstance(widget, QToolButton) and (widget is not self._console_button)]
         show = buttons[index].isChecked()
         if show:
             self._control_panel.setCurrentIndex(index)
@@ -1511,6 +1525,39 @@ class XarrayGraph(QMainWindow):
         scroll_area.setWidgetResizable(True)
 
         self._control_panel.addWidget(scroll_area)
+    
+    def _setup_console(self) -> None:
+        button = QToolButton()
+        button.setIcon(qta.icon('msc.console', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Console')
+        button.pressed.connect(self.toggle_console)
+        self._console_button = button
+        self._control_panel_toolbar.addWidget(button)
+
+        from qtconsole.rich_jupyter_widget import RichJupyterWidget
+        from qtconsole.inprocess import QtInProcessKernelManager
+
+        self._console_kernel_manager = QtInProcessKernelManager()
+        self._console_kernel_manager.start_kernel(show_banner=False)
+
+        self._console_kernel_client = self._console_kernel_manager.client()
+        self._console_kernel_client.start_channels()
+
+        self._console = RichJupyterWidget()
+        self._console.kernel_manager = self._console_kernel_manager
+        self._console.kernel_client = self._console_kernel_client
+
+        from qtpy.QtWidgets import QApplication
+        app = QApplication.instance()
+        app.aboutToQuit.connect(self._shutdown_console)
+
+        self._console_kernel_manager.kernel.shell.push({'self': self})
+    
+    def _shutdown_console(self) -> None:
+        self._console_kernel_client.stop_channels()
+        self._console_kernel_manager.shutdown_kernel()
     
     def _set_region_drawing_mode(self, draw: bool | None = None) -> None:
         if draw is None:
