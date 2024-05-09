@@ -333,6 +333,10 @@ class XarrayGraph(QMainWindow):
  
     def toggle_console(self) -> None:
         self._console.setVisible(not self._console.isVisible())
+        if (not self._console.isVisible()) or (len(self._selected_items) + len(self._selected_dataset_items) > 0):
+            self._main_area.setVisible(True)
+        elif self._console.isVisible():
+            self._main_area.setVisible(False)
     
     def _get_combined_coords(self, nodes: list[DataTree] = None) -> xr.Dataset:
         # return the combined coords for the input tree nodes (defaults to the entire tree)
@@ -421,6 +425,10 @@ class XarrayGraph(QMainWindow):
             layout.addWidget(textEdit)
             self._main_area_layout.addWidget(widget)
         self._plot_grid.setVisible(len(self._selected_items) > 0)
+        if (not self._console.isVisible()) or (len(self._selected_items) + len(self._selected_dataset_items) > 0):
+            self._main_area.setVisible(True)
+        elif self._console.isVisible():
+            self._main_area.setVisible(False)
         
         # store the combined coords for the entire selection
         if self._selected_items:
@@ -957,6 +965,7 @@ class XarrayGraph(QMainWindow):
         vsplitter.addWidget(self._main_area)
         vsplitter.addWidget(self._console)
         vsplitter.setHandleWidth(1)
+        vsplitter.setCollapsible(0, False)
         vsplitter.setCollapsible(1, False)
 
         hsplitter = QSplitter(Qt.Orientation.Horizontal)
@@ -966,11 +975,12 @@ class XarrayGraph(QMainWindow):
         hsplitter.setStretchFactor(1, 1)
         hsplitter.setHandleWidth(1)
         hsplitter.setCollapsible(0, False)
+        hsplitter.setCollapsible(1, False)
         hsplitter.setSizes([250])
 
         self.setCentralWidget(hsplitter)
 
-        self._control_panel.hide()
+        self._show_control_panel_at(0)
         self._console.hide()
     
     def _setup_menubar(self) -> None:
