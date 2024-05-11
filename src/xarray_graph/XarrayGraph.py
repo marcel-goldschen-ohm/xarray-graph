@@ -1,7 +1,9 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
+- update plot axes labels when units changed in metadata
 - datatree: edit var style attr with dialog from context menu
+- preview for all curve fits and measurements
 
 - fix bug: measure Min, Max, AbsMax
 - fix bug: deleteing region item does not remove region from self.regions
@@ -9,23 +11,19 @@ TODO:
 - drag items to rearrange tree heirarchy (implement in xarray_treeview)
 - define all undefined coords by inheriting them (implement in xarray_tree)
 - remove all unneeded coords that can be inherited (implement in xarray_tree)
-- array math: update comboboxes on tree change
 - array math: sanity checks needed
-- array math: handle merging of results
+- array math: handle merging of results?
 - style: store user styling in metadata
 - style: set style by trace, array, dataset, or variable name?
 - style: store region styling in metadata
 - style: set style for regions by label
 - measure peaks: implement
 - filter, smooth, etc.: implement
-- add python console to UI
 """
 
 from __future__ import annotations
-import os, re
+import os
 import numpy as np
-import qtconsole.manager
-import qtconsole.rich_jupyter_widget
 import scipy as sp
 import xarray as xr
 from datatree import DataTree, open_datatree
@@ -2347,6 +2345,7 @@ def test_live():
     scaled_node = DataTree(name='scaled', data=scaled_ds, parent=baselined_node)
 
     ui.data = root_node
+    ui._data_treeview.expandAll()
 
     app.exec()
 
