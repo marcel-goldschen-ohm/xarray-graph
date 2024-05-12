@@ -1536,7 +1536,7 @@ class XarrayGraph(QMainWindow):
     
     def _setup_console(self) -> None:
         button = QToolButton()
-        button.setIcon(qta.icon('msc.console', options=[{'opacity': 0.5}]))
+        button.setIcon(qta.icon('msc.terminal', options=[{'opacity': 0.5}]))
         button.setCheckable(True)
         button.setChecked(False)
         button.setToolTip('Console')

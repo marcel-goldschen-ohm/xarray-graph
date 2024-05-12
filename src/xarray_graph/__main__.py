@@ -1,24 +1,24 @@
 from xarray_graph.XarrayGraph import XarrayGraph
-from qtpy.QtCore import QTimer
-from qtpy.QtWidgets import QApplication
+from qtpy.QtWidgets import QApplication, QMessageBox
 
 
 def main():
     app = QApplication()
     ui = XarrayGraph()
-    # ui.setWindowTitle(ui.__class__.__name__)
     ui.setWindowTitle('xarray-graph')
     ui.show()
-    QTimer.singleShot(100, lambda: ask_for_example(ui))
-    app.exec()
 
+    # MacOS Magnet warning
+    import platform
+    if platform.system() == 'Darwin':
+        QMessageBox.warning(ui, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
 
-def ask_for_example(ui: XarrayGraph):
-    from qtpy.QtWidgets import QMessageBox
-
-    example = QMessageBox.question(ui, 'Example?', 'Load example data?')
-    if example == QMessageBox.StandardButton.Yes:
+    # load example data?
+    answer = QMessageBox.question(ui, 'Example?', 'Load example data?')
+    if answer == QMessageBox.StandardButton.Yes:
         load_example(ui)
+    
+    app.exec()
 
 
 def load_example(ui: XarrayGraph):
