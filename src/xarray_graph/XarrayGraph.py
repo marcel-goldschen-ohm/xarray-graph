@@ -1086,7 +1086,7 @@ class XarrayGraph(QMainWindow):
         self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._data_treeview.setAlternatingRowColors(False)
         root: XarrayTreeItem = XarrayTreeItem(node=self.data, key=None)
-        model: XarrayTreeModel = XarrayTreeModel(root)
+        model: XarrayDndTreeModel = XarrayDndTreeModel(root)
         model.setShowDetailsColumn(False)
         self._data_treeview.setShowCoords(False)
         self._data_treeview.setModel(model)
