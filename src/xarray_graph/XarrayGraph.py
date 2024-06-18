@@ -4,6 +4,8 @@ TODO:
 - update plot axes labels when units changed in metadata
 - datatree: edit var style attr with dialog from context menu
 - preview for all curve fits and measurements
+- what to do with attrs for array math? at least keep same units.
+- peak average +/- samples one sample pt short on each side?
 
 - fix bug: measure Min, Max, AbsMax
 - fix bug: deleteing region item does not remove region from self.regions
@@ -304,9 +306,7 @@ class XarrayGraph(QMainWindow):
             QMessageBox.warning(self, 'Import pCLAMP', 'Importing pCLAMP files is not yet implemented.')
             return
         elif filetype == 'HEKA':
-            # TODO: implement
-            QMessageBox.warning(self, 'Import HEKA', 'Importing HEKA files is not yet implemented.')
-            return
+            ds, filepath = import_heka(filepath)
         elif filetype == 'GOLab TEVC':
             ds, filepath = import_golab_tevc(filepath)
         if ds is None:
@@ -1084,6 +1084,7 @@ class XarrayGraph(QMainWindow):
         self._data_treeviewer = XarrayTreeViewer()
         self._data_treeview = self._data_treeviewer.view()
         self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._data_treeview.setAlternatingRowColors(False)
         root: XarrayTreeItem = XarrayTreeItem(node=self.data, key=None)
         model: XarrayTreeModel = XarrayTreeModel(root)
         model.setShowDetailsColumn(False)
@@ -2258,6 +2259,17 @@ def permutations(coords: dict) -> list[dict]:
             else:
                 index[dim] = 0
     return permutations
+
+
+def import_heka(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, str]:
+    if filepath == '':
+        filepath, _filter = QFileDialog.getOpenFileName(parent, 'Import HEKA', '', 'HEKA (*.dat)')
+        if filepath == '':
+            return None
+    
+    from xarray_graph.io import heka2xarray
+    dt = heka2xarray(filepath)
+    return dt, filepath
 
 
 def import_golab_tevc(filepath: str = '', parent: QWidget = None) -> tuple[xr.Dataset, str]:
