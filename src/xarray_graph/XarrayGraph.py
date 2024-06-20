@@ -339,13 +339,16 @@ class XarrayGraph(QMainWindow):
     def _get_combined_coords(self, nodes: list[DataTree] = None) -> xr.Dataset:
         # return the combined coords for the input tree nodes (defaults to the entire tree)
         # There should NOT be any missing dimensions in the returned dataset. 
-        # TODO: inherit missing coords OR set them to their index range
+        # TODO: inherit missing coords
         if nodes is None:
             # default to the entire tree
             nodes = list(self.data.subtree)
         combined_coords: xr.Dataset = xr.Dataset()
         for node in nodes:
             node_coords: xr.Dataset = xr.Dataset(coords=node.coords)
+            for dim, size in node.sizes.items():
+                if dim not in node_coords:
+                    node_coords[dim] = xr.DataArray(data=np.arange(size), dims=[dim])
             combined_coords = xr.merge([combined_coords, node_coords], compat='no_conflicts')
         return combined_coords
     

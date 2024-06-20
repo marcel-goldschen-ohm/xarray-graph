@@ -5,7 +5,7 @@
 import numpy as np
 import xarray as xr
 from datatree import DataTree
-import zarr
+# import zarr
 
 
 def abf2xarray(filepath: str) -> DataTree:
@@ -85,6 +85,7 @@ def heka2xarray(filepath: str) -> DataTree:
                     trace = bundle.pul[group_index][series_index][sweep_index][trace_index]
                     # print(trace)
                     y = bundle.data[(group_index, series_index, sweep_index, trace_index)]
+                    # print(group_name, f'Series.{series_index}', f'Sweep.{sweep_index}', trace.Label, y.shape)
                     ds[trace.Label] = xr.DataArray(
                         y,
                         dims=['time'],
