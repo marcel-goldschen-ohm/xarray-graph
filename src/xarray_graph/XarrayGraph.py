@@ -886,11 +886,13 @@ class XarrayGraph(QMainWindow):
                             if 'symbol' not in style:
                                 graph.setSymbol('o')
                         
-                        # graph name (limit to 50 characters)
-                        name = item.path
-                        if len(name) > 50:
-                            name = '...' + name[-47:]
+                        # graph name (limit to max_char characters)
+                        max_char = 50
+                        name = item.path + '[' + ','.join([f'{dim}={coords[dim]}' for dim in coords]) + ']'
+                        if len(name) > max_char:
+                            name = '...' + name[-(max_char-3):]
                         graph.setName(name)
+                        # graph.setToolTip(name)  # !!! ONLY shows for top graph ???
                         
                         graph.blockSignals(False)
                         
