@@ -17,6 +17,16 @@ pip install PySide6 xarray-graph@git+https://github.com/marcel-goldschen-ohm/xar
 xarray-graph
 ```
 
+# Update
+```shell
+pip install xarray-graph --upgrade
+```
+
+Or for the latest development version:
+```shell
+pip install xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph --upgrade
+```
+
 # TODO
 - i/o
 - tests
