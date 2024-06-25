@@ -106,6 +106,9 @@ class XarrayGraph(QMainWindow):
 
         # setup the graphical user interface
         self._setup_ui()
+
+        # init data tree selection
+        self._on_tree_selection_changed()
     
     @property
     def data(self) -> DataTree:
