@@ -260,11 +260,11 @@ class XarrayGraph(QMainWindow):
     def regions(self, regions: list[dict]):
         self.attrs['regions'] = regions
     
-    # def is_tiling_enabled(self) -> bool:
-    #     row_tile_dim = self._row_tile_combobox.currentText()
-    #     col_tile_dim = self._col_tile_combobox.currentText()
-    #     tiling_enabled: bool = row_tile_dim in self._iter_dims or col_tile_dim in self._iter_dims
-    #     return tiling_enabled
+    def is_tiling_enabled(self) -> bool:
+        row_tile_dim = self._row_tile_combobox.currentText()
+        col_tile_dim = self._col_tile_combobox.currentText()
+        tiling_enabled: bool = row_tile_dim in self._iter_dims or col_tile_dim in self._iter_dims
+        return tiling_enabled
     
     def clear(self) -> None:
         self.data = DataTree()
