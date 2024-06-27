@@ -1,7 +1,6 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- update plot axes labels when units changed in metadata
 - preview for all curve fits and measurements
 - what to do with attrs for array math? at least keep same units.
 - bug: regions treeview, item listed multiple times in context menu when mutliple items selected?
@@ -32,6 +31,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
+from pyqt_ext.tree import *
 from pyqt_ext.widgets import *
 from pyqt_ext.graph import *
 import pyqtgraph as pg
@@ -1099,6 +1099,9 @@ class XarrayGraph(QMainWindow):
         self._data_treeview.selectionWasChanged.connect(self._on_tree_selection_changed)
         self._data_treeviewer.setSizes([100, 1])
         model.sigNodeNameChanged.connect(self._update_array_math_comboboxes)
+        self._data_treeview.sigFinishedEditingAttrs.connect(self._on_tree_selection_changed)  # overkill, but needed to update units
+        attrs_model: KeyValueTreeModel = self._data_treeviewer._attrs_view.model()
+        attrs_model.sigValueChanged.connect(self._on_tree_selection_changed)  # overkill, but needed to update units
 
         self._xdim_combobox = QComboBox()
         self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
