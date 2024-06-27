@@ -2,15 +2,11 @@
 
 TODO:
 - update plot axes labels when units changed in metadata
-- datatree: edit var style attr with dialog from context menu
+- update array math comboboxes when path names changed
 - preview for all curve fits and measurements
 - what to do with attrs for array math? at least keep same units.
-- peak average +/- samples one sample pt short on each side?
-
-- fix bug: measure Min, Max, AbsMax
-- fix bug: deleteing region item does not remove region from self.regions
+- bug: regions treeview, item listed multiple times in context menu when mutliple items selected?
 - rename dims (implement in xarray_treeview?)
-- drag items to rearrange tree heirarchy (implement in xarray_treeview)
 - define all undefined coords by inheriting them (implement in xarray_tree)
 - remove all unneeded coords that can be inherited (implement in xarray_tree)
 - array math: sanity checks needed
@@ -21,6 +17,9 @@ TODO:
 - style: set style for regions by label
 - measure peaks: implement
 - filter, smooth, etc.: implement
+- handle 2D images: implement
+    - a global Y axis selector? overridden by local X-Y dims?
+    - how to handle more generic multi-dimensional regions?
 """
 
 from __future__ import annotations
@@ -1799,7 +1798,7 @@ class XarrayGraph(QMainWindow):
             if peak_width > 0:
                 def get_peak_index_range(mask, center_index):
                     start, stop = center_index, center_index + 1
-                    for w in range(peak_width):
+                    for w in range(1, peak_width + 1):
                         if center_index - w >= 0 and mask[center_index - w] and start == center_index - w + 1:
                             start = center_index - w
                         if center_index + w < len(mask) and mask[center_index + w] and stop == center_index + w:
