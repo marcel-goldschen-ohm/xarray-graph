@@ -2,7 +2,6 @@
 
 TODO:
 - update plot axes labels when units changed in metadata
-- update array math comboboxes when path names changed
 - preview for all curve fits and measurements
 - what to do with attrs for array math? at least keep same units.
 - bug: regions treeview, item listed multiple times in context menu when mutliple items selected?
