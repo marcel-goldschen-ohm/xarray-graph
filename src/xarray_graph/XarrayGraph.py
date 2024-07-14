@@ -1,7 +1,6 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- preview for all curve fits
 - what to do with attrs for array math? at least keep same units.
 - rename dims (implement in xarray_treeview?)
 - define all undefined coords by inheriting them (implement in xarray_tree)
@@ -920,9 +919,9 @@ class XarrayGraph(QMainWindow):
                     plot.removeItem(graph)
                     graph.deleteLater()
                 
-                # remove measurement and curve fit previews
+                # remove any invalidated measurement and curve fit preview refs and stop previewing
                 plot._tmp_measure_graphs = []
-                # TODO: remove curve fit previews
+                plot._tmp_curve_fit_graphs = []
                 self._measure_preview_checkbox.setChecked(False)
                 self._curve_fit_preview_checkbox.setChecked(False)
     
@@ -945,7 +944,7 @@ class XarrayGraph(QMainWindow):
             
             # update measurement and curve fit previews
             self._update_measure_preview()
-            # TODO: self._update_curve_fit_preview()
+            self._update_curve_fit_preview()
 
     def _setup_ui(self) -> None:
         self._setup_ui_components()
@@ -1060,7 +1059,7 @@ class XarrayGraph(QMainWindow):
         self._region_treeview = AxisRegionTreeView()
         self._region_treeview.setModel(model)
         self._region_treeview.sigRegionChangeFinished.connect(self._update_measure_preview)
-        # TODO: self._region_treeview.sigRegionChangeFinished.connect(self._update_curve_fit_preview)
+        self._region_treeview.sigRegionChangeFinished.connect(self._update_curve_fit_preview)
 
         # array math widgets
         self._math_result_name_edit = QLineEdit()
@@ -1133,24 +1132,29 @@ class XarrayGraph(QMainWindow):
 
         self._curve_fit_optimize_in_regions_checkbox = QCheckBox('Optimize within selected regions')
         self._curve_fit_optimize_in_regions_checkbox.setChecked(True)
+        self._curve_fit_optimize_in_regions_checkbox.stateChanged.connect(lambda state: self._update_curve_fit_preview())
 
         self._curve_fit_evaluate_in_regions_checkbox = QCheckBox('Evaluate within selected regions')
         self._curve_fit_evaluate_in_regions_checkbox.setChecked(False)
+        self._curve_fit_evaluate_in_regions_checkbox.stateChanged.connect(lambda state: self._update_curve_fit_preview())
 
         self._curve_fit_result_name_edit = QLineEdit()
 
         self._curve_fit_preview_checkbox = QCheckBox('Preview')
         self._curve_fit_preview_checkbox.setChecked(True)
+        self._curve_fit_preview_checkbox.stateChanged.connect(lambda state: self._update_curve_fit_preview())
 
         self._curve_fit_button = QPushButton('Fit')
         self._curve_fit_button.pressed.connect(self.curve_fit)
 
         self._curve_fit_polynomial_degree_spinbox = QSpinBox()
         self._curve_fit_polynomial_degree_spinbox.setValue(2)
+        self._curve_fit_polynomial_degree_spinbox.valueChanged.connect(lambda value: self._update_curve_fit_preview())
 
         self._curve_fit_spline_segments_spinbox = QSpinBox()
         self._curve_fit_spline_segments_spinbox.setValue(10)
         self._curve_fit_spline_segments_spinbox.setMinimum(1)
+        self._curve_fit_spline_segments_spinbox.valueChanged.connect(lambda value: self._update_curve_fit_preview())
 
         self._curve_fit_equation_edit = QLineEdit()
         self._curve_fit_equation_edit.setPlaceholderText('a * x + b')
@@ -1162,10 +1166,7 @@ class XarrayGraph(QMainWindow):
         self._curve_fit_equation_params_table.setHorizontalHeaderLabels(['Param', 'Value', 'Vary', 'Min', 'Max'])
         self._curve_fit_equation_params_table.verticalHeader().setVisible(False)
         self._curve_fit_equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self._curve_fit_equation_params_table.model().dataChanged.connect(self._update_curve_fit_preview)
-
-        self._curve_fit_equation_preview_checkbox = QCheckBox('Preview')
-        self._curve_fit_equation_preview_checkbox.stateChanged.connect(self._update_curve_fit_preview)
+        self._curve_fit_equation_params_table.model().dataChanged.connect(lambda model_index: self._update_curve_fit_preview())
 
         # notes editor
         self._notes_edit = QTextEdit()
@@ -1290,6 +1291,7 @@ class XarrayGraph(QMainWindow):
             if i != index:
                 button.setChecked(False)
         self._update_measure_preview()
+        self._update_curve_fit_preview()
     
     def _show_control_panel_at(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
@@ -1486,6 +1488,7 @@ class XarrayGraph(QMainWindow):
         button.setCheckable(True)
         button.setChecked(False)
         button.setToolTip('Curve fit')
+        self._curve_fit_control_panel_index = self._control_panel.count()
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         button.released.connect(self._update_curve_fit_preview)
         self._control_panel_toolbar.addWidget(button)
@@ -1510,7 +1513,6 @@ class XarrayGraph(QMainWindow):
         vbox.setSpacing(3)
         vbox.addWidget(self._curve_fit_equation_edit)
         vbox.addWidget(self._curve_fit_equation_params_table)
-        vbox.addWidget(self._curve_fit_equation_preview_checkbox)
 
         self._curve_fit_name_wrapper = QWidget()
         form = QFormLayout(self._curve_fit_name_wrapper)
@@ -1679,8 +1681,11 @@ class XarrayGraph(QMainWindow):
         for plot in plots:
             if hasattr(plot, '_tmp_measure_graphs'):
                 for graph in plot._tmp_measure_graphs:
-                    plot.removeItem(graph)
-                    graph.deleteLater()
+                    try:
+                        plot.removeItem(graph)
+                        graph.deleteLater()
+                    except:
+                        pass
             plot._tmp_measure_graphs = []
     
     def _on_curve_fit_type_changed(self) -> None:
@@ -1691,6 +1696,7 @@ class XarrayGraph(QMainWindow):
         if self._equation_group.isVisible():
             self._curve_fit_equation_params_table.resizeColumnsToContents()
         self._curve_fit_result_name_edit.setPlaceholderText(fit_type)
+        self._update_curve_fit_preview()
     
     def _on_curve_fit_equation_changed(self) -> None:
         equation = self._curve_fit_equation_edit.text().strip()
@@ -1730,6 +1736,7 @@ class XarrayGraph(QMainWindow):
                 self._curve_fit_equation_params_table.setItem(row, col, item)
 
         self._curve_fit_equation_params_table.resizeColumnsToContents()
+        self._update_curve_fit_preview()
     
     def _update_curve_fit_model(self) -> None:
         for row in range(self._curve_fit_equation_params_table.rowCount()):
@@ -1755,28 +1762,24 @@ class XarrayGraph(QMainWindow):
             }
             self._curve_fit_model.set_param_hint(name, **self._curve_fit_equation_params[name])
     
-    def _update_curve_fit_preview(self) -> None:
-        show: bool = self._curve_fit_equation_preview_checkbox.isChecked()
-        if show:
-            self.preview_curve_fit()
+    def _update_curve_fit_preview(self, plots: list[Plot] = None) -> None:
+        if self._curve_fit_preview_checkbox.isChecked() and self._control_panel.isVisible() and (self._control_panel.currentIndex() == self._curve_fit_control_panel_index):
+            self.curve_fit(plots, preview_only=True)
         else:
-            self._clear_curve_fit_preview()
+            self._clear_curve_fit_preview(plots)
     
     def _clear_curve_fit_preview(self, plots: list[Plot] = None) -> None:
         if plots is None:
             plots = self._plots()
         for plot in plots:
-            if not hasattr(plot, '_tmp_fit_graphs'):
-                continue
-            for graph in plot._tmp_fit_graphs:
-                try:
-                    plot.removeItem(graph)
-                    graph.deleteLater()
-                except:
-                    pass
+            if hasattr(plot, '_tmp_fit_graphs'):
+                for graph in plot._tmp_fit_graphs:
+                    try:
+                        plot.removeItem(graph)
+                        graph.deleteLater()
+                    except:
+                        pass
             plot._tmp_fit_graphs = []
-            # plot._tmp_fits = []
-            # plot._tmp_fit_tree_items = []
     
     def _save_notes(self) -> None:
         notes = self._notes_edit.toPlainText()
@@ -1889,6 +1892,9 @@ class XarrayGraph(QMainWindow):
         if measure_type == 'Peaks':
             peak_threshold = float(self._measure_peak_threshold_edit.text())
             peak_type = self._measure_peak_type_combobox.currentText()
+
+        # clear any temporary measures
+        self._clear_measure_preview(plots)
         
         # measure in each plot
         for plot in plots:
@@ -2037,14 +2043,7 @@ class XarrayGraph(QMainWindow):
         
         # preview measurements
         for plot in plots:
-            # clear existing previews
-            if hasattr(plot, '_tmp_measure_graphs'):
-                for graph in plot._tmp_measure_graphs:
-                    plot.removeItem(graph)
-                    graph.deleteLater()
             plot._tmp_measure_graphs = []
-            
-            # add new previews
             for measure in plot._tmp_measures:
                 var_name = list(measure.data_vars)[0]
                 var = measure.data_vars[var_name]
@@ -2065,13 +2064,7 @@ class XarrayGraph(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             # clear previews if not in preview mode
             if not self._measure_preview_checkbox.isChecked():
-                for plot in plots:
-                    for graph in plot._tmp_measure_graphs:
-                        plot.removeItem(graph)
-                        graph.deleteLater()
-                    plot._tmp_measure_graphs = []
-                    plot._tmp_measures = []
-                    plot._tmp_measure_tree_items = []
+                self._clear_measure_preview(plots)
             return
         
         # add measures to data tree
@@ -2112,10 +2105,7 @@ class XarrayGraph(QMainWindow):
         self._measure_preview_checkbox.setChecked(False)
         self._update_measure_preview()
 
-    def preview_curve_fit(self, plots: list[Plot] = None) -> None:
-        self.curve_fit(plots=plots, eval_equation_only=True)
-    
-    def curve_fit(self, plots: list[Plot] = None, eval_equation_only: bool = False) -> None:
+    def curve_fit(self, plots: list[Plot] = None, preview_only: bool = False) -> None:
         if plots is None:
             plots = self._plots()
         
@@ -2201,6 +2191,13 @@ class XarrayGraph(QMainWindow):
                     youtput = np.full(len(xoutput), np.mean(yinput))
                 elif fit_type == 'Median':
                     youtput = np.full(len(xoutput), np.median(yinput))
+                elif fit_type == 'Min':
+                    youtput = np.full(len(xoutput), np.min(yinput))
+                elif fit_type == 'Max':
+                    youtput = np.full(len(xoutput), np.max(yinput))
+                elif fit_type == 'Line':
+                    coef = np.polyfit(xinput, yinput, 1)
+                    youtput = np.polyval(coef, xoutput)
                 elif fit_type == 'Polynomial':
                     coef = np.polyfit(xinput, yinput, degree)
                     youtput = np.polyval(coef, xoutput)
@@ -2212,7 +2209,7 @@ class XarrayGraph(QMainWindow):
                     knots, coef, degree = sp.interpolate.splrep(xinput, yinput, t=knots)
                     youtput = sp.interpolate.splev(xoutput, (knots, coef, degree), der=0)
                 elif fit_type == 'Equation':
-                    if eval_equation_only:
+                    if preview_only:
                         youtput = self._curve_fit_model.eval(params=params, x=xoutput)
                     else:
                         result = self._curve_fit_model.fit(yinput, params=params, x=xinput)
@@ -2259,10 +2256,11 @@ class XarrayGraph(QMainWindow):
                 plot.addItem(fit_graph)
                 plot._tmp_fit_graphs.append(fit_graph)
         
+        if preview_only:
+            return
+        
         # update equation params table with final fit params
         if fit_type == 'Equation':
-            if eval_equation_only:
-                return
             for row in range(self._curve_fit_equation_params_table.rowCount()):
                 name = self._curve_fit_equation_params_table.item(row, 0).text()
                 if result.params[name].vary:
@@ -2273,14 +2271,9 @@ class XarrayGraph(QMainWindow):
         # query user to keep fits
         answer = QMessageBox.question(self, 'Keep Fits?', 'Keep fits?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
-            for plot in plots:
-                if not self._curve_fit_equation_preview_checkbox.isChecked():
-                    for graph in plot._tmp_fit_graphs:
-                        plot.removeItem(graph)
-                        graph.deleteLater()
-                    plot._tmp_fit_graphs = []
-                plot._tmp_fits = []
-                plot._tmp_fit_tree_items = []
+            # clear previews if not in preview mode
+            if not self._curve_fit_preview_checkbox.isChecked():
+                self._clear_curve_fit_preview(plots)
             return
         
         # add fits to data tree
@@ -2319,6 +2312,7 @@ class XarrayGraph(QMainWindow):
         
         # disable preview checkbox
         self._curve_fit_equation_preview_checkbox.setChecked(False)
+        self._update_curve_fit_preview()
 
 
 def permutations(coords: dict) -> list[dict]:
