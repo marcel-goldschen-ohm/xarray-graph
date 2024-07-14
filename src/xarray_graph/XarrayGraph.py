@@ -1,9 +1,8 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- preview for all curve fits and measurements
+- preview for all curve fits
 - what to do with attrs for array math? at least keep same units.
-- bug: regions treeview, item listed multiple times in context menu when mutliple items selected?
 - rename dims (implement in xarray_treeview?)
 - define all undefined coords by inheriting them (implement in xarray_tree)
 - remove all unneeded coords that can be inherited (implement in xarray_tree)
@@ -50,7 +49,7 @@ XARRAY_GRAPH_VERSION = version('xarray-graph')
 
 
 DEBUG = 0
-DEFAULT_ICON_SIZE = 24
+DEFAULT_ICON_SIZE = 32
 DEFAULT_AXIS_LABEL_FONT_SIZE = 12
 DEFAULT_AXIS_TICK_FONT_SIZE = 11
 DEFAULT_TEXT_ITEM_FONT_SIZE = 10
@@ -246,7 +245,7 @@ class XarrayGraph(QMainWindow):
         # update plots
         self._on_tree_selection_changed()
     
-    def set_xdim(self, xdim: str):
+    def _set_xdim(self, xdim: str):
         self.xdim = xdim
     
     @property
@@ -276,45 +275,54 @@ class XarrayGraph(QMainWindow):
         win.setWindowTitle(self.__class__.__name__)
         win.show()
     
-    def load(self, filepath: str = '') -> None:
+    def load(self, filepath: str = '', format: str = 'zarr') -> None:
         if filepath == '':
             filepath = QFileDialog.getExistingDirectory(self, 'Open from Xarray data store...')
             if filepath == '':
                 return None
-        self.data = open_datatree(filepath, 'zarr')
-        self._filepath = filepath
-        self.setWindowTitle(os.path.split(filepath)[1])
-    
-    def save(self) -> None:
-        if hasattr(self, '_filepath'):
-            self.save_as(self._filepath)
+        if format == 'zarr':
+            self.data = open_datatree(filepath, 'zarr')
         else:
-            self.save_as()
+            raise ValueError("Invalid format '{format}'.")
+        self._filepath = filepath
+        path, filename = os.path.split(filepath)
+        self.setWindowTitle(filename)
     
-    def save_as(self, filepath: str = '') -> None:
+    def save(self, format: str = 'zarr') -> None:
+        if hasattr(self, '_filepath'):
+            self.save_as(self._filepath, format=format)
+        else:
+            self.save_as(format=format)
+    
+    def save_as(self, filepath: str = '', format: str = 'zarr') -> None:
         if filepath == '':
             filepath, _filter = QFileDialog.getSaveFileName(self, 'Save to data Zarr heirarchy...')
             if filepath == '':
                 return None
-        self.data.to_zarr(filepath)
+        if format == 'zarr':
+            self.data.to_zarr(filepath)
+        else:
+            raise ValueError("Invalid format '{format}'.")
         self._filepath = filepath
-        self.setWindowTitle(os.path.split(filepath)[1])
+        path, filename = os.path.split(filepath)
+        self.setWindowTitle(filename)
     
-    def import_data(self, filepath: str = '', filetype: str = '') -> None:
+    def import_data(self, filepath: str = '', format: str = '') -> None:
         ds: xr.Dataset | None = None
-        if filetype == 'pCLAMP':
+        if format == 'pCLAMP':
             # TODO: implement
             QMessageBox.warning(self, 'Import pCLAMP', 'Importing pCLAMP files is not yet implemented.')
             return
-        elif filetype == 'HEKA':
+        elif format == 'HEKA':
             ds, filepath = import_heka(filepath)
-        elif filetype == 'GOLab TEVC':
+        elif format == 'GOLab TEVC':
             ds, filepath = import_golab_tevc(filepath)
         if ds is None:
             return
         self.data = ds
-        self._filepath = os.path.splitext(filepath)[0]
-        self.setWindowTitle(os.path.split(filepath)[1])
+        self._filepath, ext = os.path.splitext(filepath)
+        path, filename = os.path.split(filepath)
+        self.setWindowTitle(filename)
     
     def autoscale_plots(self, plots: list[Plot] = None) -> None:
         if plots is None:
@@ -332,7 +340,7 @@ class XarrayGraph(QMainWindow):
  
     def toggle_console(self) -> None:
         self._console.setVisible(not self._console.isVisible())
-        if (not self._console.isVisible()) or (len(self._selected_items) + len(self._selected_dataset_items) > 0):
+        if (not self._console.isVisible()) or (len(self._selected_var_items) + len(self._selected_dataset_items) > 0):
             self._main_area.setVisible(True)
         elif self._console.isVisible():
             self._main_area.setVisible(False)
@@ -349,6 +357,7 @@ class XarrayGraph(QMainWindow):
             node_coords: xr.Dataset = xr.Dataset(coords=node.coords)
             for dim, size in node.sizes.items():
                 if dim not in node_coords:
+                    # TODO: inherit missing coords if possible?
                     node_coords[dim] = xr.DataArray(data=np.arange(size), dims=[dim])
             combined_coords = xr.merge([combined_coords, node_coords], compat='no_conflicts')
         return combined_coords
@@ -408,33 +417,34 @@ class XarrayGraph(QMainWindow):
         # selected tree items
         self._selected_items: list[XarrayTreeItem] = self._data_treeview.selectedItems()
         self._selected_dataset_items = [item for item in self._selected_items if item.is_node()]
-        self._selected_items = [item for item in self._selected_items if item.is_var()]
+        self._selected_var_items = [item for item in self._selected_items if item.is_var()]
         if DEBUG:
-            print('_selected_items:', [item.path for item in self._selected_items])
+            print('_selected_var_items:', [item.path for item in self._selected_var_items])
             print('_selected_dataset_items:', [item.path for item in self._selected_dataset_items])
         
         # update selected dataset info panels
-        while self._main_area_layout.count() > 1:
-            self._main_area_layout.takeAt(1).widget().deleteLater()
-        for item in self._selected_dataset_items:
-            widget = QGroupBox(item.path)
-            layout = QVBoxLayout(widget)
-            layout.setContentsMargins(5, 5, 5, 5)
-            layout.setSpacing(5)
-            textEdit = QTextEdit()
-            textEdit.setPlainText(str(item.node.ds))
-            textEdit.setReadOnly(True)
-            layout.addWidget(textEdit)
-            self._main_area_layout.addWidget(widget)
-        self._plot_grid.setVisible(len(self._selected_items) > 0)
-        if (not self._console.isVisible()) or (len(self._selected_items) + len(self._selected_dataset_items) > 0):
+        # while self._main_area_layout.count() > 1:
+        #     self._main_area_layout.takeAt(1).widget().deleteLater()
+        # for item in self._selected_dataset_items:
+        #     widget = QGroupBox(item.path)
+        #     layout = QVBoxLayout(widget)
+        #     layout.setContentsMargins(5, 5, 5, 5)
+        #     layout.setSpacing(5)
+        #     textEdit = QTextEdit()
+        #     textEdit.setPlainText(str(item.node.ds))
+        #     textEdit.setReadOnly(True)
+        #     layout.addWidget(textEdit)
+        #     self._main_area_layout.addWidget(widget)
+        self._plot_grid.setVisible(len(self._selected_var_items) > 0)
+        # if (not self._console.isVisible()) or (len(self._selected_var_items) + len(self._selected_dataset_items) > 0):
+        if (not self._console.isVisible()) or (len(self._selected_var_items) > 0):
             self._main_area.setVisible(True)
         elif self._console.isVisible():
             self._main_area.setVisible(False)
         
         # store the combined coords for the entire selection
-        if self._selected_items:
-            self._selected_coords: xr.Dataset = self._get_combined_coords([item.node for item in self._selected_items])
+        if self._selected_var_items:
+            self._selected_coords: xr.Dataset = self._get_combined_coords([item.node for item in self._selected_var_items])
         else:
             self._selected_coords: xr.Dataset = xr.Dataset()
         if DEBUG:
@@ -476,7 +486,7 @@ class XarrayGraph(QMainWindow):
 
         # selected var names
         self._selected_var_names = []
-        for item in self._selected_items:
+        for item in self._selected_var_items:
             if item.is_var():
                 if item.key not in self._selected_var_names:
                     self._selected_var_names.append(item.key)
@@ -488,7 +498,7 @@ class XarrayGraph(QMainWindow):
         for dim in self.selected_coords:
             if 'units' in self.selected_coords[dim].attrs:
                 self._selected_units[dim] = self.selected_coords[dim].attrs['units']
-        for item in self._selected_items:
+        for item in self._selected_var_items:
             if item.node is None:
                 continue
             for name in self._selected_var_names:
@@ -603,7 +613,7 @@ class XarrayGraph(QMainWindow):
             rowmin, rowmax = self._grid_rowlim
             colmin, colmax = self._grid_collim
             axis_tick_font = QFont()
-            axis_tick_font.setPointSize(self._axistick_fontsize_spinbox.value())
+            axis_tick_font.setPointSize(self._settings_axistick_fontsize_spinbox.value())
             for row in range(rowmin, max(rowmax + 1, self._plot_grid.rowCount())):
                 for col in range(colmin, max(colmax + 1, self._plot_grid.columnCount())):
                     item = self._plot_grid.getItem(row, col)
@@ -756,8 +766,8 @@ class XarrayGraph(QMainWindow):
             col_tile_dim = 'None'
         if col_tile_dim == row_tile_dim:
             col_tile_dim = 'None'
-        axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{self._axislabel_fontsize_spinbox.value()}pt'}
-        tile_label_style = {'color': 'rgb(128, 128, 128)', 'font-size': f'{self._axislabel_fontsize_spinbox.value()}pt'}
+        axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{self._settings_axislabel_fontsize_spinbox.value()}pt'}
+        tile_label_style = {'color': 'rgb(128, 128, 128)', 'font-size': f'{self._settings_axislabel_fontsize_spinbox.value()}pt'}
         xunits = self._selected_units.get(self.xdim, None)
         for row in range(rowmin, rowmax + 1):
             # ylabel
@@ -815,7 +825,7 @@ class XarrayGraph(QMainWindow):
     
     def _update_axes_tick_font(self) -> None:
         axis_tick_font = QFont()
-        axis_tick_font.setPointSize(self._axistick_fontsize_spinbox.value())
+        axis_tick_font.setPointSize(self._settings_axistick_fontsize_spinbox.value())
         for plot in self._plots():
             plot.getAxis('left').setTickFont(axis_tick_font)
             plot.getAxis('bottom').setTickFont(axis_tick_font)
@@ -823,7 +833,7 @@ class XarrayGraph(QMainWindow):
     def _update_plot_items(self, plots: list[Plot] = None, item_types: list = None) -> None:
         if plots is None:
             plots = self._plots()
-        default_line_width = self._linewidth_spinbox.value()
+        default_line_width = self._settings_linewidth_spinbox.value()
         for plot in plots:
             if plot is None or not issubclass(type(plot), pg.PlotItem):
                 continue
@@ -836,7 +846,7 @@ class XarrayGraph(QMainWindow):
                 # update graph items in plot
                 count = 0
                 color_index = 0
-                for item in self._selected_items:
+                for item in self._selected_var_items:
                     if not item.is_var():
                         continue
                     if 'data_vars' not in plot._info or item.key not in plot._info['data_vars']:
@@ -851,6 +861,7 @@ class XarrayGraph(QMainWindow):
                     if 'linewidth' not in style:
                         style['linewidth'] = default_line_width
                     style = GraphStyle(style)
+                    
                     for coords in plot._info['coord_permutations']:
                         # x,y data
                         try:
@@ -908,6 +919,12 @@ class XarrayGraph(QMainWindow):
                     graph = graphs.pop()
                     plot.removeItem(graph)
                     graph.deleteLater()
+                
+                # remove measurement and curve fit previews
+                plot._tmp_measure_graphs = []
+                # TODO: remove curve fit previews
+                self._measure_preview_checkbox.setChecked(False)
+                self._curve_fit_preview_checkbox.setChecked(False)
     
     @Slot(QGraphicsObject)
     def _on_item_added_to_axes(self, item: QGraphicsObject):
@@ -925,39 +942,17 @@ class XarrayGraph(QMainWindow):
             # stop drawing regions (draw one at a time)?
             if self._draw_single_region_action.isChecked():
                 self._set_region_drawing_mode(False)
+            
+            # update measurement and curve fit previews
+            self._update_measure_preview()
+            # TODO: self._update_curve_fit_preview()
 
     def _setup_ui(self) -> None:
+        self._setup_ui_components()
         self._setup_menubar()
+        self._setup_toolbars()
 
-        self._control_panel_toolbar = QToolBar()
-        self._control_panel_toolbar.setOrientation(Qt.Orientation.Vertical)
-        self._control_panel_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
-        self._control_panel_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
-        self._control_panel_toolbar.setMovable(False)
-        self._control_panel_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-
-        self._plot_grid_toolbar = QToolBar()
-        self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
-        self._plot_grid_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
-        self._plot_grid_toolbar.setMovable(False)
-        self._plot_grid_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-        icon_button = QToolButton()
-        icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
-        icon_button.pressed.connect(self.refresh)
-        self._plot_grid_toolbar.addWidget(icon_button)
-
-        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._plot_grid_toolbar)
-        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, self._control_panel_toolbar)
-
-        self._control_panel = QStackedWidget()
-
-        self._plot_grid = PlotGrid()
-        self._grid_rowlim = ()
-        self._grid_collim = ()
-
-        self._setup_control_panel_toolbar()
-        self._setup_plot_grid_toolbar()
-
+        # layout
         self._main_area = QWidget()
         self._main_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._main_area_layout = QVBoxLayout(self._main_area)
@@ -984,13 +979,235 @@ class XarrayGraph(QMainWindow):
 
         self.setCentralWidget(hsplitter)
 
+        # set initial state
         self._show_control_panel_at(0)
         self._console.hide()
+    
+    def _setup_ui_components(self) -> None:
+        # left toolbar
+        self._control_panel_toolbar = QToolBar()
+        self._control_panel_toolbar.setOrientation(Qt.Orientation.Vertical)
+        self._control_panel_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
+        self._control_panel_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
+        self._control_panel_toolbar.setMovable(False)
+        self._control_panel_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+
+        # top toolbar
+        self._plot_grid_toolbar = QToolBar()
+        self._plot_grid_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
+        self._plot_grid_toolbar.setIconSize(QSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE))
+        self._plot_grid_toolbar.setMovable(False)
+        self._plot_grid_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+        
+        # upper left button
+        self._main_icon_button = QToolButton()
+        self._main_icon_button.setIcon(qta.icon('fa5s.cubes', options=[{'opacity': 0.5}]))
+        self._main_icon_button.pressed.connect(self.refresh)
+        self._plot_grid_toolbar.addWidget(self._main_icon_button)
+
+        # control panel
+        self._control_panel = QStackedWidget()
+
+        # plot grid
+        self._plot_grid = PlotGrid()
+        self._grid_rowlim = ()
+        self._grid_collim = ()
+
+        # xarray tree viewer
+        self._data_treeviewer = XarrayTreeViewer()
+        self._data_treeview = self._data_treeviewer.view()
+        self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._data_treeview.setAlternatingRowColors(False)
+        root: XarrayTreeItem = XarrayTreeItem(node=self.data, key=None)
+        model: XarrayDndTreeModel = XarrayDndTreeModel(root)
+        model.setShowDetailsColumn(False)
+        self._data_treeview.setShowCoords(False)
+        self._data_treeview.setModel(model)
+        self._data_treeview.selectionWasChanged.connect(self._on_tree_selection_changed)
+        self._data_treeviewer.setSizes([100, 1])
+        model.sigNodeNameChanged.connect(self._update_array_math_comboboxes)
+        self._data_treeview.sigFinishedEditingAttrs.connect(self._on_tree_selection_changed)  # overkill, but needed to update units
+        attrs_model: KeyValueTreeModel = self._data_treeviewer._attrs_view.model()
+        attrs_model.sigValueChanged.connect(self._on_tree_selection_changed)  # overkill, but needed to update units
+
+        # xdim combobox
+        self._xdim_combobox = QComboBox()
+        self._xdim_combobox.currentTextChanged.connect(self._set_xdim)
+
+        # link axis checkboxes
+        self._link_xaxis_checkbox = QCheckBox('Link X axes')
+        self._link_xaxis_checkbox.setChecked(True)
+        self._link_xaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
+
+        self._link_yaxis_checkbox = QCheckBox('Link Y axes (per variable)')
+        self._link_yaxis_checkbox.setChecked(True)
+        self._link_yaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
+
+        # tile plot grid comboboxes
+        self._row_tile_combobox = QComboBox()
+        self._row_tile_combobox.addItems(['None'])
+        self._row_tile_combobox.setCurrentText('None')
+        self._row_tile_combobox.currentTextChanged.connect(self._update_plot_grid)
+
+        self._col_tile_combobox = QComboBox()
+        self._col_tile_combobox.addItems(['None'])
+        self._col_tile_combobox.setCurrentText('None')
+        self._col_tile_combobox.currentTextChanged.connect(self._update_plot_grid)
+
+        # axis regions tree view
+        root = AxisRegionTreeItem(self.regions)
+        model = AxisRegionDndTreeModel(root)
+        self._region_treeview = AxisRegionTreeView()
+        self._region_treeview.setModel(model)
+        self._region_treeview.sigRegionChangeFinished.connect(self._update_measure_preview)
+        # TODO: self._region_treeview.sigRegionChangeFinished.connect(self._update_curve_fit_preview)
+
+        # array math widgets
+        self._math_result_name_edit = QLineEdit()
+        self._math_result_name_edit.setPlaceholderText('result')
+
+        self._math_lhs_combobox = QComboBox()
+        self._math_lhs_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        self._math_rhs_combobox = QComboBox()
+        self._math_rhs_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        self._math_operator_combobox = QComboBox()
+        self._math_operator_combobox.addItems(['+', '-', '*', '/'])
+        self._math_operator_combobox.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+
+        self._math_eval_button = QPushButton('Evaluate')
+        self._math_eval_button.pressed.connect(self.eval_array_math)
+
+        # measurement widgets
+        self._measure_type_combobox = QComboBox()
+        self._measure_type_combobox.addItems(['Mean', 'Median'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
+        # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        # self._measure_type_combobox.addItems(['Peaks'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
+        self._measure_type_combobox.currentIndexChanged.connect(self._on_measure_type_changed)
+
+        self._measure_in_visible_regions_only_checkbox = QCheckBox('Within selected regions')
+        self._measure_in_visible_regions_only_checkbox.setChecked(True)
+        self._measure_in_visible_regions_only_checkbox.stateChanged.connect(lambda state: self._update_measure_preview())
+
+        self._measure_per_visible_region_checkbox = QCheckBox('Within each selected region')
+        self._measure_per_visible_region_checkbox.setChecked(True)
+        self._measure_in_visible_regions_only_checkbox.setEnabled(not self._measure_per_visible_region_checkbox.isChecked)
+        self._measure_per_visible_region_checkbox.stateChanged.connect(lambda state: self._measure_in_visible_regions_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
+        self._measure_per_visible_region_checkbox.stateChanged.connect(lambda state: self._update_measure_preview())
+
+        self._measure_result_name_edit = QLineEdit()
+
+        self._measure_preview_checkbox = QCheckBox('Preview')
+        self._measure_preview_checkbox.setChecked(True)
+        self._measure_preview_checkbox.stateChanged.connect(lambda state: self._update_measure_preview())
+
+        self._measure_button = QPushButton('Measure')
+        self._measure_button.pressed.connect(self.measure)
+
+        self._measure_peak_type_combobox = QComboBox()
+        self._measure_peak_type_combobox.addItems(['Min', 'Max'])
+        self._measure_peak_type_combobox.setCurrentText('Max')
+        self._measure_peak_type_combobox.currentIndexChanged.connect(lambda index: self._update_measure_preview())
+
+        self._measure_peak_avg_half_width_spinbox = QSpinBox()
+        self._measure_peak_avg_half_width_spinbox.setValue(0)
+        self._measure_peak_avg_half_width_spinbox.valueChanged.connect(lambda value: self._update_measure_preview())
+
+        self._measure_peak_threshold_edit = QLineEdit('0')
+        self._measure_peak_threshold_edit.editingFinished.connect(self._update_measure_preview)
+
+        # curve fit widgets
+        self._curve_fit_type_combobox = QComboBox()
+        self._curve_fit_type_combobox.addItems(['Mean', 'Median', 'Min', 'Max'])
+        self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
+        self._curve_fit_type_combobox.addItems(['Line', 'Polynomial', 'Spline'])
+        self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
+        self._curve_fit_type_combobox.addItems(['Equation'])
+        self._curve_fit_type_combobox.setCurrentText('Equation')
+        self._curve_fit_type_combobox.currentIndexChanged.connect(self._on_curve_fit_type_changed)
+
+        self._curve_fit_optimize_in_regions_checkbox = QCheckBox('Optimize within selected regions')
+        self._curve_fit_optimize_in_regions_checkbox.setChecked(True)
+
+        self._curve_fit_evaluate_in_regions_checkbox = QCheckBox('Evaluate within selected regions')
+        self._curve_fit_evaluate_in_regions_checkbox.setChecked(False)
+
+        self._curve_fit_result_name_edit = QLineEdit()
+
+        self._curve_fit_preview_checkbox = QCheckBox('Preview')
+        self._curve_fit_preview_checkbox.setChecked(True)
+
+        self._curve_fit_button = QPushButton('Fit')
+        self._curve_fit_button.pressed.connect(self.curve_fit)
+
+        self._curve_fit_polynomial_degree_spinbox = QSpinBox()
+        self._curve_fit_polynomial_degree_spinbox.setValue(2)
+
+        self._curve_fit_spline_segments_spinbox = QSpinBox()
+        self._curve_fit_spline_segments_spinbox.setValue(10)
+        self._curve_fit_spline_segments_spinbox.setMinimum(1)
+
+        self._curve_fit_equation_edit = QLineEdit()
+        self._curve_fit_equation_edit.setPlaceholderText('a * x + b')
+        self._curve_fit_equation_edit.editingFinished.connect(self._on_curve_fit_equation_changed)
+
+        self._curve_fit_equation_params = {}
+
+        self._curve_fit_equation_params_table = QTableWidget(0, 5)
+        self._curve_fit_equation_params_table.setHorizontalHeaderLabels(['Param', 'Value', 'Vary', 'Min', 'Max'])
+        self._curve_fit_equation_params_table.verticalHeader().setVisible(False)
+        self._curve_fit_equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self._curve_fit_equation_params_table.model().dataChanged.connect(self._update_curve_fit_preview)
+
+        self._curve_fit_equation_preview_checkbox = QCheckBox('Preview')
+        self._curve_fit_equation_preview_checkbox.stateChanged.connect(self._update_curve_fit_preview)
+
+        # notes editor
+        self._notes_edit = QTextEdit()
+        self._notes_edit.setTabChangesFocus(False)
+        self._notes_edit.setAcceptRichText(False)
+        self._notes_edit.textChanged.connect(self._save_notes)
+
+        # settings widgets
+        self._settings_linewidth_spinbox = QSpinBox()
+        self._settings_linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
+        self._settings_linewidth_spinbox.setMinimum(1)
+        self._settings_linewidth_spinbox.valueChanged.connect(lambda: self._update_plot_items(item_types=[Graph]))
+
+        self._settings_axislabel_fontsize_spinbox = QSpinBox()
+        self._settings_axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
+        self._settings_axislabel_fontsize_spinbox.setMinimum(1)
+        self._settings_axislabel_fontsize_spinbox.setSuffix('pt')
+        self._settings_axislabel_fontsize_spinbox.valueChanged.connect(self._update_axes_labels)
+
+        self._settings_axistick_fontsize_spinbox = QSpinBox()
+        self._settings_axistick_fontsize_spinbox.setValue(DEFAULT_AXIS_TICK_FONT_SIZE)
+        self._settings_axistick_fontsize_spinbox.setMinimum(1)
+        self._settings_axistick_fontsize_spinbox.setSuffix('pt')
+        self._settings_axistick_fontsize_spinbox.valueChanged.connect(self._update_axes_tick_font)
+
+        self._settings_textitem_fontsize_spinbox = QSpinBox()
+        self._settings_textitem_fontsize_spinbox.setValue(DEFAULT_TEXT_ITEM_FONT_SIZE)
+        self._settings_textitem_fontsize_spinbox.setMinimum(1)
+        self._settings_textitem_fontsize_spinbox.setSuffix('pt')
+        self._settings_textitem_fontsize_spinbox.valueChanged.connect(self._update_item_font)
+
+        self._settings_iconsize_spinbox = QSpinBox()
+        self._settings_iconsize_spinbox.setValue(DEFAULT_ICON_SIZE)
+        self._settings_iconsize_spinbox.setMinimum(16)
+        self._settings_iconsize_spinbox.setMaximum(64)
+        self._settings_iconsize_spinbox.setSingleStep(8)
+        self._settings_iconsize_spinbox.valueChanged.connect(self._update_icon_size)
     
     def _setup_menubar(self) -> None:
         self._import_menu = QMenu(self.tr('&Import'))
         for data_type in ['pCLAMP', 'HEKA', 'GOLab TEVC']:
-            self._import_menu.addAction(self.tr(f'Import {data_type}...'), lambda x=data_type: self.import_data(filetype=x))
+            self._import_menu.addAction(self.tr(f'Import {data_type}...'), lambda x=data_type: self.import_data(format=x))
 
         self._file_menu = self.menuBar().addMenu(self.tr('&File'))
         self._file_menu.addAction(self.tr('&New Window'), self.new_window, QKeySequence.New)
@@ -1003,6 +1220,28 @@ class XarrayGraph(QMainWindow):
         self._file_menu.addAction(qta.icon('fa5s.save'), self.tr('Save &As...'), self.save_as, QKeySequence.SaveAs)
         self._file_menu.addSeparator()
         self._file_menu.addAction(self.tr('&Close Window'), self.close, QKeySequence.Close)
+    
+    def _setup_toolbars(self) -> None:
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._plot_grid_toolbar)
+        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, self._control_panel_toolbar)
+        self._setup_control_panel_toolbar()
+        self._setup_plot_grid_toolbar()
+    
+    def _setup_control_panel_toolbar(self) -> None:
+        # control panel toolbar
+        # button order in toolbar reflects setup order
+        self._setup_data_control_panel()
+        self._setup_grid_control_panel()
+        self._setup_region_control_panel()
+        self._setup_math_control_panel()
+        self._setup_measure_control_panel()
+        self._setup_curve_fit_control_panel()
+        self._setup_notes_control_panel()
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._control_panel_toolbar.addWidget(spacer)
+        self._setup_settings_control_panel()
+        self._setup_console()
     
     def _setup_plot_grid_toolbar(self) -> None:
         # widgets and toolbar actions for iterating dimension indices
@@ -1039,22 +1278,6 @@ class XarrayGraph(QMainWindow):
         self._home_button.clicked.connect(lambda: self.autoscale_plots())
         self._plot_grid_toolbar.addWidget(self._home_button)
     
-    def _setup_control_panel_toolbar(self) -> None:
-        # control panel toolbar
-        # button order in toolbar reflects setup order
-        self._setup_data_control_panel()
-        self._setup_grid_control_panel()
-        self._setup_region_control_panel()
-        self._setup_math_control_panel()
-        self._setup_measure_control_panel()
-        self._setup_curve_fit_control_panel()
-        self._setup_notes_control_panel()
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        self._control_panel_toolbar.addWidget(spacer)
-        self._setup_settings_control_panel()
-        self._setup_console()
-    
     def _toggle_control_panel_at(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
         widgets = [self._control_panel_toolbar.widgetForAction(action) for action in actions]
@@ -1066,6 +1289,7 @@ class XarrayGraph(QMainWindow):
         for i, button in enumerate(buttons):
             if i != index:
                 button.setChecked(False)
+        self._update_measure_preview()
     
     def _show_control_panel_at(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
@@ -1086,25 +1310,6 @@ class XarrayGraph(QMainWindow):
         button.setToolTip('Data browser')
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
-
-        self._data_treeviewer = XarrayTreeViewer()
-        self._data_treeview = self._data_treeviewer.view()
-        self._data_treeview.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._data_treeview.setAlternatingRowColors(False)
-        root: XarrayTreeItem = XarrayTreeItem(node=self.data, key=None)
-        model: XarrayDndTreeModel = XarrayDndTreeModel(root)
-        model.setShowDetailsColumn(False)
-        self._data_treeview.setShowCoords(False)
-        self._data_treeview.setModel(model)
-        self._data_treeview.selectionWasChanged.connect(self._on_tree_selection_changed)
-        self._data_treeviewer.setSizes([100, 1])
-        model.sigNodeNameChanged.connect(self._update_array_math_comboboxes)
-        self._data_treeview.sigFinishedEditingAttrs.connect(self._on_tree_selection_changed)  # overkill, but needed to update units
-        attrs_model: KeyValueTreeModel = self._data_treeviewer._attrs_view.model()
-        attrs_model.sigValueChanged.connect(self._on_tree_selection_changed)  # overkill, but needed to update units
-
-        self._xdim_combobox = QComboBox()
-        self._xdim_combobox.currentTextChanged.connect(self.set_xdim)
 
         panel = QWidget()
         vbox = QVBoxLayout(panel)
@@ -1130,24 +1335,6 @@ class XarrayGraph(QMainWindow):
         button.setToolTip('Plot grid')
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
-
-        self._link_xaxis_checkbox = QCheckBox('Link X axes')
-        self._link_xaxis_checkbox.setChecked(True)
-        self._link_xaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
-
-        self._link_yaxis_checkbox = QCheckBox('Link Y axes (per variable)')
-        self._link_yaxis_checkbox.setChecked(True)
-        self._link_yaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
-
-        self._row_tile_combobox = QComboBox()
-        self._row_tile_combobox.addItems(['None'])
-        self._row_tile_combobox.setCurrentText('None')
-        self._row_tile_combobox.currentTextChanged.connect(self._update_plot_grid)
-
-        self._col_tile_combobox = QComboBox()
-        self._col_tile_combobox.addItems(['None'])
-        self._col_tile_combobox.setCurrentText('None')
-        self._col_tile_combobox.currentTextChanged.connect(self._update_plot_grid)
 
         link_group = QGroupBox('Link axes')
         vbox = QVBoxLayout(link_group)
@@ -1188,11 +1375,6 @@ class XarrayGraph(QMainWindow):
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
 
-        root = AxisRegionTreeItem(self.regions)
-        model = AxisRegionDndTreeModel(root)
-        self._region_treeview = AxisRegionTreeView()
-        self._region_treeview.setModel(model)
-
         panel = QWidget()
         vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(5, 5, 5, 5)
@@ -1209,22 +1391,6 @@ class XarrayGraph(QMainWindow):
         button.setToolTip('Math')
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
-
-        self._math_result_name_edit = QLineEdit()
-        self._math_result_name_edit.setPlaceholderText('result')
-
-        self._math_lhs_combobox = QComboBox()
-        self._math_lhs_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-        self._math_rhs_combobox = QComboBox()
-        self._math_rhs_combobox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-        self._math_operator_combobox = QComboBox()
-        self._math_operator_combobox.addItems(['+', '-', '*', '/'])
-        self._math_operator_combobox.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-
-        self._math_eval_button = QPushButton('Evaluate')
-        self._math_eval_button.pressed.connect(self.eval_array_math)
 
         math_group = QGroupBox('Array math')
         grid = QGridLayout(math_group)
@@ -1259,62 +1425,32 @@ class XarrayGraph(QMainWindow):
         button.setCheckable(True)
         button.setChecked(False)
         button.setToolTip('Measure')
+        self._measure_control_panel_index = self._control_panel.count()
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
+        button.released.connect(self._update_measure_preview)
         self._control_panel_toolbar.addWidget(button)
-
-        self._measure_type_combobox = QComboBox()
-        self._measure_type_combobox.addItems(['Mean', 'Median'])
-        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
-        self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
-        # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
-        # self._measure_type_combobox.addItems(['Peaks'])
-        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
-        self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
-        self._measure_type_combobox.currentIndexChanged.connect(self._on_measure_type_changed)
-
-        self._peak_half_width_spinbox = QSpinBox()
-        self._peak_half_width_spinbox.setValue(0)
 
         self._peak_width_group = QGroupBox()
         form = QFormLayout(self._peak_width_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Average +/- samples', self._peak_half_width_spinbox)
-
-        self._peak_type_combobox = QComboBox()
-        self._peak_type_combobox.addItems(['Min', 'Max'])
-        self._peak_type_combobox.setCurrentText('Max')
-
-        self._peak_threshold_edit = QLineEdit('0')
+        form.addRow('Average +/- samples', self._measure_peak_avg_half_width_spinbox)
 
         self._peak_group = QGroupBox()
         form = QFormLayout(self._peak_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Peak type', self._peak_type_combobox)
-        form.addRow('Peak threshold', self._peak_threshold_edit)
-
-        self._measure_in_visible_regions_only_checkbox = QCheckBox('Within selected regions')
-        self._measure_in_visible_regions_only_checkbox.setChecked(True)
-
-        self._measure_per_visible_region_checkbox = QCheckBox('Within each selected region')
-        self._measure_per_visible_region_checkbox.setChecked(True)
-        self._measure_in_visible_regions_only_checkbox.setEnabled(not self._measure_per_visible_region_checkbox.isChecked)
-        self._measure_per_visible_region_checkbox.stateChanged.connect(lambda state: self._measure_in_visible_regions_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
-
-        self._measure_name_edit = QLineEdit()
+        form.addRow('Peak type', self._measure_peak_type_combobox)
+        form.addRow('Peak threshold', self._measure_peak_threshold_edit)
 
         self._measure_name_wrapper = QWidget()
         form = QFormLayout(self._measure_name_wrapper)
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(0)
         form.setHorizontalSpacing(5)
-        form.addRow('Result name', self._measure_name_edit)
-
-        self._measure_button = QPushButton('Measure')
-        self._measure_button.pressed.connect(self.measure)
+        form.addRow('Result name', self._measure_result_name_edit)
 
         measure_group = QGroupBox('Measure')
         vbox = QVBoxLayout(measure_group)
@@ -1326,6 +1462,7 @@ class XarrayGraph(QMainWindow):
         vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
         vbox.addWidget(self._measure_per_visible_region_checkbox)
         vbox.addWidget(self._measure_name_wrapper)
+        vbox.addWidget(self._measure_preview_checkbox)
         vbox.addWidget(self._measure_button)
         self._on_measure_type_changed()
 
@@ -1350,78 +1487,37 @@ class XarrayGraph(QMainWindow):
         button.setChecked(False)
         button.setToolTip('Curve fit')
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
+        button.released.connect(self._update_curve_fit_preview)
         self._control_panel_toolbar.addWidget(button)
-
-        self._curve_fit_type_combobox = QComboBox()
-        self._curve_fit_type_combobox.addItems(['Mean', 'Median', 'Min', 'Max'])
-        self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
-        self._curve_fit_type_combobox.addItems(['Line', 'Polynomial', 'Spline'])
-        self._curve_fit_type_combobox.insertSeparator(self._curve_fit_type_combobox.count())
-        self._curve_fit_type_combobox.addItems(['Equation'])
-        self._curve_fit_type_combobox.setCurrentText('Equation')
-        self._curve_fit_type_combobox.currentIndexChanged.connect(self._on_curve_fit_type_changed)
-
-        self._polynomial_degree_spinbox = QSpinBox()
-        self._polynomial_degree_spinbox.setValue(2)
 
         self._polynomial_group = QGroupBox()
         form = QFormLayout(self._polynomial_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Polynomial degree', self._polynomial_degree_spinbox)
-
-        self._spline_segments_spinbox = QSpinBox()
-        self._spline_segments_spinbox.setValue(10)
-        self._spline_segments_spinbox.setMinimum(1)
+        form.addRow('Polynomial degree', self._curve_fit_polynomial_degree_spinbox)
 
         self._spline_group = QGroupBox()
         form = QFormLayout(self._spline_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Spline segments', self._spline_segments_spinbox)
-
-        self._equation_edit = QLineEdit()
-        self._equation_edit.setPlaceholderText('a * x + b')
-        self._equation_edit.editingFinished.connect(self._on_curve_fit_equation_changed)
-
-        self._equation_params = {}
-
-        self._equation_params_table = QTableWidget(0, 5)
-        self._equation_params_table.setHorizontalHeaderLabels(['Param', 'Value', 'Vary', 'Min', 'Max'])
-        self._equation_params_table.verticalHeader().setVisible(False)
-        self._equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self._equation_params_table.model().dataChanged.connect(self._update_curve_fit_preview)
-
-        self._equation_preview_checkbox = QCheckBox('Preview')
-        self._equation_preview_checkbox.stateChanged.connect(self._update_curve_fit_preview)
+        form.addRow('Spline segments', self._curve_fit_spline_segments_spinbox)
 
         self._equation_group = QGroupBox()
         vbox = QVBoxLayout(self._equation_group)
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(3)
-        vbox.addWidget(self._equation_edit)
-        vbox.addWidget(self._equation_params_table)
-        vbox.addWidget(self._equation_preview_checkbox)
-
-        self._curve_fit_optimize_in_regions_checkbox = QCheckBox('Optimize within selected regions')
-        self._curve_fit_optimize_in_regions_checkbox.setChecked(True)
-
-        self._curve_fit_evaluate_in_regions_checkbox = QCheckBox('Evaluate within selected regions')
-        self._curve_fit_evaluate_in_regions_checkbox.setChecked(False)
-
-        self._curve_fit_name_edit = QLineEdit()
+        vbox.addWidget(self._curve_fit_equation_edit)
+        vbox.addWidget(self._curve_fit_equation_params_table)
+        vbox.addWidget(self._curve_fit_equation_preview_checkbox)
 
         self._curve_fit_name_wrapper = QWidget()
         form = QFormLayout(self._curve_fit_name_wrapper)
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(0)
         form.setHorizontalSpacing(5)
-        form.addRow('Result name', self._curve_fit_name_edit)
-
-        self._curve_fit_button = QPushButton('Fit')
-        self._curve_fit_button.pressed.connect(self.curve_fit)
+        form.addRow('Result name', self._curve_fit_result_name_edit)
 
         fit_group = QGroupBox('Curve fit')
         vbox = QVBoxLayout(fit_group)
@@ -1434,6 +1530,7 @@ class XarrayGraph(QMainWindow):
         vbox.addWidget(self._curve_fit_optimize_in_regions_checkbox)
         vbox.addWidget(self._curve_fit_evaluate_in_regions_checkbox)
         vbox.addWidget(self._curve_fit_name_wrapper)
+        vbox.addWidget(self._curve_fit_preview_checkbox)
         vbox.addWidget(self._curve_fit_button)
         self._on_curve_fit_type_changed()
 
@@ -1460,11 +1557,6 @@ class XarrayGraph(QMainWindow):
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
 
-        self._notes_edit = QTextEdit()
-        self._notes_edit.setTabChangesFocus(False)
-        self._notes_edit.setAcceptRichText(False)
-        self._notes_edit.textChanged.connect(self._save_notes)
-
         self._control_panel.addWidget(self._notes_edit)
     
     def _setup_settings_control_panel(self) -> None:
@@ -1476,58 +1568,28 @@ class XarrayGraph(QMainWindow):
         button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
         self._control_panel_toolbar.addWidget(button)
 
-        self._linewidth_spinbox = QSpinBox()
-        self._linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
-        self._linewidth_spinbox.setMinimum(1)
-        self._linewidth_spinbox.valueChanged.connect(lambda: self._update_plot_items(item_types=[Graph]))
-
-        self._axislabel_fontsize_spinbox = QSpinBox()
-        self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
-        self._axislabel_fontsize_spinbox.setMinimum(1)
-        self._axislabel_fontsize_spinbox.setSuffix('pt')
-        self._axislabel_fontsize_spinbox.valueChanged.connect(self._update_axes_labels)
-
-        self._axistick_fontsize_spinbox = QSpinBox()
-        self._axistick_fontsize_spinbox.setValue(DEFAULT_AXIS_TICK_FONT_SIZE)
-        self._axistick_fontsize_spinbox.setMinimum(1)
-        self._axistick_fontsize_spinbox.setSuffix('pt')
-        self._axistick_fontsize_spinbox.valueChanged.connect(self._update_axes_tick_font)
-
-        self._textitem_fontsize_spinbox = QSpinBox()
-        self._textitem_fontsize_spinbox.setValue(DEFAULT_TEXT_ITEM_FONT_SIZE)
-        self._textitem_fontsize_spinbox.setMinimum(1)
-        self._textitem_fontsize_spinbox.setSuffix('pt')
-        self._textitem_fontsize_spinbox.valueChanged.connect(self._update_item_font)
-
-        self._iconsize_spinbox = QSpinBox()
-        self._iconsize_spinbox.setValue(DEFAULT_ICON_SIZE)
-        self._iconsize_spinbox.setMinimum(16)
-        self._iconsize_spinbox.setMaximum(64)
-        self._iconsize_spinbox.setSingleStep(8)
-        self._iconsize_spinbox.valueChanged.connect(self._update_icon_size)
-
         style_group = QGroupBox('Default plot style')
         form = QFormLayout(style_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Line width', self._linewidth_spinbox)
+        form.addRow('Line width', self._settings_linewidth_spinbox)
 
         font_group = QGroupBox('Font')
         form = QFormLayout(font_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Axis label size', self._axislabel_fontsize_spinbox)
-        form.addRow('Axis tick size', self._axistick_fontsize_spinbox)
-        form.addRow('Text item size', self._textitem_fontsize_spinbox)
+        form.addRow('Axis label size', self._settings_axislabel_fontsize_spinbox)
+        form.addRow('Axis tick size', self._settings_axistick_fontsize_spinbox)
+        form.addRow('Text item size', self._settings_textitem_fontsize_spinbox)
 
         misc_group = QGroupBox('Misc')
         form = QFormLayout(misc_group)
         form.setContentsMargins(3, 3, 3, 3)
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
-        form.addRow('Icon size', self._iconsize_spinbox)
+        form.addRow('Icon size', self._settings_iconsize_spinbox)
 
         panel = QWidget()
         vbox = QVBoxLayout(panel)
@@ -1602,7 +1664,24 @@ class XarrayGraph(QMainWindow):
         measure_type = self._measure_type_combobox.currentText()
         self._peak_group.setVisible(measure_type == 'Peaks')
         self._peak_width_group.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
-        self._measure_name_edit.setPlaceholderText(measure_type)
+        self._measure_result_name_edit.setPlaceholderText(measure_type)
+        self._update_measure_preview()
+    
+    def _update_measure_preview(self, plots: list[Plot] = None) -> None:
+        if self._measure_preview_checkbox.isChecked() and self._control_panel.isVisible() and (self._control_panel.currentIndex() == self._measure_control_panel_index):
+            self.measure(plots, preview_only=True)
+        else:
+            self._clear_measure_preview(plots)
+    
+    def _clear_measure_preview(self, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots()
+        for plot in plots:
+            if hasattr(plot, '_tmp_measure_graphs'):
+                for graph in plot._tmp_measure_graphs:
+                    plot.removeItem(graph)
+                    graph.deleteLater()
+            plot._tmp_measure_graphs = []
     
     def _on_curve_fit_type_changed(self) -> None:
         fit_type = self._curve_fit_type_combobox.currentText()
@@ -1610,11 +1689,11 @@ class XarrayGraph(QMainWindow):
         self._spline_group.setVisible(fit_type == 'Spline')
         self._equation_group.setVisible(fit_type == 'Equation')
         if self._equation_group.isVisible():
-            self._equation_params_table.resizeColumnsToContents()
-        self._curve_fit_name_edit.setPlaceholderText(fit_type)
+            self._curve_fit_equation_params_table.resizeColumnsToContents()
+        self._curve_fit_result_name_edit.setPlaceholderText(fit_type)
     
     def _on_curve_fit_equation_changed(self) -> None:
-        equation = self._equation_edit.text().strip()
+        equation = self._curve_fit_equation_edit.text().strip()
         if equation == '':
             self._curve_fit_model = None
             param_names = []
@@ -1622,21 +1701,21 @@ class XarrayGraph(QMainWindow):
             self._curve_fit_model = lmfit.models.ExpressionModel(equation, independent_vars=['x'])
             param_names = self._curve_fit_model.param_names
             for name in param_names:
-                if name not in self._equation_params:
-                    self._equation_params[name] = {
+                if name not in self._curve_fit_equation_params:
+                    self._curve_fit_equation_params[name] = {
                         'value': 0,
                         'vary': True,
                         'min': -np.inf,
                         'max': np.inf
                     }
-            self._equation_params = {name: params for name, params in self._equation_params.items() if name in param_names}
-        self._equation_params_table.clearContents()
-        self._equation_params_table.setRowCount(len(param_names))
+            self._curve_fit_equation_params = {name: params for name, params in self._curve_fit_equation_params.items() if name in param_names}
+        self._curve_fit_equation_params_table.clearContents()
+        self._curve_fit_equation_params_table.setRowCount(len(param_names))
         for row, name in enumerate(param_names):
-            value = self._equation_params[name]['value']
-            vary = self._equation_params[name]['vary']
-            value_min = self._equation_params[name]['min']
-            value_max = self._equation_params[name]['max']
+            value = self._curve_fit_equation_params[name]['value']
+            vary = self._curve_fit_equation_params[name]['vary']
+            value_min = self._curve_fit_equation_params[name]['min']
+            value_max = self._curve_fit_equation_params[name]['max']
 
             name_item = QTableWidgetItem(name)
             name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -1648,42 +1727,42 @@ class XarrayGraph(QMainWindow):
             max_item = QTableWidgetItem(str(value_max))
 
             for col, item in enumerate([name_item, value_item, vary_item, min_item, max_item]):
-                self._equation_params_table.setItem(row, col, item)
+                self._curve_fit_equation_params_table.setItem(row, col, item)
 
-        self._equation_params_table.resizeColumnsToContents()
+        self._curve_fit_equation_params_table.resizeColumnsToContents()
     
     def _update_curve_fit_model(self) -> None:
-        for row in range(self._equation_params_table.rowCount()):
-            name = self._equation_params_table.item(row, 0).text()
+        for row in range(self._curve_fit_equation_params_table.rowCount()):
+            name = self._curve_fit_equation_params_table.item(row, 0).text()
             try:
-                value = float(self._equation_params_table.item(row, 1).text())
+                value = float(self._curve_fit_equation_params_table.item(row, 1).text())
             except:
                 value = 0
-            vary = self._equation_params_table.item(row, 2).checkState() == Qt.CheckState.Checked
+            vary = self._curve_fit_equation_params_table.item(row, 2).checkState() == Qt.CheckState.Checked
             try:
-                value_min = float(self._equation_params_table.item(row, 3).text())
+                value_min = float(self._curve_fit_equation_params_table.item(row, 3).text())
             except:
                 value_min = -np.inf
             try:
-                value_max = float(self._equation_params_table.item(row, 4).text())
+                value_max = float(self._curve_fit_equation_params_table.item(row, 4).text())
             except:
                 value_max = np.inf
-            self._equation_params[name] = {
+            self._curve_fit_equation_params[name] = {
                 'value': value,
                 'vary': vary,
                 'min': value_min,
                 'max': value_max
             }
-            self._curve_fit_model.set_param_hint(name, **self._equation_params[name])
+            self._curve_fit_model.set_param_hint(name, **self._curve_fit_equation_params[name])
     
     def _update_curve_fit_preview(self) -> None:
-        show: bool = self._equation_preview_checkbox.isChecked()
+        show: bool = self._curve_fit_equation_preview_checkbox.isChecked()
         if show:
             self.preview_curve_fit()
         else:
-            self._clear_tmp_curve_fits()
+            self._clear_curve_fit_preview()
     
-    def _clear_tmp_curve_fits(self, plots: list[Plot] = None) -> None:
+    def _clear_curve_fit_preview(self, plots: list[Plot] = None) -> None:
         if plots is None:
             plots = self._plots()
         for plot in plots:
@@ -1709,7 +1788,7 @@ class XarrayGraph(QMainWindow):
         self._notes_edit.setPlainText(notes)
     
     def _update_icon_size(self) -> None:
-        size = self._iconsize_spinbox.value()
+        size = self._settings_iconsize_spinbox.value()
         icon_size = QSize(size, size)
         for toolbar in [self._control_panel_toolbar, self._plot_grid_toolbar]:
             toolbar.setIconSize(icon_size)
@@ -1724,7 +1803,7 @@ class XarrayGraph(QMainWindow):
             view: View = plot.getViewBox()
             for item in view.allChildren():
                 if isinstance(item, XAxisRegion):
-                    item.setFontSize(self._textitem_fontsize_spinbox.value())
+                    item.setFontSize(self._settings_textitem_fontsize_spinbox.value())
 
     def _update_array_math_comboboxes(self) -> None:
         var_paths = [item.path for item in self._data_treeview.model().root().depth_first() if item.is_var()]
@@ -1780,14 +1859,14 @@ class XarrayGraph(QMainWindow):
     # #         self.update_region_items()
 
     
-    def measure(self, plots: list[Plot] = None) -> None:
+    def measure(self, plots: list[Plot] = None, preview_only: bool = False) -> None:
         if plots is None:
             plots = self._plots()
         
         # name for measure
-        result_name = self._measure_name_edit.text().strip()
+        result_name = self._measure_result_name_edit.text().strip()
         if not result_name:
-            result_name = self._measure_name_edit.placeholderText()
+            result_name = self._measure_result_name_edit.placeholderText()
                 
         # measure options
         measure_type = self._measure_type_combobox.currentText()
@@ -1797,7 +1876,7 @@ class XarrayGraph(QMainWindow):
                 i = np.argpartition(x, len(x) // 2)[len(x) // 2]
                 return x[i]
         if measure_type in ['Min', 'Max', 'AbsMax', 'Peaks']:
-            peak_width = self._peak_half_width_spinbox.value()
+            peak_width = self._measure_peak_avg_half_width_spinbox.value()
             if peak_width > 0:
                 def get_peak_index_range(mask, center_index):
                     start, stop = center_index, center_index + 1
@@ -1808,8 +1887,8 @@ class XarrayGraph(QMainWindow):
                             stop = center_index + w + 1
                     return start, stop
         if measure_type == 'Peaks':
-            peak_threshold = float(self._peak_threshold_edit.text())
-            peak_type = self._peak_type_combobox.currentText()
+            peak_threshold = float(self._measure_peak_threshold_edit.text())
+            peak_type = self._measure_peak_type_combobox.currentText()
         
         # measure in each plot
         for plot in plots:
@@ -1958,7 +2037,14 @@ class XarrayGraph(QMainWindow):
         
         # preview measurements
         for plot in plots:
+            # clear existing previews
+            if hasattr(plot, '_tmp_measure_graphs'):
+                for graph in plot._tmp_measure_graphs:
+                    plot.removeItem(graph)
+                    graph.deleteLater()
             plot._tmp_measure_graphs = []
+            
+            # add new previews
             for measure in plot._tmp_measures:
                 var_name = list(measure.data_vars)[0]
                 var = measure.data_vars[var_name]
@@ -1971,16 +2057,21 @@ class XarrayGraph(QMainWindow):
                 plot.addItem(measure_graph)
                 plot._tmp_measure_graphs.append(measure_graph)
         
+        if preview_only:
+            return
+        
         # query user to keep measures
         answer = QMessageBox.question(self, 'Keep Measures?', 'Keep measurements?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
-            for plot in plots:
-                for graph in plot._tmp_measure_graphs:
-                    plot.removeItem(graph)
-                    graph.deleteLater()
-                plot._tmp_measure_graphs = []
-                plot._tmp_measures = []
-                plot._tmp_measure_tree_items = []
+            # clear previews if not in preview mode
+            if not self._measure_preview_checkbox.isChecked():
+                for plot in plots:
+                    for graph in plot._tmp_measure_graphs:
+                        plot.removeItem(graph)
+                        graph.deleteLater()
+                    plot._tmp_measure_graphs = []
+                    plot._tmp_measures = []
+                    plot._tmp_measure_tree_items = []
             return
         
         # add measures to data tree
@@ -2016,6 +2107,10 @@ class XarrayGraph(QMainWindow):
                     index: QModelIndex = model.createIndex(item.sibling_index, 0, item)
                     self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
                     self._data_treeview.setExpanded(model.parent(index), True)
+        
+        # stop preview
+        self._measure_preview_checkbox.setChecked(False)
+        self._update_measure_preview()
 
     def preview_curve_fit(self, plots: list[Plot] = None) -> None:
         self.curve_fit(plots=plots, eval_equation_only=True)
@@ -2025,22 +2120,22 @@ class XarrayGraph(QMainWindow):
             plots = self._plots()
         
         # name for fit
-        result_name = self._curve_fit_name_edit.text().strip()
+        result_name = self._curve_fit_result_name_edit.text().strip()
         if not result_name:
-            result_name = self._curve_fit_name_edit.placeholderText()
+            result_name = self._curve_fit_result_name_edit.placeholderText()
                 
         # fit options
         fit_type = self._curve_fit_type_combobox.currentText()
         if fit_type == 'Polynomial':
-            degree = self._polynomial_degree_spinbox.value()
+            degree = self._curve_fit_polynomial_degree_spinbox.value()
         elif fit_type == 'Spline':
-            segments = self._spline_segments_spinbox.value()
+            segments = self._curve_fit_spline_segments_spinbox.value()
         elif fit_type == 'Equation':
             self._update_curve_fit_model()
             params = self._curve_fit_model.make_params()
 
         # clear any temporary fits
-        self._clear_tmp_curve_fits(plots)
+        self._clear_curve_fit_preview(plots)
         
         # fit in each plot
         for plot in plots:
@@ -2168,18 +2263,18 @@ class XarrayGraph(QMainWindow):
         if fit_type == 'Equation':
             if eval_equation_only:
                 return
-            for row in range(self._equation_params_table.rowCount()):
-                name = self._equation_params_table.item(row, 0).text()
+            for row in range(self._curve_fit_equation_params_table.rowCount()):
+                name = self._curve_fit_equation_params_table.item(row, 0).text()
                 if result.params[name].vary:
-                    value_item = self._equation_params_table.item(row, 1)
+                    value_item = self._curve_fit_equation_params_table.item(row, 1)
                     value_item.setText(f'{result.params[name].value:.6g}')
-            self._equation_params_table.resizeColumnToContents(1)
+            self._curve_fit_equation_params_table.resizeColumnToContents(1)
         
         # query user to keep fits
         answer = QMessageBox.question(self, 'Keep Fits?', 'Keep fits?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
             for plot in plots:
-                if not self._equation_preview_checkbox.isChecked():
+                if not self._curve_fit_equation_preview_checkbox.isChecked():
                     for graph in plot._tmp_fit_graphs:
                         plot.removeItem(graph)
                         graph.deleteLater()
@@ -2223,7 +2318,7 @@ class XarrayGraph(QMainWindow):
                     self._data_treeview.setExpanded(model.parent(index), True)
         
         # disable preview checkbox
-        self._equation_preview_checkbox.setChecked(False)
+        self._curve_fit_equation_preview_checkbox.setChecked(False)
 
 
 def permutations(coords: dict) -> list[dict]:
