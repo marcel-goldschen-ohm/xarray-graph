@@ -893,7 +893,7 @@ class XarrayGraph(QMainWindow):
                         
                         # graph style
                         graph.setGraphStyle(style, colorIndex=color_index)
-                        if len(ydata) == 1:
+                        if (len(ydata) == 1) or (np.sum(~np.isnan(ydata)) == 1):
                             if 'symbol' not in style:
                                 graph.setSymbol('o')
                         
