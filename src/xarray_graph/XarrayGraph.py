@@ -1089,11 +1089,11 @@ class XarrayGraph(QMainWindow):
         self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
         self._measure_type_combobox.currentIndexChanged.connect(self._on_measure_type_changed)
 
-        self._measure_in_visible_regions_only_checkbox = QCheckBox('Within selected regions')
+        self._measure_in_visible_regions_only_checkbox = QCheckBox('Measure within selected regions')
         self._measure_in_visible_regions_only_checkbox.setChecked(True)
         self._measure_in_visible_regions_only_checkbox.stateChanged.connect(lambda state: self._update_measure_preview())
 
-        self._measure_per_visible_region_checkbox = QCheckBox('Within each selected region')
+        self._measure_per_visible_region_checkbox = QCheckBox('Measure for each selected region')
         self._measure_per_visible_region_checkbox.setChecked(True)
         self._measure_in_visible_regions_only_checkbox.setEnabled(not self._measure_per_visible_region_checkbox.isChecked)
         self._measure_per_visible_region_checkbox.stateChanged.connect(lambda state: self._measure_in_visible_regions_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
@@ -1168,6 +1168,26 @@ class XarrayGraph(QMainWindow):
         self._curve_fit_equation_params_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self._curve_fit_equation_params_table.model().dataChanged.connect(lambda model_index: self._update_curve_fit_preview())
 
+        # function widgets
+        self._function_type_combobox = QComboBox()
+        self._function_type_combobox.addItems(['Gaussian Filter', 'Median Filter', 'Bessel Filter', 'Butterworth Filter', 'Chebyshev Filter', 'Elliptic Filter', 'Savitzky-Golay Filter', 'Kalman Filter'])
+        # self._function_type_combobox.insertSeparator(self._function_type_combobox.count())
+        self._function_type_combobox.setCurrentIndex(0)
+        self._function_type_combobox.currentIndexChanged.connect(self._on_function_type_changed)
+
+        self._function_evaluate_in_regions_checkbox = QCheckBox('Evaluate within selected regions')
+        self._function_evaluate_in_regions_checkbox.setChecked(False)
+        self._function_evaluate_in_regions_checkbox.stateChanged.connect(lambda state: self._update_function_preview())
+
+        self._function_result_name_edit = QLineEdit()
+
+        self._function_preview_checkbox = QCheckBox('Preview')
+        self._function_preview_checkbox.setChecked(True)
+        self._function_preview_checkbox.stateChanged.connect(lambda state: self._update_function_preview())
+
+        self._function_apply_button = QPushButton('Apply')
+        self._function_apply_button.pressed.connect(self.apply_function)
+
         # notes editor
         self._notes_edit = QTextEdit()
         self._notes_edit.setTabChangesFocus(False)
@@ -1237,6 +1257,7 @@ class XarrayGraph(QMainWindow):
         self._setup_math_control_panel()
         self._setup_measure_control_panel()
         self._setup_curve_fit_control_panel()
+        self._setup_function_control_panel()
         self._setup_notes_control_panel()
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
@@ -1550,6 +1571,49 @@ class XarrayGraph(QMainWindow):
 
         self._control_panel.addWidget(scroll_area)
     
+    def _setup_function_control_panel(self) -> None:
+        button = QToolButton()
+        button.setIcon(qta.icon('mdi.function', options=[{'opacity': 0.5}]))
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setToolTip('Function')
+        self._function_control_panel_index = self._control_panel.count()
+        button.released.connect(lambda i=self._control_panel.count(): self._toggle_control_panel_at(i))
+        button.released.connect(self._update_function_preview)
+        self._control_panel_toolbar.addWidget(button)
+
+        reult_name_wrapper = QWidget()
+        form = QFormLayout(reult_name_wrapper)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(0)
+        form.setHorizontalSpacing(5)
+        form.addRow('Result name', self._function_result_name_edit)
+
+        func_group = QGroupBox('Function')
+        vbox = QVBoxLayout(func_group)
+        vbox.setContentsMargins(3, 3, 3, 3)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._function_type_combobox)
+        vbox.addWidget(self._function_evaluate_in_regions_checkbox)
+        vbox.addWidget(reult_name_wrapper)
+        vbox.addWidget(self._function_preview_checkbox)
+        vbox.addWidget(self._function_apply_button)
+        self._on_function_type_changed()
+
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(20)
+        vbox.addWidget(func_group)
+        vbox.addStretch()
+
+        scroll_area = QScrollArea()
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidget(panel)
+        scroll_area.setWidgetResizable(True)
+
+        self._control_panel.addWidget(scroll_area)
+    
     def _setup_notes_control_panel(self) -> None:
         button = QToolButton()
         button.setIcon(qta.icon('mdi.notebook-outline', options=[{'opacity': 0.5}]))
@@ -1780,6 +1844,29 @@ class XarrayGraph(QMainWindow):
                     except:
                         pass
             plot._tmp_fit_graphs = []
+    
+    def _on_function_type_changed(self) -> None:
+        # TODO: update visible function control widgets
+        self._update_function_preview()
+    
+    def _update_function_preview(self, plots: list[Plot] = None) -> None:
+        if self._function_preview_checkbox.isChecked() and self._control_panel.isVisible() and (self._control_panel.currentIndex() == self._function_control_panel_index):
+            self.function(plots, preview_only=True)
+        else:
+            self._clear_function_preview(plots)
+
+    def _clear_function_preview(self, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots()
+        for plot in plots:
+            if hasattr(plot, '_tmp_function_graphs'):
+                for graph in plot._tmp_function_graphs:
+                    try:
+                        plot.removeItem(graph)
+                        graph.deleteLater()
+                    except:
+                        pass
+            plot._tmp_function_graphs = []
     
     def _save_notes(self) -> None:
         notes = self._notes_edit.toPlainText()
@@ -2313,6 +2400,9 @@ class XarrayGraph(QMainWindow):
         # disable preview checkbox
         self._curve_fit_equation_preview_checkbox.setChecked(False)
         self._update_curve_fit_preview()
+
+    def apply_function(self, plots: list[Plot] = None, preview_only: bool = False) -> None:
+        pass
 
 
 def permutations(coords: dict) -> list[dict]:
