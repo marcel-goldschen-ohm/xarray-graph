@@ -1,8 +1,12 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
 [project]
 name = "xarray-graph"
 description = "PyQt/PySide UI for graphing (x,y) slices of Xarray datasets."
 dynamic = ["version"]
-license = {text = "MIT"}
 authors = [
     {name = "Marcel Goldschen-Ohm", email = "goldschen-ohm@utexas.edu"},
 ]
@@ -12,9 +16,9 @@ dependencies = [
     "xarray>=2023.12.0",
     "qtpy>=2.4.1",
     "qtawesome>=1.3.0",
-    "pyqt-ext>=1.2.5",
-    "pyqtgraph-ext>=1.2.6",
-    "xarray-treeview>=1.2.6",
+    "pyqt-ext>=1.2.7",
+    "pyqtgraph-ext>=1.2.8",
+    "xarray-treeview @ git+https://github.com/marcel-goldschen-ohm/xarray-treeview",
     "qtconsole>=5.5.2",
     "scipy>=1.11.4",
     "lmfit>=1.2.2",
@@ -26,31 +30,32 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
 ]
 
 
 [project.urls]
 homepage = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 repository = "https://github.com/marcel-goldschen-ohm/xarray-graph"
+issues = "https://github.com/marcel-goldschen-ohm/xarray-graph/issues"
 
 
 [project.scripts]
 xarray-graph = "xarray_graph.__main__:main"
 
 
-[build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
-
-
 [tool.pdm]
-package-type = "library"
+distribution = true
 
 
 [tool.pdm.version]
 source = "scm"
+
+
+[tool.pdm.dev-dependencies]
+lint = [
+    "flake8",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+]
