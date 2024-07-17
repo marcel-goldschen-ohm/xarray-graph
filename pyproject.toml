@@ -52,6 +52,12 @@ source = "scm"
 
 
 [tool.pdm.dev-dependencies]
+# file paths assume local dev packages are in same dir as this package
+dev = [
+    "-e pyqt-ext @ file:///${PROJECT_ROOT}/../pyqt-ext",
+    "-e pyqtgraph-ext @ file:///${PROJECT_ROOT}/../pyqtgraph-ext",
+    "-e xarray-treeview @ file:///${PROJECT_ROOT}/../xarray-treeview",
+]
 lint = [
     "flake8",
 ]
