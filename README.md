@@ -7,7 +7,11 @@ PyQt/PySide UI for graphing (x,y) slices of Xarray datasets.
 ![GitHub Release](https://img.shields.io/github/v/release/marcel-goldschen-ohm/xarray-graph?include_prereleases&cacheSeconds=1)
 ![publish](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/publish.yml/badge.svg)
 
-# Install
+- [Install](#install)
+- [Run](#run)
+- [Documentation](#documentation)
+
+## Install
 Requires a PyQt package. Should work with PySide6, PyQt6, or PyQt5.
 ```shell
 pip install PySide6
@@ -24,7 +28,10 @@ Install latest development version:
 pip install xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
 ```
 
-# Run
+## Run
 ```shell
 xarray-graph
 ```
+
+## Documentation
+:construction:
