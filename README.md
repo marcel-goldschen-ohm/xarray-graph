@@ -29,6 +29,7 @@ pip install xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-grap
 ```
 
 ## Run
+Launch the GUI:
 ```shell
 xarray-graph
 ```
