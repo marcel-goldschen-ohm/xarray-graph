@@ -345,7 +345,11 @@ class XarrayGraph(QMainWindow):
             self._main_area.setVisible(False)
         if self._console.isVisible() and getattr(self, '_console_never_shown', True):
             self._console_never_shown = False
-            self._console.execute('whos', hidden=False)
+            self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
+            self._console._append_plain_text('Variables:\n', before_prompt=True)
+            self._console._append_plain_text('self      => This instance of XarrayGraph\n', before_prompt=True)
+            self._console._append_plain_text('self.data => The Xarray DataTree\n', before_prompt=True)
+            self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
     
     def _get_combined_coords(self, nodes: list[DataTree] = None) -> xr.Dataset:
         # return the combined coords for the input tree nodes (defaults to the entire tree)
@@ -1703,8 +1707,7 @@ class XarrayGraph(QMainWindow):
         app = QApplication.instance()
         app.aboutToQuit.connect(self._shutdown_console)
 
-        self._console_kernel_manager.kernel.shell.push({'self': self, 'data': self.data})
-        # self._console.execute('whos', hidden=False)
+        self._console_kernel_manager.kernel.shell.push({'self': self})
     
     def _shutdown_console(self) -> None:
         self._console_kernel_client.stop_channels()
