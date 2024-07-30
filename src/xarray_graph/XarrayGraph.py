@@ -2173,41 +2173,68 @@ class XarrayGraph(QMainWindow):
                 self._clear_measure_preview(plots)
             return
         
+        # squeeze out xdim?
         if not self._measure_keep_xdim_checkbox.isChecked():
             if measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance']:
                 for plot in plots:
                     for i, measure in enumerate(plot._tmp_measures):
                         plot._tmp_measures[i] = measure.isel({self.xdim: 0}, drop=True)
         
-        # add measures to data tree
-        measure_tree_nodes = []
-        merge_approved = None
+        # merge results
+        merged_results__parent_nodes: list[DataTree] = []
+        merged_results__child_datasets: list[xr.Dataset] = []
         for plot in plots:
             for tree_item, measure in zip(plot._tmp_measure_tree_items, plot._tmp_measures):
                 parent_node: DataTree = tree_item.node
-                # append measure as child tree node
-                if result_name in parent_node.children:
-                    if merge_approved is None:
-                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge measures with existing datasets of same name?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
-                        merge_approved = (answer == QMessageBox.Yes)
-                    if merge_approved:
-                        # merge measurement with existing child dataset (use measurement for any overlap)
-                        existing_child_node: DataTree = parent_node.children[result_name]
-                        existing_child_node.ds = measure.combine_first(existing_child_node.to_dataset())
-                        measure_tree_nodes.append(existing_child_node)
-                        continue
-                    else:
-                        # append measurement as new child node with unique name
-                        i = 2
-                        while result_name + f'_{i}' in parent_node.children:
-                            i += 1
-                        unique_result_name = result_name + f'_{i}'
-                        node = DataTree(name=unique_result_name, data=measure, parent=parent_node)
-                        measure_tree_nodes.append(node)
+                if parent_node in merged_results__parent_nodes:
+                    i = merged_results__parent_nodes.index(parent_node)
+                    merged_results__child_datasets[i] = merged_results__child_datasets[i].combine_first(measure)
                 else:
-                    # append measurement as new child node
-                    node = DataTree(name=result_name, data=measure, parent=parent_node)
-                    measure_tree_nodes.append(node)
+                    merged_results__parent_nodes.append(parent_node)
+                    merged_results__child_datasets.append(measure)
+        
+        # does result overlap any existing datasets?
+        is_overlap = False
+        for parent_node in merged_results__parent_nodes:
+            if result_name in parent_node.children:
+                is_overlap = True
+                break
+        if is_overlap:
+            overlap_mode, ok = QInputDialog.getItem(self, 'Overlap with existing data', 'Apply to results with same name as existing datasets:', ['Merge with existing', 'Overwrite existing', 'Keep both', 'Keep existing'], 0, False)
+            if not ok:
+                # clear previews if not in preview mode
+                if not self._measure_preview_checkbox.isChecked():
+                    self._clear_measure_preview(plots)
+                return
+        
+        # add measures to data tree
+        measure_tree_nodes = []
+        for parent_node, child_dataset in zip(merged_results__parent_nodes, merged_results__child_datasets):
+            if not is_overlap:
+                # append measurement as new child node
+                node = DataTree(name=result_name, data=child_dataset, parent=parent_node)
+                measure_tree_nodes.append(node)
+            elif overlap_mode == 'Merge with existing':
+                # merge measurement with existing child dataset (use measurement for any overlap)
+                existing_child_node: DataTree = parent_node.children[result_name]
+                existing_child_node.ds = child_dataset.combine_first(existing_child_node.to_dataset())
+                measure_tree_nodes.append(existing_child_node)
+            elif overlap_mode == 'Overwrite existing':
+                # overwrite existing child dataset with measurement
+                existing_child_node: DataTree = parent_node.children[result_name]
+                existing_child_node.ds = child_dataset
+                measure_tree_nodes.append(existing_child_node)
+            elif overlap_mode == 'Keep both':
+                # append measurement as new child node with unique name
+                i = 2
+                while result_name + f'_{i}' in parent_node.children:
+                    i += 1
+                unique_result_name = result_name + f'_{i}'
+                node = DataTree(name=unique_result_name, data=child_dataset, parent=parent_node)
+                measure_tree_nodes.append(node)
+            elif overlap_mode == 'Keep existing':
+                # keep existing child dataset
+                pass
         
         # update data tree
         self.data = self.data
@@ -2396,35 +2423,65 @@ class XarrayGraph(QMainWindow):
                 self._clear_curve_fit_preview(plots)
             return
         
-        # add fits to data tree
-        fit_tree_nodes = []
-        merge_approved = None
+        # merge results
+        merged_results__parent_nodes: list[DataTree] = []
+        merged_results__child_datasets: list[xr.Dataset] = []
         for plot in plots:
             for tree_item, fit in zip(plot._tmp_fit_tree_items, plot._tmp_fits):
                 parent_node: DataTree = tree_item.node
-                # append fit as child tree node
-                if result_name in parent_node.children:
-                    if merge_approved is None:
-                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
-                        merge_approved = (answer == QMessageBox.Yes)
-                    if merge_approved:
-                        # merge fit with existing child dataset (use fit for any overlap)
-                        existing_child_node: DataTree = parent_node.children[result_name]
-                        existing_child_node.ds = fit.combine_first(existing_child_node.to_dataset())
-                        fit_tree_nodes.append(existing_child_node)
-                        continue
-                    else:
-                        # append fit as new child node with unique name
-                        i = 2
-                        while result_name + f'_{i}' in parent_node.children:
-                            i += 1
-                        unique_result_name = result_name + f'_{i}'
-                        node = DataTree(name=unique_result_name, data=fit, parent=parent_node)
-                        fit_tree_nodes.append(node)
-                else:
-                    # append measurement as new child node
-                    node = DataTree(name=result_name, data=fit, parent=parent_node)
-                    fit_tree_nodes.append(node)
+                did_merge = False
+                for node in merged_results__parent_nodes:
+                    if parent_node is node:
+                        i = merged_results__parent_nodes.index(parent_node)
+                        merged_results__child_datasets[i] = merged_results__child_datasets[i].combine_first(fit)
+                        did_merge = True
+                        break
+                if not did_merge:
+                    merged_results__parent_nodes.append(parent_node)
+                    merged_results__child_datasets.append(fit)
+        
+        # does result overlap any existing datasets?
+        is_overlap = False
+        for parent_node in merged_results__parent_nodes:
+            if result_name in parent_node.children:
+                is_overlap = True
+                break
+        if is_overlap:
+            overlap_mode, ok = QInputDialog.getItem(self, 'Overlap with existing data', 'Apply to results with same name as existing datasets:', ['Merge with existing', 'Overwrite existing', 'Keep both', 'Keep existing'], 0, False)
+            if not ok:
+                # clear previews if not in preview mode
+                if not self._curve_fit_preview_checkbox.isChecked():
+                    self._clear_curve_fit_preview(plots)
+                return
+        
+        # add fits to data tree
+        fit_tree_nodes = []
+        for parent_node, child_dataset in zip(merged_results__parent_nodes, merged_results__child_datasets):
+            if not is_overlap:
+                # append measurement as new child node
+                node = DataTree(name=result_name, data=child_dataset, parent=parent_node)
+                fit_tree_nodes.append(node)
+            elif overlap_mode == 'Merge with existing':
+                # merge measurement with existing child dataset (use measurement for any overlap)
+                existing_child_node: DataTree = parent_node.children[result_name]
+                existing_child_node.ds = child_dataset.combine_first(existing_child_node.to_dataset())
+                fit_tree_nodes.append(existing_child_node)
+            elif overlap_mode == 'Overwrite existing':
+                # overwrite existing child dataset with measurement
+                existing_child_node: DataTree = parent_node.children[result_name]
+                existing_child_node.ds = child_dataset
+                fit_tree_nodes.append(existing_child_node)
+            elif overlap_mode == 'Keep both':
+                # append measurement as new child node with unique name
+                i = 2
+                while result_name + f'_{i}' in parent_node.children:
+                    i += 1
+                unique_result_name = result_name + f'_{i}'
+                node = DataTree(name=unique_result_name, data=child_dataset, parent=parent_node)
+                fit_tree_nodes.append(node)
+            elif overlap_mode == 'Keep existing':
+                # keep existing child dataset
+                pass
         
         # update data tree
         self.data = self.data
@@ -2439,7 +2496,7 @@ class XarrayGraph(QMainWindow):
                     self._data_treeview.setExpanded(model.parent(index), True)
         
         # disable preview checkbox
-        self._curve_fit_equation_preview_checkbox.setChecked(False)
+        self._curve_fit_preview_checkbox.setChecked(False)
         self._update_curve_fit_preview()
 
     def apply_function(self, plots: list[Plot] = None, preview_only: bool = False) -> None:
