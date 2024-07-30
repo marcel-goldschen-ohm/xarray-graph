@@ -2170,14 +2170,22 @@ class XarrayGraph(QMainWindow):
                 # append measure as child tree node
                 if result_name in parent_node.children:
                     if merge_approved is None:
-                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge measures with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge measures with existing datasets of same name?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
                         merge_approved = (answer == QMessageBox.Yes)
-                    if not merge_approved:
+                    if merge_approved:
+                        # merge measurement with existing child dataset (use measurement for any overlap)
+                        existing_child_node: DataTree = parent_node.children[result_name]
+                        existing_child_node.ds = measure.combine_first(existing_child_node.to_dataset())
+                        measure_tree_nodes.append(existing_child_node)
                         continue
-                    # merge measurement with existing child dataset (use measurement for any overlap)
-                    existing_child_node: DataTree = parent_node.children[result_name]
-                    existing_child_node.ds = measure.combine_first(existing_child_node.to_dataset())
-                    measure_tree_nodes.append(existing_child_node)
+                    else:
+                        # append measurement as new child node with unique name
+                        i = 2
+                        while result_name + f'_{i}' in parent_node.children:
+                            i += 1
+                        unique_result_name = result_name + f'_{i}'
+                        node = DataTree(name=unique_result_name, data=measure, parent=parent_node)
+                        measure_tree_nodes.append(node)
                 else:
                     # append measurement as new child node
                     node = DataTree(name=result_name, data=measure, parent=parent_node)
@@ -2376,17 +2384,25 @@ class XarrayGraph(QMainWindow):
         for plot in plots:
             for tree_item, fit in zip(plot._tmp_fit_tree_items, plot._tmp_fits):
                 parent_node: DataTree = tree_item.node
-                # append measure as child tree node
+                # append fit as child tree node
                 if result_name in parent_node.children:
                     if merge_approved is None:
-                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                        answer = QMessageBox.question(self, 'Merge Result?', 'Merge fits with existing datasets of same name?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
                         merge_approved = (answer == QMessageBox.Yes)
-                    if not merge_approved:
+                    if merge_approved:
+                        # merge fit with existing child dataset (use fit for any overlap)
+                        existing_child_node: DataTree = parent_node.children[result_name]
+                        existing_child_node.ds = fit.combine_first(existing_child_node.to_dataset())
+                        fit_tree_nodes.append(existing_child_node)
                         continue
-                    # merge measurement with existing child dataset (use measurement for any overlap)
-                    existing_child_node: DataTree = parent_node.children[result_name]
-                    existing_child_node.ds = fit.combine_first(existing_child_node.to_dataset())
-                    fit_tree_nodes.append(existing_child_node)
+                    else:
+                        # append fit as new child node with unique name
+                        i = 2
+                        while result_name + f'_{i}' in parent_node.children:
+                            i += 1
+                        unique_result_name = result_name + f'_{i}'
+                        node = DataTree(name=unique_result_name, data=fit, parent=parent_node)
+                        fit_tree_nodes.append(node)
                 else:
                     # append measurement as new child node
                     node = DataTree(name=result_name, data=fit, parent=parent_node)
