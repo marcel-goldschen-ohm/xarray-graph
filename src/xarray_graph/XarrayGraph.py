@@ -1115,6 +1115,9 @@ class XarrayGraph(QMainWindow):
         self._measure_button = QPushButton('Measure')
         self._measure_button.pressed.connect(self.measure)
 
+        self._measure_keep_xdim_checkbox = QCheckBox('Keep X axis dimension')
+        self._measure_keep_xdim_checkbox.setChecked(False)
+
         self._measure_peak_type_combobox = QComboBox()
         self._measure_peak_type_combobox.addItems(['Min', 'Max'])
         self._measure_peak_type_combobox.setCurrentText('Max')
@@ -1460,6 +1463,13 @@ class XarrayGraph(QMainWindow):
         button.released.connect(self._update_measure_preview)
         self._control_panel_toolbar.addWidget(button)
 
+        self._keep_xdim_group = QGroupBox()
+        form = QFormLayout(self._keep_xdim_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow(self._measure_keep_xdim_checkbox)
+
         self._peak_width_group = QGroupBox()
         form = QFormLayout(self._peak_width_group)
         form.setContentsMargins(3, 3, 3, 3)
@@ -1487,6 +1497,7 @@ class XarrayGraph(QMainWindow):
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
         vbox.addWidget(self._measure_type_combobox)
+        vbox.addWidget(self._keep_xdim_group)
         vbox.addWidget(self._peak_group)
         vbox.addWidget(self._peak_width_group)
         vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
@@ -1735,6 +1746,7 @@ class XarrayGraph(QMainWindow):
     
     def _on_measure_type_changed(self) -> None:
         measure_type = self._measure_type_combobox.currentText()
+        self._keep_xdim_group.setVisible(measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance'])
         self._peak_group.setVisible(measure_type == 'Peaks')
         self._peak_width_group.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
         self._measure_result_name_edit.setPlaceholderText(measure_type)
@@ -2160,6 +2172,12 @@ class XarrayGraph(QMainWindow):
             if not self._measure_preview_checkbox.isChecked():
                 self._clear_measure_preview(plots)
             return
+        
+        if not self._measure_keep_xdim_checkbox.isChecked():
+            if measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance']:
+                for plot in plots:
+                    for i, measure in enumerate(plot._tmp_measures):
+                        plot._tmp_measures[i] = measure.isel({self.xdim: 0}, drop=True)
         
         # add measures to data tree
         measure_tree_nodes = []
