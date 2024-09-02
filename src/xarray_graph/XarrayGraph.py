@@ -1041,11 +1041,11 @@ class XarrayGraph(QMainWindow):
         self._xdim_combobox.currentTextChanged.connect(self._set_xdim)
 
         # link axis checkboxes
-        self._link_xaxis_checkbox = QCheckBox('Link X axes')
+        self._link_xaxis_checkbox = QCheckBox('Link column X axes')
         self._link_xaxis_checkbox.setChecked(True)
         self._link_xaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
 
-        self._link_yaxis_checkbox = QCheckBox('Link Y axes (per variable)')
+        self._link_yaxis_checkbox = QCheckBox('Link row Y axes')
         self._link_yaxis_checkbox.setChecked(True)
         self._link_yaxis_checkbox.stateChanged.connect(lambda: self._link_axes())
 
@@ -1183,6 +1183,8 @@ class XarrayGraph(QMainWindow):
         self._function_type_combobox.addItems(['Gaussian Filter', 'Median Filter', 'Bessel Filter', 'Butterworth Filter', 'Chebyshev Filter', 'Elliptic Filter', 'Savitzky-Golay Filter', 'Kalman Filter'])
         # self._function_type_combobox.insertSeparator(self._function_type_combobox.count())
         self._function_type_combobox.setCurrentIndex(0)
+        for i in range(4, self._function_type_combobox.count()):
+            self._function_type_combobox.model().item(i).setEnabled(False)
         self._function_type_combobox.currentIndexChanged.connect(self._on_function_type_changed)
 
         self._function_evaluate_in_regions_checkbox = QCheckBox('Evaluate within selected regions')
@@ -1192,11 +1194,34 @@ class XarrayGraph(QMainWindow):
         self._function_result_name_edit = QLineEdit()
 
         self._function_preview_checkbox = QCheckBox('Preview')
-        self._function_preview_checkbox.setChecked(True)
+        self._function_preview_checkbox.setChecked(False)
         self._function_preview_checkbox.stateChanged.connect(lambda state: self._update_function_preview())
 
         self._function_apply_button = QPushButton('Apply')
         self._function_apply_button.pressed.connect(self.apply_function)
+
+        self._function_gaussian_filter_sigma_edit = QLineEdit('1')
+        self._function_gaussian_filter_sigma_edit.editingFinished.connect(self._update_function_preview)
+
+        self._function_median_filter_window_edit = QLineEdit('5')
+        self._function_median_filter_window_edit.editingFinished.connect(self._update_function_preview)
+
+        self._function_filter_order_spinbox = QSpinBox()
+        self._function_filter_order_spinbox.setMinimum(2)
+        self._function_filter_order_spinbox.setMaximum(100)
+        self._function_filter_order_spinbox.setSingleStep(2)
+        self._function_filter_order_spinbox.setValue(8)
+        self._function_filter_order_spinbox.valueChanged.connect(lambda value: self._update_function_preview())
+
+        self._function_filter_bandtype_combobox = QComboBox()
+        self._function_filter_bandtype_combobox.addItems(['lowpass', 'highpass', 'bandpass', 'bandstop'])
+        self._function_filter_bandtype_combobox.setCurrentIndex(0)
+        self._function_filter_bandtype_combobox.currentIndexChanged.connect(lambda index: self._update_function_preview())
+
+        self._function_filter_cutoffs_edit = QLineEdit()
+        self._function_filter_cutoffs_edit.setPlaceholderText('0.5 [, 0.7]')
+        self._function_filter_cutoffs_edit.setToolTip('Comma-separated normalized cutoff frequencies in (0,1).\nAs in scipy.signal.butter.')
+        self._function_filter_cutoffs_edit.editingFinished.connect(self._update_function_preview)
 
         # notes editor
         self._notes_edit = QTextEdit()
@@ -1323,6 +1348,7 @@ class XarrayGraph(QMainWindow):
                 button.setChecked(False)
         self._update_measure_preview()
         self._update_curve_fit_preview()
+        self._update_function_preview()
     
     def _show_control_panel_at(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
@@ -1334,6 +1360,9 @@ class XarrayGraph(QMainWindow):
         for i, button in enumerate(buttons):
             if i != index:
                 button.setChecked(False)
+        self._update_measure_preview()
+        self._update_curve_fit_preview()
+        self._update_function_preview()
     
     def _setup_data_control_panel(self) -> None:
         button = QToolButton()
@@ -1463,12 +1492,12 @@ class XarrayGraph(QMainWindow):
         button.released.connect(self._update_measure_preview)
         self._control_panel_toolbar.addWidget(button)
 
-        self._keep_xdim_group = QGroupBox()
-        form = QFormLayout(self._keep_xdim_group)
-        form.setContentsMargins(3, 3, 3, 3)
-        form.setSpacing(3)
-        form.setHorizontalSpacing(5)
-        form.addRow(self._measure_keep_xdim_checkbox)
+        # self._keep_xdim_group = QGroupBox()
+        # form = QFormLayout(self._keep_xdim_group)
+        # form.setContentsMargins(3, 3, 3, 3)
+        # form.setSpacing(3)
+        # form.setHorizontalSpacing(5)
+        # form.addRow(self._measure_keep_xdim_checkbox)
 
         self._peak_width_group = QGroupBox()
         form = QFormLayout(self._peak_width_group)
@@ -1497,7 +1526,7 @@ class XarrayGraph(QMainWindow):
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
         vbox.addWidget(self._measure_type_combobox)
-        vbox.addWidget(self._keep_xdim_group)
+        # vbox.addWidget(self._keep_xdim_group)
         vbox.addWidget(self._peak_group)
         vbox.addWidget(self._peak_width_group)
         vbox.addWidget(self._measure_in_visible_regions_only_checkbox)
@@ -1607,11 +1636,37 @@ class XarrayGraph(QMainWindow):
         form.setHorizontalSpacing(5)
         form.addRow('Result name', self._function_result_name_edit)
 
+        self._gauss_filter_group = QGroupBox()
+        form = QFormLayout(self._gauss_filter_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Sigma', self._function_gaussian_filter_sigma_edit)
+
+        self._median_filter_group = QGroupBox()
+        form = QFormLayout(self._median_filter_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Window size (# samples)', self._function_median_filter_window_edit)
+
+        self._band_filter_group = QGroupBox()
+        form = QFormLayout(self._band_filter_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.addRow('Order', self._function_filter_order_spinbox)
+        form.addRow('Bandtype', self._function_filter_bandtype_combobox)
+        form.addRow('Cutoffs', self._function_filter_cutoffs_edit)
+
         func_group = QGroupBox('Function')
         vbox = QVBoxLayout(func_group)
         vbox.setContentsMargins(3, 3, 3, 3)
         vbox.setSpacing(5)
         vbox.addWidget(self._function_type_combobox)
+        vbox.addWidget(self._gauss_filter_group)
+        vbox.addWidget(self._median_filter_group)
+        vbox.addWidget(self._band_filter_group)
         vbox.addWidget(self._function_evaluate_in_regions_checkbox)
         vbox.addWidget(reult_name_wrapper)
         vbox.addWidget(self._function_preview_checkbox)
@@ -1665,7 +1720,7 @@ class XarrayGraph(QMainWindow):
         form.setSpacing(3)
         form.setHorizontalSpacing(5)
         form.addRow('Axis label size', self._settings_axislabel_fontsize_spinbox)
-        form.addRow('Axis tick size', self._settings_axistick_fontsize_spinbox)
+        form.addRow('Axis tick label size', self._settings_axistick_fontsize_spinbox)
         form.addRow('Text item size', self._settings_textitem_fontsize_spinbox)
 
         misc_group = QGroupBox('Misc')
@@ -1746,7 +1801,7 @@ class XarrayGraph(QMainWindow):
     
     def _on_measure_type_changed(self) -> None:
         measure_type = self._measure_type_combobox.currentText()
-        self._keep_xdim_group.setVisible(measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance'])
+        # self._keep_xdim_group.setVisible(measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance'])
         self._peak_group.setVisible(measure_type == 'Peaks')
         self._peak_width_group.setVisible(measure_type in ['Min', 'Max', 'AbsMax', 'Peaks'])
         self._measure_result_name_edit.setPlaceholderText(measure_type)
@@ -1865,12 +1920,16 @@ class XarrayGraph(QMainWindow):
             plot._tmp_fit_graphs = []
     
     def _on_function_type_changed(self) -> None:
-        # TODO: update visible function control widgets
+        func_type = self._function_type_combobox.currentText()
+        self._gauss_filter_group.setVisible(func_type == 'Gaussian Filter')
+        self._median_filter_group.setVisible(func_type == 'Median Filter')
+        self._band_filter_group.setVisible(func_type in ['Bessel Filter', 'Butterworth Filter'])
+        self._function_result_name_edit.setPlaceholderText(func_type)
         self._update_function_preview()
     
     def _update_function_preview(self, plots: list[Plot] = None) -> None:
         if self._function_preview_checkbox.isChecked() and self._control_panel.isVisible() and (self._control_panel.currentIndex() == self._function_control_panel_index):
-            self.function(plots, preview_only=True)
+            self.apply_function(plots, preview_only=True)
         else:
             self._clear_function_preview(plots)
 
@@ -2173,12 +2232,12 @@ class XarrayGraph(QMainWindow):
                 self._clear_measure_preview(plots)
             return
         
-        # squeeze out xdim?
-        if not self._measure_keep_xdim_checkbox.isChecked():
-            if measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance']:
-                for plot in plots:
-                    for i, measure in enumerate(plot._tmp_measures):
-                        plot._tmp_measures[i] = measure.isel({self.xdim: 0}, drop=True)
+        # # squeeze out xdim?
+        # if not self._measure_keep_xdim_checkbox.isChecked():
+        #     if measure_type in ['Mean', 'Median', 'Standard Deviation', 'Variance']:
+        #         for plot in plots:
+        #             for i, measure in enumerate(plot._tmp_measures):
+        #                 plot._tmp_measures[i] = measure.isel({self.xdim: 0}, drop=True)
         
         # merge results
         merged_results__parent_nodes: list[DataTree] = []
@@ -2500,7 +2559,231 @@ class XarrayGraph(QMainWindow):
         self._update_curve_fit_preview()
 
     def apply_function(self, plots: list[Plot] = None, preview_only: bool = False) -> None:
-        pass
+        if plots is None:
+            plots = self._plots()
+        
+        # name for result
+        result_name = self._function_result_name_edit.text().strip()
+        if not result_name:
+            result_name = self._function_result_name_edit.placeholderText()
+                
+        # function options
+        function_type = self._function_type_combobox.currentText()
+        if function_type == 'Gaussian Filter':
+            sigma = float(self._function_gaussian_filter_sigma_edit.text())
+        elif function_type == 'Median Filter':
+            window_size = int(self._function_median_filter_window_edit.text())
+        elif function_type in ['Bessel Filter', 'Butterworth Filter']:
+            order = self._function_filter_order_spinbox.value()
+            bandtype = self._function_filter_bandtype_combobox.currentText()
+            ok = True
+            try:
+                cutoffs = [float(cutoff) for cutoff in self._function_filter_cutoffs_edit.text().split(',')]
+                if np.any(np.array(cutoffs) <= 0) or np.any(np.array(cutoffs) > 1):
+                    ok = False
+                if bandtype in ['lowpass', 'highpass']:
+                    cutoffs = cutoffs[0]
+                elif bandtype in ['bandpass', 'bandstop']:
+                    cutoffs = [cutoffs[0], cutoffs[1]]
+            except (ValueError, IndexError):
+                ok = False
+            if not ok:
+                QMessageBox.warning(self, 'Invalid Cutoffs', 'Please enter a comma-separated list of normalized cutoff frequencies in the range (0,1) as in scipy.signal.butter.', QMessageBox.StandardButton.Ok)
+                return
+
+        # clear any temporary results
+        self._clear_function_preview(plots)
+        
+        # apply function in each plot
+        for plot in plots:
+            graphs = [item for item in plot.listDataItems() if isinstance(item, Graph)]
+            if not graphs:
+                continue
+
+            # regions
+            view: View = plot.getViewBox()
+            regions: list[tuple[float, float]] = [item.getRegion() for item in view.allChildren() if isinstance(item, XAxisRegion) and item.isVisible()]
+
+            # function result for each data item
+            plot._tmp_results: list[xr.Dataset] = []
+            plot._tmp_result_tree_items: list[XarrayTreeItem] = []
+
+            for graph in graphs:
+                try:
+                    tree_item: XarrayTreeItem = graph._info['item']
+                    data_coords: dict = graph._info['coords']
+                except:
+                    # graph not associated with data tree item
+                    continue
+
+                # x,y data
+                try:
+                    yarr = tree_item.node.ds.data_vars[tree_item.key]
+                    xarr = tree_item.node.ds.coords[self.xdim]
+                    xdata: np.ndarray = xarr.values
+
+                    # generally yarr_coords should be exactly data_coords, but just in case...
+                    yarr_coords = {dim: dim_coords for dim, dim_coords in data_coords.items() if dim in yarr.dims}
+                    ydata: np.ndarray = np.squeeze(yarr.sel(yarr_coords).values)
+                    if len(ydata.shape) == 0:
+                        ydata = ydata.reshape((1,))
+                except:
+                    continue
+                
+                # dimensions
+                dims = yarr.dims
+                
+                # region mask for fit optimization and/or evaluation
+                if regions and self._function_evaluate_in_regions_checkbox.isChecked():
+                    # mask for combined regions
+                    regions_mask = np.full(xdata.shape, False)
+                    for region in regions:
+                        xmin, xmax = region
+                        regions_mask[(xdata >= xmin) & (xdata <= xmax)] = True
+                    xinput = xdata[regions_mask]
+                    yinput = ydata[regions_mask]
+                else:
+                    xinput = xdata
+                    yinput = ydata
+                xoutput = xinput
+                
+                # apply function
+                if function_type == 'Gaussian Filter':
+                    youtput = sp.ndimage.gaussian_filter1d(yinput, sigma)
+                elif function_type == 'Median Filter':
+                    youtput = sp.ndimage.median_filter(yinput, window_size)
+                elif function_type == 'Bessel Filter':
+                    b, a = sp.signal.bessel(order / 2, cutoffs, bandtype)
+                    youtput = sp.signal.filtfilt(b, a, yinput)
+                elif function_type == 'Butterworth Filter':
+                    b, a = sp.signal.butter(order / 2, cutoffs, bandtype)
+                    youtput = sp.signal.filtfilt(b, a, yinput)
+
+                # function as xarray dataset
+                shape =[1] * len(dims)
+                shape[dims.index(self.xdim)] = len(xoutput)
+                result_coords = {}
+                for dim, coord in data_coords.items():
+                    attrs = self._selected_coords[dim].attrs.copy()
+                    if dim == self.xdim:
+                        result_coords[dim] = xr.DataArray(dims=[dim], data=xoutput, attrs=attrs)
+                    else:
+                        coord_values = np.array(coord).reshape((1,))
+                        result_coords[dim] = xr.DataArray(dims=[dim], data=coord_values, attrs=attrs)
+                if self.xdim not in result_coords:
+                    attrs = self._selected_coords[self.xdim].attrs.copy()
+                    result_coords[self.xdim] = xr.DataArray(dims=[self.xdim], data=xoutput, attrs=attrs)
+                attrs = yarr.attrs.copy()
+                result = xr.Dataset(
+                    data_vars={
+                        tree_item.key: xr.DataArray(dims=dims, data=youtput.reshape(shape), attrs=attrs)
+                    },
+                    coords=result_coords
+                )
+                plot._tmp_results.append(result)
+                plot._tmp_result_tree_items.append(tree_item)
+
+        # preview results
+        for plot in plots:
+            plot._tmp_function_graphs = []
+            for result in plot._tmp_results:
+                var_name = list(result.data_vars)[0]
+                var = result.data_vars[var_name]
+                xdata = result.coords[self.xdim].values
+                ydata = np.squeeze(var.values)
+                if len(ydata.shape) == 0:
+                    ydata = ydata.reshape((1,))
+                pen = pg.mkPen(color=(255, 0, 0), width=2)
+                result_graph = Graph(x=xdata, y=ydata, pen=pen)
+                plot.addItem(result_graph)
+                plot._tmp_function_graphs.append(result_graph)
+        
+        if preview_only:
+            return
+        
+        # query user to keep results
+        answer = QMessageBox.question(self, 'Keep Function Results?', 'Keep function results?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            # clear previews if not in preview mode
+            if not self._function_preview_checkbox.isChecked():
+                self._clear_function_preview(plots)
+            return
+        
+        # merge results
+        merged_results__parent_nodes: list[DataTree] = []
+        merged_results__child_datasets: list[xr.Dataset] = []
+        for plot in plots:
+            for tree_item, result in zip(plot._tmp_result_tree_items, plot._tmp_results):
+                parent_node: DataTree = tree_item.node
+                did_merge = False
+                for node in merged_results__parent_nodes:
+                    if parent_node is node:
+                        i = merged_results__parent_nodes.index(parent_node)
+                        merged_results__child_datasets[i] = merged_results__child_datasets[i].combine_first(result)
+                        did_merge = True
+                        break
+                if not did_merge:
+                    merged_results__parent_nodes.append(parent_node)
+                    merged_results__child_datasets.append(result)
+        
+        # does result overlap any existing datasets?
+        is_overlap = False
+        for parent_node in merged_results__parent_nodes:
+            if result_name in parent_node.children:
+                is_overlap = True
+                break
+        if is_overlap:
+            overlap_mode, ok = QInputDialog.getItem(self, 'Overlap with existing data', 'Apply to results with same name as existing datasets:', ['Merge with existing', 'Overwrite existing', 'Keep both', 'Keep existing'], 0, False)
+            if not ok:
+                # clear previews if not in preview mode
+                if not self._function_preview_checkbox.isChecked():
+                    self._clear_function_preview(plots)
+                return
+        
+        # add results to data tree
+        result_tree_nodes = []
+        for parent_node, child_dataset in zip(merged_results__parent_nodes, merged_results__child_datasets):
+            if not is_overlap:
+                # append measurement as new child node
+                node = DataTree(name=result_name, data=child_dataset, parent=parent_node)
+                result_tree_nodes.append(node)
+            elif overlap_mode == 'Merge with existing':
+                # merge measurement with existing child dataset (use measurement for any overlap)
+                existing_child_node: DataTree = parent_node.children[result_name]
+                existing_child_node.ds = child_dataset.combine_first(existing_child_node.to_dataset())
+                result_tree_nodes.append(existing_child_node)
+            elif overlap_mode == 'Overwrite existing':
+                # overwrite existing child dataset with measurement
+                existing_child_node: DataTree = parent_node.children[result_name]
+                existing_child_node.ds = child_dataset
+                result_tree_nodes.append(existing_child_node)
+            elif overlap_mode == 'Keep both':
+                # append measurement as new child node with unique name
+                i = 2
+                while result_name + f'_{i}' in parent_node.children:
+                    i += 1
+                unique_result_name = result_name + f'_{i}'
+                node = DataTree(name=unique_result_name, data=child_dataset, parent=parent_node)
+                result_tree_nodes.append(node)
+            elif overlap_mode == 'Keep existing':
+                # keep existing child dataset
+                pass
+        
+        # update data tree
+        self.data = self.data
+
+        # make sure newly added result nodes are selected and expanded
+        model: XarrayTreeModel = self._data_treeview.model()
+        for item in model.root().depth_first():
+            for node in result_tree_nodes:
+                if item.node is node and item.is_var():
+                    index: QModelIndex = model.createIndex(item.sibling_index, 0, item)
+                    self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                    self._data_treeview.setExpanded(model.parent(index), True)
+        
+        # disable preview checkbox
+        self._function_preview_checkbox.setChecked(False)
+        self._update_function_preview()
 
 
 def permutations(coords: dict) -> list[dict]:
