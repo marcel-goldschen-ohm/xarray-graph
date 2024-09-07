@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:ab04fc6537c0287de23b472d481b7348b45545119a9b4acfa30735de0beda68c"
+content_hash = "sha256:468229ec4b4dc456759a2d0553e331a802c9ae454833cf9fd07bb26b5057b6e5"
 
 [[metadata.targets]]
 requires_python = ">=3.10"
@@ -482,13 +482,13 @@ files = [
 
 [[package]]
 name = "platformdirs"
-version = "4.3.0"
+version = "4.3.1"
 requires_python = ">=3.8"
 summary = "A small Python package for determining appropriate platform-specific dirs, e.g. a `user data dir`."
 groups = ["default"]
 files = [
-    {file = "platformdirs-4.3.0-py3-none-any.whl", hash = "sha256:9e61c76f0f3671ea805011196063918d760894ee7f280dd083e2626fbaac3bc8"},
-    {file = "platformdirs-4.3.0.tar.gz", hash = "sha256:924396bc7c5c2252ab5af6d54edc03d717e0358803184571bc9f1fa78060f3ea"},
+    {file = "platformdirs-4.3.1-py3-none-any.whl", hash = "sha256:facaa5a3c57aa1e053e3da7b49e0cc31fe0113ca42a4659d5c2e98e545624afe"},
+    {file = "platformdirs-4.3.1.tar.gz", hash = "sha256:63b79589009fa8159973601dd4563143396b35c5f93a58b36f9049ff046949b1"},
 ]
 
 [[package]]
@@ -961,7 +961,6 @@ name = "xarray-treeview"
 version = "2024.9.0"
 requires_python = ">=3.10"
 git = "https://github.com/marcel-goldschen-ohm/xarray-treeview"
-ref = "v2024.9.0"
 revision = "9b7a89db6a4dfbe1051694b36f0fbe0f8edbdb55"
 summary = "PyQt/PySide model/view for tree of Xarray datasets."
 groups = ["default"]
