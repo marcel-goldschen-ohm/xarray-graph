@@ -52,7 +52,9 @@ source = "scm"
 
 
 [tool.pdm.dev-dependencies]
-# file paths assume local dev packages are in same dir as this package
+# File paths assume local dev packages are in same dir as this package.
+# For local dev install uncomment xarray-treeview here and comment it out in dependencies above.
+#   See https://github.com/pdm-project/pdm/issues/3147
 dev = [
     "-e pyqt-ext @ file:///${PROJECT_ROOT}/../pyqt-ext",
     "-e pyqtgraph-ext @ file:///${PROJECT_ROOT}/../pyqtgraph-ext",
