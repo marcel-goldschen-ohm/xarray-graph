@@ -12,7 +12,6 @@ TODO:
 - style: store region styling in metadata
 - style: set style for regions by label
 - measure peaks: implement
-- filter, smooth, etc.: implement
 - handle 2D images: implement
     - a global Y axis selector? overridden by local X-Y dims?
     - how to handle more generic multi-dimensional regions?
@@ -431,6 +430,10 @@ class XarrayGraph(QMainWindow):
             print('_selected_var_paths:', [path for path in self._selected_var_paths])
             print('_selected_coord_paths:', [path for path in self._selected_coord_paths])
         
+        # limit selection to variables with the xdim coordinate
+        n_selected_vars = len(self._selected_var_paths)
+        self._selected_var_paths = [path for path in self._selected_var_paths if self.xdim in self.data[path].dims]
+        
         # update plot grid visibility based on selection
         self._plot_grid.setVisible(len(self._selected_var_paths) > 0)
 
@@ -513,6 +516,9 @@ class XarrayGraph(QMainWindow):
 
         # update selected regions
         # self._on_selected_region_labels_changed()
+
+        if not self._selected_var_paths and n_selected_vars > 0:
+            QMessageBox.warning(self, f'Empty Selection', f'No variables selected with coordinate {self.xdim}')
 
     def _on_index_selection_changed(self) -> None:
         # selected coords for all non-x-axis dims (from toolbar spin boxes)
@@ -2650,11 +2656,22 @@ def test_live():
             'time': ('time', np.arange(n) * 0.01, {'units': 's'}),
         },
     )
+
+    other_ds = xr.Dataset(
+        data_vars={
+            'temperature': (['lat', 'lon'], np.random.rand(360, 360) * 15 + 15, {'units': 'C'}),
+        },
+        coords={
+            'lat': ('lat', np.arange(360)),
+            'lon': ('lon', np.arange(360)),
+        },
+    )
     
     root_node = DataTree()
     raw_node = DataTree(name='raw', data=raw_ds, parent=root_node)
     baselined_node = DataTree(name='baselined', data=baselined_ds, parent=raw_node)
     scaled_node = DataTree(name='scaled', data=scaled_ds, parent=baselined_node)
+    other_node = DataTree(name='other', data=other_ds, parent=root_node)
 
     ui.data = root_node
     ui._data_treeview.expandAll()
