@@ -1915,37 +1915,31 @@ class XarrayGraph(QMainWindow):
         self._math_rhs_combobox.addItems(var_paths)
     
     def eval_array_math(self) -> None:
-        var_items = [item for item in self._data_treeview.model().root().depth_first() if item.is_var()]
-        lhs_item = var_items[self._math_lhs_combobox.currentIndex()]
-        rhs_item = var_items[self._math_rhs_combobox.currentIndex()]
-        lhs: xr.DataArray = lhs_item.node[lhs_item.key]
-        rhs: xr.DataArray = rhs_item.node[rhs_item.key]
+        var_paths = [item.path for item in self._data_treeview.model().root().depth_first() if self._data_treeview.model().dataTypeAtPath(item.path) == 'var']
+        lhs_path = var_paths[self._math_lhs_combobox.currentIndex()]
+        rhs_path = var_paths[self._math_rhs_combobox.currentIndex()]
+        lhs: xr.DataArray = self.data[lhs_path]
+        rhs: xr.DataArray = self.data[rhs_path]
+        
         op = self._math_operator_combobox.currentText()
         if op == '+':
-            result = lhs + rhs
+            result: xr.DataArray = lhs + rhs
         elif op == '-':
-            result = lhs - rhs
+            result: xr.DataArray = lhs - rhs
         elif op == '*':
-            result = lhs * rhs
+            result: xr.DataArray = lhs * rhs
         elif op == '/':
-            result = lhs / rhs
-        # append result as child of lhs_item
+            result: xr.DataArray = lhs / rhs
+        
+        # append result as child of lhs parent node
         result_name = self._math_result_name_edit.text().strip()
         if result_name == '':
             result_name = self._math_result_name_edit.placeholderText()
+        result_node_path = lhs_path[:lhs_path.rfind('/')] + '/' + result_name
         result_ds = xr.Dataset(data_vars={result.name: result})
-        result_node = DataTree(name=result_name, data=result_ds, parent=lhs_item.node)
-        
-        # update data tree
-        self.data = self.data
-
-        # make sure newly added fit nodes are selected and expanded
-        model: XarrayTreeModel = self._data_treeview.model()
-        for item in model.root().depth_first():
-            if item.node is result_node and item.is_var():
-                index: QModelIndex = model.createIndex(item.sibling_index, 0, item)
-                self._data_treeview.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-                self._data_treeview.setExpanded(model.parent(index), True)
+        result_tree = DataTree()
+        result_tree[result_node_path] = DataTree(data=result_ds)
+        self._add_data_tree(result_tree)
     
     # @Slot()
     # def on_axes_item_changed(self):
