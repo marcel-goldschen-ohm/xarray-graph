@@ -1,12 +1,16 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- what to do with attrs for array math? at least keep same units.
+- bug fix: non-numeric coordinate values not working in UI correctly.
+- bug fix: autoscale does not account for all plots when tiling.
+- color by selected coord(s)?
+- spinboxes with user editable ranges and step sizes/precision?
 - rename dims (implement in xarray_treeview?)
-- define all undefined coords by inheriting them (implement in xarray_tree)
-- remove all unneeded coords that can be inherited (implement in xarray_tree)
+- missing coords: define all undefined coords by inheriting them (implement in xarray_tree)
+- missing coords: remove all unneeded coords that can be inherited (implement in xarray_tree)
 - array math: sanity checks needed
 - array math: handle merging of results?
+- array math: what to do with attrs for array math? at least keep same units.
 - style: store user styling in metadata
 - style: set style by trace, array, dataset, or variable name?
 - style: store region styling in metadata
@@ -817,11 +821,12 @@ class XarrayGraph(QMainWindow):
                     col_label.setLabel(text=label_text, **tile_label_style)
                 else:
                     col_label.setLabel(text=label_text, **tile_label_style)
-        # clear row label for bottom left corner
-        row_label = self._plot_grid.getItem(rowmax + 1, 0)
-        if row_label is not None:
-            self._plot_grid.removeItem(row_label)
-            row_label.deleteLater()
+        # clear extra row labels
+        for row in range(rowmax + 1, self._plot_grid.rowCount()):
+            row_label = self._plot_grid.getItem(row, 0)
+            if row_label is not None:
+                self._plot_grid.removeItem(row_label)
+                row_label.deleteLater()
     
     def _update_axes_tick_font(self) -> None:
         axis_tick_font = QFont()
@@ -2661,13 +2666,48 @@ def test_live():
         },
     )
     
-    root_node = DataTree()
-    raw_node = DataTree(name='raw', data=raw_ds, parent=root_node)
+    dt = DataTree()
+    raw_node = DataTree(name='raw', data=raw_ds, parent=dt)
     baselined_node = DataTree(name='baselined', data=baselined_ds, parent=raw_node)
     scaled_node = DataTree(name='scaled', data=scaled_ds, parent=baselined_node)
-    other_node = DataTree(name='other', data=other_ds, parent=root_node)
+    other_node = DataTree(name='other', data=other_ds, parent=dt)
 
-    ui.data = root_node
+    # import pandas as pd
+    # df = pd.read_csv('data/ERPdata.csv')
+    # subjects = np.array(df['subject'].unique(), dtype=int)
+    # conditions = np.array(df['condition'].unique(), dtype=int)
+    # df0 = df[df['subject'] == subjects[0]]
+    # df00 = df0[df0['condition'] == conditions[0]]
+    # time_ms = df00['time_ms'].values
+    # channels = np.array(df.columns[2:-1].values, dtype=str)
+    # n_subjects = len(subjects)
+    # n_conditions = len(conditions)
+    # n_channels = len(channels)
+    # n_timepts = len(time_ms)
+    # eeg = np.zeros((n_subjects, n_conditions, n_channels, n_timepts))
+    # for i in range(n_subjects):
+    #     subject = df[(df['subject'] == subjects[i])]
+    #     for j in range(n_conditions):
+    #         condition = subject[(subject['condition'] == conditions[j])]
+    #         for k in range(n_channels):
+    #             eeg[i, j, k] = condition[channels[k]].values * 1e-6
+    # ds = xr.Dataset(
+    #     data_vars={
+    #         'EEG': (['subject', 'condition', 'channel', 'time'], eeg, {'units': 'V'}),
+    #     },
+    #     coords={
+    #         'subject': ('subject', subjects),
+    #         'condition': ('condition', conditions),
+    #         'channel': ('channel', np.arange(n_channels)),
+    #         'time': ('time', time_ms * 1e-3, {'units': 's'}),
+    #     },
+    #     attrs={
+    #         'source': 'https://www.kaggle.com/datasets/broach/button-tone-sz?select=ERPdata.csv',
+    #     },
+    # )
+    # dt = DataTree(data=ds)
+
+    ui.data = dt
     ui._data_treeview.expandAll()
 
     app.exec()
