@@ -1,3 +1,5 @@
+examples/ERPdata.zarr/
+
 # Macos
 *.DS_Store
 

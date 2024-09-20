@@ -1,7 +1,6 @@
 """ PySide/PyQt widget for analyzing (x,y) data series in a Xarray dataset or a tree of datasets.
 
 TODO:
-- bug fix: non-numeric coordinate values not working in UI correctly.
 - link all axes for each variable.
 - color by selected coord(s)?
 - spinboxes with user editable ranges and step sizes/precision?
@@ -2676,57 +2675,6 @@ def test_live():
     ui.setWindowTitle(ui.__class__.__name__)
     ui.show()
 
-    n = 100
-    raw_ds = xr.Dataset(
-        data_vars={
-            'current': (['series', 'sweep', 'time'], np.random.rand(3, 10, n) * 1e-9, {'units': 'A'}),
-            'voltage': (['series', 'sweep', 'time'], np.random.rand(3, 10, n) * 10000, {'units': 'V'}),
-        },
-        coords={
-            'series': ('series', np.arange(3)),
-            'sweep': ('sweep', np.arange(10)),
-            'time': ('time', np.arange(n) * 0.01, {'units': 's'}),
-        },
-    )
-
-    baselined_ds = xr.Dataset(
-        data_vars={
-            'current': (['series', 'sweep', 'time'], np.random.rand(3, 10, n) * 1e-9, {'units': 'A'}),
-        },
-        coords={
-            'series': ('series', np.arange(3)),
-            'sweep': ('sweep', np.arange(10)),
-            'time': ('time', np.arange(n) * 0.01, {'units': 's'}),
-        },
-    )
-
-    scaled_ds = xr.Dataset(
-        data_vars={
-            'current': (['series', 'sweep', 'time'], np.random.rand(1, 2, n) * 1e-9, {'units': 'A'}),
-        },
-        coords={
-            'series': ('series', [1]),
-            'sweep': ('sweep', [5,8]),
-            'time': ('time', np.arange(n) * 0.01, {'units': 's'}),
-        },
-    )
-
-    other_ds = xr.Dataset(
-        data_vars={
-            'temperature': (['lat', 'lon'], np.random.rand(360, 360) * 15 + 15, {'units': 'C'}),
-        },
-        coords={
-            'lat': ('lat', np.arange(360)),
-            'lon': ('lon', np.arange(360)),
-        },
-    )
-    
-    dt = DataTree()
-    raw_node = DataTree(name='raw', data=raw_ds, parent=dt)
-    baselined_node = DataTree(name='baselined', data=baselined_ds, parent=raw_node)
-    scaled_node = DataTree(name='scaled', data=scaled_ds, parent=baselined_node)
-    other_node = DataTree(name='other', data=other_ds, parent=dt)
-
     # import pandas as pd
     # df = pd.read_csv('examples/ERPdata.csv')
     # subjects = np.array(df['subject'].unique(), dtype=int)
@@ -2761,7 +2709,10 @@ def test_live():
     #     },
     # )
     # dt = DataTree(data=ds)
-    # print(dt)
+    # dt.to_zarr('examples/ERPdata.zarr')
+    # dt = open_datatree('examples/ERPdata.zarr', 'zarr')
+    # dt.sel({'subject': np.arange(1, 11)}).to_netcdf('examples/ERPdata.nc', engine='netcdf4')
+    dt = open_datatree('examples/ERPdata.nc', 'netcdf4')
 
     ui.data = dt
     ui._data_treeview.expandAll()
