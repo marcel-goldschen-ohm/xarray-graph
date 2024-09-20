@@ -2,7 +2,7 @@
 
 TODO:
 - bug fix: non-numeric coordinate values not working in UI correctly.
-- bug fix: autoscale does not account for all plots when tiling.
+- link all axes for each variable.
 - color by selected coord(s)?
 - spinboxes with user editable ranges and step sizes/precision?
 - rename dims (implement in xarray_treeview?)
@@ -329,6 +329,56 @@ class XarrayGraph(QMainWindow):
     def autoscale_plots(self, plots: list[Plot] = None) -> None:
         if plots is None:
             plots = self._plots()
+        
+        if self.is_tiling_enabled():
+            is_xlink = self._link_xaxis_checkbox.isChecked()
+            is_ylink = self._link_yaxis_checkbox.isChecked()
+            if is_xlink or is_ylink:
+                # get combined bounds for all plots
+                grid_shape = self._plot_grid.rowCount(), self._plot_grid.columnCount()
+                xmin = np.empty(grid_shape)
+                xmax = np.empty(grid_shape)
+                ymin = {var_name: np.empty(grid_shape) for var_name in self._selected_var_names}
+                ymax = {var_name: np.empty(grid_shape) for var_name in self._selected_var_names}
+                xmin[:] = np.nan
+                xmax[:] = np.nan
+                for var_name in self._selected_var_names:
+                    ymin[var_name][:] = np.nan
+                    ymax[var_name][:] = np.nan
+                for row in range(self._plot_grid.rowCount()):
+                    for col in range(self._plot_grid.columnCount()):
+                        plot = self._plot_grid.getItem(row, col)
+                        if plot is not None and issubclass(type(plot), pg.PlotItem):
+                            try:
+                                xlim, ylim = plot.getViewBox().childrenBounds()
+                                xmin[row, col] = xlim[0]
+                                xmax[row, col] = xlim[1]
+                                var_name = plot._info['data_vars'][0]
+                                ymin[var_name][row, col] = ylim[0]
+                                ymax[var_name][row, col] = ylim[1]
+                            except:
+                                pass
+                xmin = np.nanmin(xmin)
+                xmax = np.nanmax(xmax)
+                print('xmin:', xmin, 'xmax:', xmax)
+                for var_name in self._selected_var_names:
+                    ymin[var_name] = np.nanmin(ymin[var_name])
+                    ymax[var_name] = np.nanmax(ymax[var_name])
+                    print(f'ymin[{var_name}]:', ymin[var_name], f'ymax[{var_name}]:', ymax[var_name])
+                for plot in plots:
+                    var_name = plot._info['data_vars'][0]
+                    if is_xlink and is_ylink:
+                        plot.setXRange(xmin, xmax)
+                        plot.setYRange(ymin[var_name], ymax[var_name])
+                    elif is_xlink:
+                        plot.autoRange()
+                        plot.setXRange(xmin, xmax)
+                    elif is_ylink:
+                        plot.autoRange()
+                        plot.setYRange(ymin[var_name], ymax[var_name])
+                return
+        
+        # no tiling or no axis linking
         for plot in plots:
             plot.autoRange()
             plot.enableAutoRange()
@@ -669,6 +719,8 @@ class XarrayGraph(QMainWindow):
                 else:
                     coord_permutations = [{}]
                 plot._info = {
+                    'row': row,
+                    'col': col,
                     'data_vars': [var_name],
                     'coords': coords,
                     'coord_permutations': coord_permutations,
@@ -2673,7 +2725,7 @@ def test_live():
     other_node = DataTree(name='other', data=other_ds, parent=dt)
 
     # import pandas as pd
-    # df = pd.read_csv('data/ERPdata.csv')
+    # df = pd.read_csv('examples/ERPdata.csv')
     # subjects = np.array(df['subject'].unique(), dtype=int)
     # conditions = np.array(df['condition'].unique(), dtype=int)
     # df0 = df[df['subject'] == subjects[0]]
@@ -2690,7 +2742,7 @@ def test_live():
     #     for j in range(n_conditions):
     #         condition = subject[(subject['condition'] == conditions[j])]
     #         for k in range(n_channels):
-    #             eeg[i, j, k] = condition[channels[k]].values * 1e-6
+    #             eeg[i, j, k] = condition[channels[k]].values * 1e-6  # uV -> V
     # ds = xr.Dataset(
     #     data_vars={
     #         'EEG': (['subject', 'condition', 'channel', 'time'], eeg, {'units': 'V'}),
