@@ -583,7 +583,10 @@ class XarrayGraph(QMainWindow):
             if self._selected_sizes[dim] > 1:
                 spinbox: MultiValueSpinBox = self._dim_iter_things[dim]['spinbox']
                 values = spinbox.selectedValues()
-                indices = np.searchsorted(self.selected_coords[dim].values, values)
+                if np.issubdtype(values.dtype, np.integer) or np.issubdtype(values.dtype, np.floating):
+                    indices = np.searchsorted(self.selected_coords[dim].values, values)
+                else:
+                    indices = np.array([np.where(self.selected_coords[dim].values == value)[0][0] for value in values], dtype=int)
                 self._visible_coords.coords[dim] = self.selected_coords[dim].isel({dim: indices})
             else:
                 # single index along this dim
@@ -2750,7 +2753,7 @@ def test_live():
     #     coords={
     #         'subject': ('subject', subjects),
     #         'condition': ('condition', conditions),
-    #         'channel': ('channel', np.arange(n_channels)),
+    #         'channel': ('channel', channels),
     #         'time': ('time', time_ms * 1e-3, {'units': 's'}),
     #     },
     #     attrs={
@@ -2758,6 +2761,7 @@ def test_live():
     #     },
     # )
     # dt = DataTree(data=ds)
+    # print(dt)
 
     ui.data = dt
     ui._data_treeview.expandAll()
