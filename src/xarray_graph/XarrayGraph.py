@@ -2712,7 +2712,8 @@ def test_live():
     # dt.to_zarr('examples/ERPdata.zarr')
     # dt = open_datatree('examples/ERPdata.zarr', 'zarr')
     # dt.sel({'subject': np.arange(1, 11)}).to_netcdf('examples/ERPdata.nc', engine='netcdf4')
-    dt = open_datatree('examples/ERPdata.nc', 'netcdf4')
+    # dt = open_datatree('examples/ERPdata.nc', 'netcdf4')
+    dt = open_datatree('examples/ERPdata.nc', 'h5netcdf')
 
     ui.data = dt
     ui._data_treeview.expandAll()
