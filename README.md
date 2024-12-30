@@ -30,5 +30,10 @@ Launch the GUI:
 xarray-graph
 ```
 
+## Support
+This is all done in my free time. If you find it useful, why not buy me a cup of coffee? Cheers!
+
+<a href="https://www.buymeacoffee.com/marcel.goldschen.ohm" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
 ## Documentation
 :construction:
