@@ -108,6 +108,9 @@ class XarrayGraph(QMainWindow):
         # init data tree selection
         self._on_tree_selection_changed()
     
+    def __del__(self):
+        self._shutdown_console()
+    
     @property
     def data(self) -> DataTree:
         return self._data
@@ -395,13 +398,13 @@ class XarrayGraph(QMainWindow):
             self._main_area.setVisible(True)
         elif self._console.isVisible():
             self._main_area.setVisible(False)
-        if self._console.isVisible() and getattr(self, '_console_never_shown', True):
-            self._console_never_shown = False
-            self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
-            self._console._append_plain_text('Variables:\n', before_prompt=True)
-            self._console._append_plain_text('self      => This instance of XarrayGraph\n', before_prompt=True)
-            self._console._append_plain_text('self.data => The Xarray DataTree\n', before_prompt=True)
-            self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
+        # if self._console.isVisible() and getattr(self, '_console_never_shown', True):
+        #     self._console_never_shown = False
+        #     self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
+        #     self._console._append_plain_text('Variables:\n', before_prompt=True)
+        #     self._console._append_plain_text('self      => This instance of XarrayGraph\n', before_prompt=True)
+        #     self._console._append_plain_text('self.data => The Xarray DataTree\n', before_prompt=True)
+        #     self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
     
     def _get_combined_coords(self, objects: list[DataTree | xr.Dataset | xr.DataArray] = None) -> xr.Dataset:
         # return the combined coords for the input objects (defaults to the entire tree)
@@ -1026,6 +1029,7 @@ class XarrayGraph(QMainWindow):
         vsplitter.setHandleWidth(1)
         vsplitter.setCollapsible(0, False)
         vsplitter.setCollapsible(1, False)
+        vsplitter.setSizes([700, 300])
 
         hsplitter = QSplitter(Qt.Orientation.Horizontal)
         hsplitter.addWidget(self._control_panel)
@@ -1041,7 +1045,7 @@ class XarrayGraph(QMainWindow):
 
         # set initial state
         self._show_control_panel_at(0)
-        self._console.hide()
+        # self._console.hide()
     
     def _setup_ui_components(self) -> None:
         # left toolbar
@@ -1405,7 +1409,7 @@ class XarrayGraph(QMainWindow):
     def _show_control_panel_at(self, index: int) -> None:
         actions = self._control_panel_toolbar.actions()
         widgets = [self._control_panel_toolbar.widgetForAction(action) for action in actions]
-        buttons = [widget for widget in widgets if isinstance(widget, QToolButton)]
+        buttons = [widget for widget in widgets if isinstance(widget, QToolButton) and (widget is not self._console_button)]
         buttons[index].setChecked(True)
         self._control_panel.setCurrentIndex(index)
         self._control_panel.setVisible(True)
@@ -1797,7 +1801,7 @@ class XarrayGraph(QMainWindow):
         button = QToolButton()
         button.setIcon(qta.icon('msc.terminal', options=[{'opacity': 0.5}]))
         button.setCheckable(True)
-        button.setChecked(False)
+        button.setChecked(True)
         button.setToolTip('Console')
         button.pressed.connect(self.toggle_console)
         self._console_button = button
@@ -1816,11 +1820,27 @@ class XarrayGraph(QMainWindow):
         self._console.kernel_manager = self._console_kernel_manager
         self._console.kernel_client = self._console_kernel_client
 
-        from qtpy.QtWidgets import QApplication
-        app = QApplication.instance()
-        app.aboutToQuit.connect(self._shutdown_console)
+        # from qtpy.QtWidgets import QApplication
+        # app = QApplication.instance()
+        # app.aboutToQuit.connect(self._shutdown_console)
 
         self._console_kernel_manager.kernel.shell.push({'self': self})
+
+        self._console.execute('import numpy as np', hidden=True)
+        self._console.execute('import xarray as xr', hidden=True)
+
+        self._console.executed.connect(self.refresh)
+
+        from qtpy.QtCore import QTimer
+        QTimer.singleShot(100, self._init_console)
+    
+    def _init_console(self) -> None:
+        self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
+        # self._console._append_plain_text('Variables:\n', before_prompt=True)
+        self._console._append_plain_text('self      => This instance of XarrayGraph\n', before_prompt=True)
+        self._console._append_plain_text('self.data => The Xarray DataTree\n', before_prompt=True)
+        self._console._append_plain_text("Access array data: self.data['/path/to/array'].values\n", before_prompt=True)
+        self._console._append_plain_text('-----------------------------------------\n', before_prompt=True)
     
     def _shutdown_console(self) -> None:
         self._console_kernel_client.stop_channels()
@@ -2091,6 +2111,8 @@ class XarrayGraph(QMainWindow):
             op['segments'] = self._curve_fit_spline_segments_spinbox.value()
         elif op_name == 'equation':
             self._update_curve_fit_model()
+            if getattr(self, '_curve_fit_model', None) is None:
+                return
             op['params'] = self._curve_fit_model.make_params()
         
         # do operation
