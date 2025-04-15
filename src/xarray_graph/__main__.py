@@ -4,28 +4,28 @@ from qtpy.QtWidgets import QApplication, QMessageBox
 
 def main():
     app = QApplication()
-    ui = XarrayGraph()
-    ui.setWindowTitle('xarray-graph')
-    ui.show()
+    xg = XarrayGraph()
+    xg.setWindowTitle('xarray-graph')
+    xg.show()
 
     # MacOS Magnet warning
     import platform
     if platform.system() == 'Darwin':
-        QMessageBox.warning(ui, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
+        QMessageBox.warning(xg, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
 
     # load example data?
-    answer = QMessageBox.question(ui, 'Example?', 'Load example data?')
+    answer = QMessageBox.question(xg, 'Example?', 'Load example data?')
     if answer == QMessageBox.StandardButton.Yes:
         try:
-            load_example(ui)
+            load_example(xg)
         except Exception as err:
-            QMessageBox.critical(ui, 'Failed to load example', str(err))
+            QMessageBox.critical(xg, 'Failed to load example', str(err))
     
     app.exec()
 
 
-def load_example(ui: XarrayGraph):
-    from datatree import DataTree, open_datatree
+def load_example(xg: XarrayGraph):
+    import xarray as xr
     import requests
     import io
 
@@ -33,12 +33,10 @@ def load_example(ui: XarrayGraph):
     req = requests.get(url, stream=True)
     if req.status_code != 200:
         raise ValueError(f'Failed to download example data: request status code = {req.status_code}')
-    dt: DataTree = open_datatree(io.BytesIO(req.content), 'h5netcdf')
-
-    ui.data = dt
-
-    ui._show_control_panel_at(0)
-    ui._data_treeview.expandAll()
+    
+    dt: xr.DataTree = xr.open_datatree(io.BytesIO(req.content), 'h5netcdf')
+    xg.datatree = dt
+    xg._datatree_view.expandAll()
 
 
 if __name__ == '__main__':

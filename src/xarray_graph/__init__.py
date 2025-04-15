@@ -1,1 +1,4 @@
+from xarray_graph.XarrayTreeModel import XarrayTreeModel, XarrayDndTreeModel
+from xarray_graph.XarrayTreeView import XarrayTreeView
+from xarray_graph.XarrayTreeViewer import XarrayTreeViewer
 from xarray_graph.XarrayGraph import XarrayGraph
