@@ -1,10 +1,22 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- string coords on x-axis
+- i/o
+- regions
+- ROIs and selections
+- other annotations
+- curve fitting
+- baseline correction
+- rundown correction
+- measurements
+- summary branches
+- plugin system?
 """
 
 from __future__ import annotations
 import os
+from pathlib import Path
 import datetime
 import numpy as np
 import xarray as xr
@@ -15,13 +27,14 @@ import lmfit
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from pyqt_ext.widgets import *
+from pyqt_ext.widgets import MultiValueSpinBox
 import qtawesome as qta
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.inprocess import QtInProcessKernelManager
 import pyqtgraph as pg
 import pyqt_ext.pyqtgraph_ext as pgx
-from xarray_graph import *
+from xarray_graph import XarrayTreeModel, XarrayDndTreeModel, XarrayTreeView, XarrayTreeViewer
+from xarray_graph.io import *
 
 
 # units
@@ -46,6 +59,19 @@ DEFAULT_AXIS_LABEL_FONT_SIZE = 12
 DEFAULT_AXIS_TICK_FONT_SIZE = 11
 DEFAULT_TEXT_ITEM_FONT_SIZE = 10
 DEFAULT_LINE_WIDTH = 1
+
+
+ext_to_filetype_map = {
+    '': 'Zarr Directory',
+    '.zip': 'Zarr Zip',
+    '.nc': 'NetCDF',
+    '.h5': 'HDF5',
+    '.hdf5': 'HDF5',
+    '.wcp': 'WinWCP',
+    '.abf': 'Axon ABF',
+    '.dat': 'HEKA',
+    '.mat': 'LabChart MATLAB Conversion (GOLab)',
+}
 
 
 class XarrayGraph(QMainWindow):
@@ -105,8 +131,6 @@ class XarrayGraph(QMainWindow):
                 raise ValueError('XarrayGraph.datatree.setter: Invalid input.')
 
         self._datatree = root
-        self.datatree.attrs['xarray-graph-version'] = XARRAY_GRAPH_VERSION
-        
         self.refresh()
     
     @property
@@ -121,6 +145,143 @@ class XarrayGraph(QMainWindow):
         self._xdim = xdim
         self.refresh()
     
+    def windows(self) -> list[XarrayGraph]:
+        windows = []
+        for widget in qApp.topLevelWidgets():
+            if isinstance(widget, XarrayGraph):
+                windows.append(widget)
+        return windows
+    
+    def newWindow(self) -> XarrayGraph:
+        window = XarrayGraph()
+        window.show()
+        return window
+    
+    def load(self, filepath: str | os.PathLike = None, filetype: str = None) -> None:
+        if filepath is None:
+            if filetype == 'Zarr Directory':
+                filepath = QFileDialog.getExistingDirectory(self, 'Open Zarr Directory')
+            else:
+                filepath, _ = QFileDialog.getOpenFileName(self, 'Open File')
+            if not filepath:
+                return
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        if not filepath.exists():
+            QMessageBox.warning(self, 'File Not Found', f'File not found: {filepath}')
+            return
+        
+        # get filetype
+        if filepath.is_dir():
+            filetype = 'Zarr Directory'
+        elif filetype is None:
+            # get filetype from file extension
+            filetype = ext_to_filetype_map.get(filepath.suffix, None)
+        
+        # read datatree from filesystem
+        dt: xr.DataTree = None
+        if filetype == 'Zarr Directory':
+            with zarr.storage.LocalStore(filepath, mode='r') as store:
+                dt = xr.open_datatree(store, engine='zarr')
+        elif filetype == 'Zarr Zip':
+            with zarr.storage.ZipStore(filepath, mode='r') as store:
+                dt = xr.open_datatree(store, engine='zarr')
+        elif filetype == 'NetCDF':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        elif filetype == 'HDF5':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        elif filetype == 'WinWCP':
+            ds: xr.Dataset = read_winwcp(filepath)
+            dt = xr.DataTree()
+            dt['Data'] = ds
+        elif filetype == 'Axon ABF':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        elif filetype == 'HEKA':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        elif filetype == 'LabChart MATLAB Conversion (GOLab)':
+            pass
+        else:
+            try:
+                # see if xarray can open the file
+                dt = xr.open_datatree(filepath)
+            except:
+                QMessageBox.warning(self, 'Invalid File Type', f'Opening {filetype} format files is not supported.')
+                return
+        
+        if dt is None:
+            QMessageBox.warning(self, 'Invalid File', f'Unable to open file: {filepath}')
+            return
+        
+        # preprocess datatree
+        dt = inherit_missing_data_vars(dt)
+        restore_ordered_data_vars(dt)
+        
+        self.datatree = dt
+        self.datatree.attrs['filepath'] = str(filepath)
+        self.setWindowTitle(filepath.name)
+    
+    def save(self) -> None:
+        filepath = self.datatree.attrs.get('filepath', None)
+        self.saveAs(filepath)
+    
+    def saveAs(self, filepath: str | os.PathLike = None, filetype: str = None) -> None:
+        if filepath is None:
+            filepath, _ = QFileDialog.getSaveFileName(self, 'Save File')
+            if not filepath:
+                return
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        
+        # get filetype
+        if filepath.is_dir():
+            filetype = 'Zarr Directory'
+        elif filetype is None:
+            if filepath.suffix == '':
+                # default
+                filetype = 'Zarr Zip'
+            else:
+                # get filetype from file extension
+                filetype = ext_to_filetype_map.get(filepath.suffix, None)
+        
+        # ensure proper file extension for new files
+        if not filepath.exists() and (filetype != 'Zarr Directory'):
+            i = list(ext_to_filetype_map.values()).index(filetype)
+            ext = list(ext_to_filetype_map.keys())[i]
+            filepath = filepath.with_suffix(ext)
+
+        # prepare datatree for storage
+        dt = remove_inherited_data_vars(self.datatree)
+        store_ordered_data_vars(dt)
+        dt.attrs['xarray-graph-version'] = XARRAY_GRAPH_VERSION
+        if 'filepath' in dt.attrs:
+            del dt.attrs['filepath']
+
+        # write datatree to filesystem
+        if filetype == 'Zarr Directory':
+            with zarr.storage.LocalStore(filepath, mode='w') as store:
+                dt.to_zarr(store)
+        elif filetype == 'Zarr Zip':
+            if filepath.suffix != '.zip':
+                filepath = filepath.with_suffix('.zip')
+            with zarr.storage.ZipStore(filepath, mode='w') as store:
+                dt.to_zarr(store)
+        elif filetype == 'NetCDF':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        elif filetype == 'HDF5':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        else:
+            QMessageBox.warning(self, 'Invalid File Type', f'Saving to {filetype} format is not supported.')
+            return
+        
+        self.datatree.attrs['filepath'] = str(filepath)
+        self.setWindowTitle(filepath.name)
+    
     def refresh(self) -> None:
         if DEBUG:
             print('refresh()')
@@ -131,7 +292,17 @@ class XarrayGraph(QMainWindow):
             ], compat='no_conflicts')
         if DEBUG:
             print('_datatree_combined_coords:', self._datatree_combined_coords)
+
+        # names of all data_vars in datatree
+        self._combined_var_names = []
+        for path, node in self.datatree.subtree_with_keys:
+            for var_name in node.data_vars:
+                if var_name not in self._combined_var_names:
+                    self._combined_var_names.append(var_name)
+        if DEBUG:
+            print('_combined_var_names:', self._combined_var_names)
         
+        self._update_data_vars_filter_actions()
         self._update_datatree_view()
         self._update_control_panel_view()
         self._console.setVisible(self._toggle_console_action.isChecked())
@@ -154,7 +325,46 @@ class XarrayGraph(QMainWindow):
         self.refresh()  # overkill?
     
     def autoscale(self) -> None:
-        pass # TODO: implement autoscale
+        plots = self._plots.flatten().tolist()
+        
+        xlinked_views = []
+        ylinked_views = []
+        xlinked_range = []
+        ylinked_range = []
+        for plot in plots:
+            view = plot.getViewBox()
+            xlinked_view = view.linkedView(view.XAxis)
+            ylinked_view = view.linkedView(view.YAxis)
+            if (xlinked_view is None) and (ylinked_view is None):
+                view.enableAutoRange()
+            if xlinked_view is not None:
+                view.enableAutoRange(axis=view.YAxis)
+                xlim, ylim = view.childrenBounds()
+                xlinked_range.append(xlim)
+                if xlinked_view not in xlinked_views:
+                    xlinked_views.append(xlinked_view)
+                    xlim, ylim = xlinked_view.childrenBounds()
+                    xlinked_range.append(xlim)
+            if ylinked_view is not None:
+                view.enableAutoRange(axis=view.XAxis)
+                xlim, ylim = view.childrenBounds()
+                ylinked_range.append(ylim)
+                if ylinked_view not in ylinked_views:
+                    ylinked_views.append(ylinked_view)
+                    xlim, ylim = ylinked_view.childrenBounds()
+                    ylinked_range.append(ylim)
+            view.updateAutoRange()
+        
+        if xlinked_views:
+            xmin = np.min(xlinked_range)
+            xmax = np.max(xlinked_range)
+            for view in xlinked_views:
+                view.setXRange(xmin, xmax)
+        if ylinked_views:
+            ymin = np.min(ylinked_range)
+            ymax = np.max(ylinked_range)
+            for view in ylinked_views:
+                view.setYRange(ymin, ymax)
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
@@ -175,6 +385,13 @@ class XarrayGraph(QMainWindow):
                     if dim not in dims:
                         dims.append(dim)
         return dims
+    
+    def _get_current_data_var_filter(self) -> dict[str, bool]:
+        data_var_filter = {}
+        for action in self._data_vars_filter_button_menu.actions():
+            checkbox = action.defaultWidget()
+            data_var_filter[checkbox.text()] = checkbox.isChecked()
+        return data_var_filter
     
     def _get_current_iter_coords(self) -> dict[str, np.ndarray]:
         coords = {}
@@ -199,6 +416,8 @@ class XarrayGraph(QMainWindow):
         if DEBUG:
             print('_on_tree_selection_changed()')
         
+        var_filter = self._get_current_data_var_filter()
+        
         # selected tree items
         self._selected_paths: list[str] = self._datatree_view.selectedPaths()
         self._selected_node_paths: list[str] = []
@@ -207,11 +426,18 @@ class XarrayGraph(QMainWindow):
         for path in self._selected_paths:
             if self._datatree_model.dataTypeAtPath(path) == 'node':
                 self._selected_node_paths.append(path)
-                for var in self.datatree[path].data_vars:
-                    self._selected_var_paths.append(path + '/' + var)
+                for var_name in self.datatree[path].data_vars:
+                    if var_filter.get(var_name, True):
+                        self._selected_var_paths.append(path + '/' + var_name)
             elif self._datatree_model.dataTypeAtPath(path) == 'var':
                 if path not in self._selected_var_paths:
-                    self._selected_var_paths.append(path)
+                    if len(self._selected_paths) == 1:
+                        # ignore the var filter if only a single data_var is selected
+                        self._selected_var_paths.append(path)
+                    else:
+                        var_name = path.rstrip('/').split('/')[-1]
+                        if var_filter.get(var_name, True):
+                            self._selected_var_paths.append(path)
             elif self._datatree_model.dataTypeAtPath(path) == 'coord':
                 if path not in self._selected_coord_paths:
                     self._selected_coord_paths.append(path)
@@ -349,6 +575,28 @@ class XarrayGraph(QMainWindow):
             # print('_dim_iter_things:', self._dim_iter_things)
             print('_dim_iter_things', list(self._dim_iter_things.keys()))
     
+    def _update_data_vars_filter_actions(self) -> None:
+        widget_actions = self._data_vars_filter_button_menu.actions()
+        checkboxes = [action.defaultWidget() for action in widget_actions]
+        var_names = [checkbox.text() for checkbox in checkboxes]
+
+        # remove old actions
+        for action in widget_actions:
+            self._data_vars_filter_button_menu.removeAction(action)
+        
+        # add new actions
+        for var_name in self._combined_var_names:
+            if var_name in var_names:
+                i = var_names.index(var_name)
+                self._data_vars_filter_button_menu.addAction(widget_actions[i])
+            else:
+                checkbox = QCheckBox(var_name)
+                checkbox.setChecked(True)
+                checkbox.toggled.connect(lambda checked: self.refresh())
+                action = QWidgetAction(self)
+                action.setDefaultWidget(checkbox)
+                self._data_vars_filter_button_menu.addAction(action)
+    
     def _update_plot_grids(self) -> None:
         # one plot grid per selected variable
         n_vars = len(self._selected_var_names)
@@ -391,6 +639,7 @@ class XarrayGraph(QMainWindow):
         self._update_plot_info()
         self._update_axes_labels()
         self._update_axes_tick_font()
+        self._update_axes_linking()
         self._update_plot_items()
     
     def _update_plot_info(self) -> None:
@@ -461,8 +710,15 @@ class XarrayGraph(QMainWindow):
             plot.getAxis('bottom').setTickFont(axis_tick_font)
     
     def _update_axes_linking(self) -> None:
-        # TODO: implement axes linking
-        pass
+        n_vars, n_grid_rows, n_grid_cols = self._plots.shape
+        for i in range(n_vars):
+            for row in range(n_grid_rows):
+                for col in range(n_grid_cols):
+                    plot = self._plots[i, row, col]
+                    if (i != 0) or (row != 0) or (col != 0):
+                        plot.setXLink(self._plots[0, 0, 0])
+                    if (row > 0) or (col > 0):
+                        plot.setYLink(self._plots[i, 0, 0])
     
     def _update_plot_items(self, plots: list[pgx.Plot] = None, item_types: list = None) -> None:
         if plots is None:
@@ -540,7 +796,7 @@ class XarrayGraph(QMainWindow):
                     plot.removeItem(graph)
                     graph.deleteLater()
     
-    def _update_item_font(self):
+    def _update_text_item_font(self):
         for plot in self._plots.flatten().tolist():
             view: View = plot.getViewBox()
             for item in view.allChildren():
@@ -642,27 +898,33 @@ class XarrayGraph(QMainWindow):
         menubar = self.menuBar()
 
         self._file_menu = menubar.addMenu("File")
-        self._file_menu.addAction('New Window', QKeySequence.StandardKey.New)#, self.new_window)
+        self._file_menu.addAction('New Window', QKeySequence.StandardKey.New, self.newWindow)
         self._file_menu.addSeparator()
-        self._file_menu.addAction(qta.icon('fa5.folder-open'), 'Open', QKeySequence.StandardKey.Open)#, self.load)
+        self._file_menu.addAction(qta.icon('fa5.folder-open'), 'Open', QKeySequence.StandardKey.Open, self.load)
         self._import_menu = self._file_menu.addMenu('Import')
         self._file_menu.addSeparator()
-        self._file_menu.addAction(qta.icon('fa5.save'), 'Save', QKeySequence.StandardKey.Save)#, lambda self = self: self.save(self._filepath.with_suffix('.zarr.zip')))
-        self._file_menu.addAction(qta.icon('fa5.save'), 'Save As', QKeySequence.StandardKey.SaveAs)#, self.save)
+        self._file_menu.addAction(qta.icon('fa5.save'), 'Save', QKeySequence.StandardKey.Save, self.save)
+        self._file_menu.addAction(qta.icon('fa5.save'), 'Save As', QKeySequence.StandardKey.SaveAs, self.saveAs)
+        self._export_menu = self._file_menu.addMenu('Export')
         self._file_menu.addSeparator()
         self._file_menu.addAction('Close Window', QKeySequence.StandardKey.Close, self.close)
         self._file_menu.addSeparator()
         self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, qApp.quit)
 
-        self._import_menu.addAction('Zarr Zip')
-        self._import_menu.addAction('Zarr Directory')
-        self._import_menu.addAction('NetCDF')
-        self._import_menu.addAction('HDF5')
+        self._import_menu.addAction('Zarr Zip', lambda: self.load(filetype='Zarr Zip'))
+        self._import_menu.addAction('Zarr Directory', lambda: self.load(filetype='Zarr Directory'))
+        self._import_menu.addAction('NetCDF', lambda: self.load(filetype='NetCDF'))
+        self._import_menu.addAction('HDF5', lambda: self.load(filetype='HDF5'))
         self._import_menu.addSeparator()
-        self._import_menu.addAction('WinWCP')
-        self._import_menu.addAction('HEKA')
-        self._import_menu.addAction('Axon ABF')
-        self._import_menu.addAction('LabChart MATLAB Conversion (GOLab)')
+        self._import_menu.addAction('WinWCP', lambda: self.load(filetype='WinWCP'))
+        self._import_menu.addAction('HEKA', lambda: self.load(filetype='HEKA'))
+        self._import_menu.addAction('Axon ABF', lambda: self.load(filetype='Axon ABF'))
+        self._import_menu.addAction('LabChart MATLAB Conversion (GOLab)', lambda: self.load(filetype='LabChart MATLAB Conversion (GOLab)'))
+
+        self._export_menu.addAction('Zarr Zip', lambda: self.saveAs(filetype='Zarr Zip'))
+        self._export_menu.addAction('Zarr Directory', lambda: self.saveAs(filetype='Zarr Directory'))
+        self._export_menu.addAction('NetCDF', lambda: self.saveAs(filetype='NetCDF'))
+        self._export_menu.addAction('HDF5', lambda: self.saveAs(filetype='HDF5'))
     
     def _init_top_toolbar(self) -> None:
         self._top_toolbar = QToolBar()
@@ -679,10 +941,20 @@ class XarrayGraph(QMainWindow):
             pressed=self.refresh,
         )
 
+        self._data_vars_filter_button = QToolButton(
+            icon=get_icon('mdi6.filter-multiple-outline'), # 'fa6s.sliders'
+            toolTip='Filter data_vars',
+            popupMode=QToolButton.ToolButtonPopupMode.InstantPopup,
+        )
+        self._data_vars_filter_button_menu = QMenu()
+        self._data_vars_filter_button.setMenu(self._data_vars_filter_button_menu)
+
         self._before_dim_iter_things_spacer = QWidget()
         self._before_dim_iter_things_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         self._top_toolbar.addWidget(self._logo_button)
+        self._top_toolbar.addSeparator()
+        self._top_toolbar.addWidget(self._data_vars_filter_button)
         self._before_dim_iter_things_spacer_action = self._top_toolbar.addWidget(self._before_dim_iter_things_spacer)
         self._after_dim_iter_things_separator_action = self._top_toolbar.addSeparator()
         self._top_toolbar.addAction(self._home_action)
@@ -811,7 +1083,7 @@ class XarrayGraph(QMainWindow):
         self._textitem_fontsize_spinbox.setValue(DEFAULT_TEXT_ITEM_FONT_SIZE)
         self._textitem_fontsize_spinbox.setMinimum(1)
         self._textitem_fontsize_spinbox.setSuffix('pt')
-        self._textitem_fontsize_spinbox.valueChanged.connect(self._update_item_font)
+        self._textitem_fontsize_spinbox.valueChanged.connect(self._update_text_item_font)
 
         self._toolbar_iconsize_spinbox = QSpinBox()
         self._toolbar_iconsize_spinbox.setValue(DEFAULT_ICON_SIZE)
@@ -1049,6 +1321,47 @@ def permutations(coords: dict) -> list[dict]:
             else:
                 index[dim] = 0
     return permutations
+
+
+def remove_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
+    dt = dt.copy()  # copy tree but not underlying data
+    for node in reversed(list(dt.subtree)):
+        if not node.parent:
+            continue
+        for key in list(node.parent.data_vars):
+            if key in node.data_vars:
+                if node.data_vars[key].values is node.parent.data_vars[key].values:
+                    node.dataset = node.to_dataset().drop_vars(key)
+    return dt
+
+
+def inherit_missing_data_vars(dt: xr.DataTree) -> xr.DataTree:
+    dt = dt.copy()  # copy tree but not underlying data
+    for node in dt.subtree:
+        if not node.parent:
+            continue
+        for key in list(node.parent.data_vars):
+            if key not in node.data_vars:
+                node.dataset = node.to_dataset().assign({key: node.parent.data_vars[key]})
+    return dt
+
+
+def store_ordered_data_vars(dt: xr.DataTree) -> None:
+    for child in dt.children.values():
+        child.attrs['ordered_data_vars'] = list(child.data_vars)
+
+
+def restore_ordered_data_vars(dt: xr.DataTree) -> None:
+    for child in dt.children.values():
+        ordered_data_vars = child.attrs.get('ordered_data_vars', None)
+        if ordered_data_vars is not None:
+            for node in child.subtree:
+                ds = node.to_dataset()
+                node.dataset = xr.Dataset(
+                    data_vars={key: ds[key] for key in ordered_data_vars},
+                    coords=ds.coords,
+                    attrs=ds.attrs,
+                )
 
 
 def test_live():

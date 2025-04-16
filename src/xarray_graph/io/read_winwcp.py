@@ -1,10 +1,11 @@
 
 import struct
+import os
 from pathlib import Path
 import numpy as np
 import xarray as xr
 
-def read_winwcp(filepath: Path | str) -> xr.DataTree:
+def read_winwcp(filepath: str | os.PathLike) -> xr.DataTree:
     """Read data from a WinWCP file into an xarray.DataTree.
     
     Return a xarray.DataTree with a single dataset if all sweeps have the same sample interval.
