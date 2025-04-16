@@ -1,6 +1,7 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- !!! fix bug when changing xdim
 - string coords on x-axis
 - i/o
 - regions
@@ -286,21 +287,9 @@ class XarrayGraph(QMainWindow):
         if DEBUG:
             print('refresh()')
         
-        # combined coords for entire datatree
-        self._datatree_combined_coords: xr.Dataset = xr.merge([
-            self.datatree[path].to_dataset().reset_coords(drop=True).coords for path, node in self.datatree.subtree_with_keys
-            ], compat='no_conflicts')
-        if DEBUG:
-            print('_datatree_combined_coords:', self._datatree_combined_coords)
-
-        # names of all data_vars in datatree
-        self._combined_var_names = []
-        for path, node in self.datatree.subtree_with_keys:
-            for var_name in node.data_vars:
-                if var_name not in self._combined_var_names:
-                    self._combined_var_names.append(var_name)
-        if DEBUG:
-            print('_combined_var_names:', self._combined_var_names)
+        all_nodes = list(self.datatree.subtree)
+        self._combined_coords: xr.Dataset = self._get_union_of_all_coords(all_nodes)
+        self._combined_var_names = self._get_union_of_all_data_var_names(all_nodes)
         
         self._update_data_vars_filter_actions()
         self._update_datatree_view()
@@ -371,6 +360,47 @@ class XarrayGraph(QMainWindow):
     
     # private methods
     
+    def _get_union_of_all_data_var_names(self, objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> list[str]:
+        names = []
+        for obj in objects:
+            if isinstance(obj, xr.DataTree) or isinstance(obj, xr.Dataset):
+                for name in obj.data_vars:
+                    if name not in names:
+                        names.append(name)
+            elif isinstance(obj, xr.DataArray):
+                name = obj.name
+                if name not in names:
+                    names.append(name)
+        return names
+    
+    def _get_union_of_all_units(self, objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> dict[str, str]:
+        units = {}
+        for obj in objects:
+            if isinstance(obj, xr.DataTree) or isinstance(obj, xr.Dataset):
+                for name, data_var in obj.data_vars.items():
+                    if name not in units:
+                        if 'units' in data_var.attrs:
+                            units[name] = data_var.attrs['units']
+            elif isinstance(obj, xr.DataArray):
+                name = obj.name
+                if name not in units:
+                    if 'units' in obj.attrs:
+                        units[name] = obj.attrs['units']
+            for dim, coord in obj.coords.items():
+                if dim not in units:
+                    if 'units' in coord.attrs:
+                        units[dim] = coord.attrs['units']
+        return units
+    
+    def _get_union_of_all_coords(self, objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> xr.Dataset:
+        coords = []
+        for i, obj in enumerate(objects):
+            if isinstance(obj, xr.DataTree):
+                obj = obj.to_dataset()
+            coords.append(obj.reset_coords(drop=True).coords)
+        
+        return xr.merge(coords, compat='no_conflicts')
+    
     def _get_ordered_dims(self, objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> list[str]:
         dims = []
         for obj in objects:
@@ -380,7 +410,7 @@ class XarrayGraph(QMainWindow):
                 arrays = [obj]
             
             for array in arrays:
-                # xr.DataArray dims are ordered???
+                # xr.DataArray dims are always ordered???
                 for dim in array.dims:
                     if dim not in dims:
                         dims.append(dim)
@@ -418,7 +448,7 @@ class XarrayGraph(QMainWindow):
         
         var_filter = self._get_current_data_var_filter()
         
-        # selected tree items
+        # selected tree paths
         self._selected_paths: list[str] = self._datatree_view.selectedPaths()
         self._selected_node_paths: list[str] = []
         self._selected_var_paths: list[str] = []
@@ -441,48 +471,21 @@ class XarrayGraph(QMainWindow):
             elif self._datatree_model.dataTypeAtPath(path) == 'coord':
                 if path not in self._selected_coord_paths:
                     self._selected_coord_paths.append(path)
-        if DEBUG:
-            print('_selected_paths:', [path for path in self._selected_paths])
-            print('_selected_node_paths:', [path for path in self._selected_node_paths])
-            print('_selected_var_paths:', [path for path in self._selected_var_paths])
-            print('_selected_coord_paths:', [path for path in self._selected_coord_paths])
         
         # try and ensure valid xdim
         ordered_dims = self._get_ordered_dims([self.datatree[path] for path in self._selected_var_paths])
         if self.xdim not in ordered_dims:
             if ordered_dims:
                 self._xdim = ordered_dims[-1]
-        if DEBUG:
-            print('_xdim:', self._xdim)
         
         # limit selection to variables with the xdim coordinate
         self._selected_var_paths = [path for path in self._selected_var_paths if self.xdim in self.datatree[path].dims]
-        
-        # combined coords for all selected variables
-        self._selected_vars_combined_coords: xr.Dataset = xr.merge([
-            self.datatree[path].to_dataset().reset_coords(drop=True).coords for path in self._selected_var_paths
-            ], compat='no_conflicts')
-        if DEBUG:
-            print('_selected_vars_combined_coords:', self._selected_vars_combined_coords)
 
-        # names of selected vars and units for selected coords and vars
-        self._selected_var_names = []
-        self._selected_units = {}
-        for path in self._selected_var_paths:
-            var = self.datatree[path]
-            var_name = path.rstrip('/').split('/')[-1]
-            if var_name not in self._selected_var_names:
-                self._selected_var_names.append(var_name)
-            if var_name not in self._selected_units:
-                if 'units' in var.attrs:
-                    self._selected_units[var_name] = var.attrs['units']
-            for dim, coord in var.coords.items():
-                if dim not in self._selected_units:
-                    if 'units' in coord.attrs:
-                        self._selected_units[dim] = coord.attrs['units']
-        if DEBUG:
-            print('_selected_var_names:', self._selected_var_names)
-            print('_selected_units:', self._selected_units)
+        # combined coords, data_var names, and units for selection
+        selected_data_vars = [self.datatree[path] for path in self._selected_var_paths]
+        self._selected_vars_combined_coords: xr.Dataset = self._get_union_of_all_coords(selected_data_vars)
+        self._selected_var_names = self._get_union_of_all_data_var_names(selected_data_vars)
+        self._selected_units = self._get_union_of_all_units(selected_data_vars)
         
         # update toolbar dim iter widgets for selected variables
         self._update_dim_iter_things()
@@ -490,7 +493,7 @@ class XarrayGraph(QMainWindow):
         # # flag plot grid for update
         # self._plot_grid_needs_update = True
 
-        # update index selectionn (this will update the plot grids)
+        # update index selection (this will update the plot grids)
         self._on_index_selection_changed()
 
         # # update selected regions
@@ -503,8 +506,6 @@ class XarrayGraph(QMainWindow):
         # get coords for current slice of selected variables
         iter_coords = self._get_current_iter_coords()
         self._selected_vars_visible_coords: xr.Dataset = self._selected_vars_combined_coords.sel(iter_coords)#, method='nearest')
-        if DEBUG:
-            print('_selected_vars_visible_coords:', self._selected_vars_visible_coords)
         
         # update plot grids
         self._update_plot_grids()
@@ -527,7 +528,6 @@ class XarrayGraph(QMainWindow):
     def _update_dim_iter_things(self) -> None:
         if DEBUG:
             print('_update_dim_iter_things()')
-            print('_dim_iter_things', list(self._dim_iter_things.keys()))
 
         coords: xr.Dataset = self._selected_vars_combined_coords
         ordered_dims = self._get_ordered_dims([self.datatree[path] for path in self._selected_var_paths])
@@ -570,10 +570,6 @@ class XarrayGraph(QMainWindow):
             self._dim_iter_things[dim]['active'] = True
         
         self._before_dim_iter_things_spacer_action.setVisible(len(iter_dims) == 0)
-        
-        if DEBUG:
-            # print('_dim_iter_things:', self._dim_iter_things)
-            print('_dim_iter_things', list(self._dim_iter_things.keys()))
     
     def _update_data_vars_filter_actions(self) -> None:
         widget_actions = self._data_vars_filter_button_menu.actions()
@@ -649,23 +645,19 @@ class XarrayGraph(QMainWindow):
             var_name = self._selected_var_names[i]
             yunits = self._selected_units.get(var_name, None)
             var_coords = self._selected_vars_visible_coords.copy(deep=False)  # TODO: may include extra coords? get rid of these?
-            print('var_coords:', var_coords)
             
             for row in range(n_grid_rows):
                 if vdim is not None:
                     row_coords = var_coords.sel({vdim: vcoords[row]})
                 else:
                     row_coords = var_coords
-                print('row_coords:', row_coords)
                 
                 for col in range(n_grid_cols):
                     if hdim is not None:
                         col_coords = row_coords.sel({hdim: hcoords[col]})
                     else:
                         col_coords = row_coords
-                    print('col_coords:', col_coords)
                     col_coords_dict = {dim: arr.values for dim, arr in col_coords.coords.items() if dim != self.xdim}
-                    print('col_coords_dict:', col_coords_dict)
                     
                     plot = self._plots[i, row, col]
                     plot._info = {
@@ -727,6 +719,7 @@ class XarrayGraph(QMainWindow):
         default_line_width = self._linewidth_spinbox.value()
         
         for plot in plots:
+            print(plot._info)
             view: pgx.View = plot.getViewBox()
                 
             if item_types is None or pgx.Graph in item_types:
@@ -737,16 +730,17 @@ class XarrayGraph(QMainWindow):
                 count = 0
                 color_index = 0
                 for path in self._selected_var_paths:
+                    print(path)
                     var_name = path.rstrip('/').split('/')[-1]
                     if var_name not in plot._info['data_vars']:
                         continue
-                    var = self.datatree[path]
+                    data_var = self.datatree[path]
                     
                     for coords in plot._info['non_xdim_coord_permutations']:
                         print(coords)
-                        var_slice = var.sel(coords)
-                        xdata = var_slice[self.xdim].values
-                        ydata = var_slice.values
+                        data_var_slice = data_var.sel(coords)
+                        xdata = data_var_slice[self.xdim].values
+                        ydata = data_var_slice.values
                         
                         # graph data in plot
                         if len(graphs) > count:
