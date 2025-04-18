@@ -60,16 +60,15 @@ DEFAULT_TEXT_ITEM_FONT_SIZE = 10
 DEFAULT_LINE_WIDTH = 1
 
 
-ext_to_filetype_map = {
-    '': 'Zarr Directory',
-    '.zip': 'Zarr Zip',
-    '.nc': 'NetCDF',
-    '.h5': 'HDF5',
-    '.hdf5': 'HDF5',
-    '.wcp': 'WinWCP',
-    '.abf': 'Axon ABF',
-    '.dat': 'HEKA',
-    '.mat': 'LabChart MATLAB Conversion (GOLab)',
+filetype_extensions_map: dict[str, list[str]] = {
+    'Zarr Directory': [''],
+    'Zarr Zip': ['.zip'],
+    'NetCDF': ['.nc'],
+    'HDF5': ['.h5', '.hdf5'],
+    'WinWCP': ['.wcp'],
+    'Axon ABF': ['.abf'],
+    'HEKA': ['.dat'],
+    'LabChart MATLAB Conversion (GOLab)': ['.mat'],
 }
 
 
@@ -175,7 +174,12 @@ class XarrayGraph(QMainWindow):
             filetype = 'Zarr Directory'
         elif filetype is None:
             # get filetype from file extension
-            filetype = ext_to_filetype_map.get(filepath.suffix, None)
+            extension_filetype_map = {
+                ext: filetype
+                for filetype, extensions in filetype_extensions_map.items()
+                for ext in extensions
+            }
+            filetype = extension_filetype_map.get(filepath.suffix, None)
         
         # read datatree from filesystem
         dt: xr.DataTree = None
@@ -244,13 +248,18 @@ class XarrayGraph(QMainWindow):
                 filetype = 'Zarr Zip'
             else:
                 # get filetype from file extension
-                filetype = ext_to_filetype_map.get(filepath.suffix, None)
+                extension_filetype_map = {
+                    ext: filetype
+                    for filetype, extensions in filetype_extensions_map.items()
+                    for ext in extensions
+                }
+                filetype = extension_filetype_map.get(filepath.suffix, None)
         
         # ensure proper file extension for new files
         if not filepath.exists() and (filetype != 'Zarr Directory'):
-            i = list(ext_to_filetype_map.values()).index(filetype)
-            ext = list(ext_to_filetype_map.keys())[i]
-            filepath = filepath.with_suffix(ext)
+            ext = filetype_extensions_map.get(filetype, [None])[0]
+            if ext is not None:
+                filepath = filepath.with_suffix(ext)
 
         # prepare datatree for storage
         dt = remove_inherited_data_vars(self.datatree)
@@ -352,6 +361,9 @@ class XarrayGraph(QMainWindow):
             ymax = np.max(ylinked_range)
             for view in ylinked_views:
                 view.setYRange(ymin, ymax)
+    
+    def addRegion(self, region: dict) -> None:
+        pass
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
@@ -507,6 +519,45 @@ class XarrayGraph(QMainWindow):
         
         # update plot grids
         self._update_plot_grids()
+    
+    def _on_points_selection_changed(self) -> None:
+        pass
+    
+    @Slot(QGraphicsObject)
+    def _on_item_added_to_axes(self, item: QGraphicsObject) -> None:
+        view: pgx.View = self.sender()
+        # plot: pgx.Plot = view.parentItem()
+
+        if isinstance(item, pgx.XAxisRegion):
+            # get x-axis region info from item
+            region: dict = item.getState()
+            
+            # remove item and add region to all plots
+            view.removeItem(item)
+            item.deleteLater()
+            self.addRegion(region)
+            
+            # draw one region at a time
+            self._stop_drawing_items()
+            
+            # # edit newly added region
+            # items = self._region_plot_items()
+            # for item in items:
+            #     if item._region_ref == region:
+            #         state = pgx.editAxisRegion(item, parent=self)
+            #         if state is not None:
+            #             for key, value in state.items():
+            #                 item._region_ref[key] = value
+            #             self._update_region_groups_menu()
+            #         break
+
+        if isinstance(item, pg.RectROI):
+            # select points in ROI
+            # TODO...
+            
+            # remove ROI
+            view.removeItem(item)
+            item.deleteLater()
     
     def _update_datatree_view(self) -> None:
         self._datatree_view.setDataTree(self.datatree)
@@ -827,6 +878,16 @@ class XarrayGraph(QMainWindow):
             # for button in buttons:
             #     button.setIconSize(icon_size)
     
+    def _start_drawing_items(self, item_type) -> None:
+        for plot in self._plots.flatten().tolist():
+            plot.vb.sigItemAdded.connect(self._on_item_added_to_axes)
+            plot.vb.startDrawingItemsOfType(item_type)
+    
+    def _stop_drawing_items(self) -> None:
+        for plot in self._plots.flatten().tolist():
+            plot.vb.stopDrawingItems()
+            plot.vb.sigItemAdded.disconnect(self._on_item_added_to_axes)
+    
     def _init_ui(self) -> None:
         self.setWindowTitle(self.__class__.__name__)
         self._init_actions()
@@ -910,7 +971,7 @@ class XarrayGraph(QMainWindow):
     def _init_menubar(self) -> None:
         menubar = self.menuBar()
 
-        self._file_menu = menubar.addMenu("File")
+        self._file_menu = menubar.addMenu('File')
         self._file_menu.addAction('New Window', QKeySequence.StandardKey.New, self.newWindow)
         self._file_menu.addSeparator()
         self._file_menu.addAction(qta.icon('fa5.folder-open'), 'Open', QKeySequence.StandardKey.Open, self.load)
@@ -938,6 +999,11 @@ class XarrayGraph(QMainWindow):
         self._export_menu.addAction('Zarr Directory', lambda: self.saveAs(filetype='Zarr Directory'))
         self._export_menu.addAction('NetCDF', lambda: self.saveAs(filetype='NetCDF'))
         self._export_menu.addAction('HDF5', lambda: self.saveAs(filetype='HDF5'))
+
+        self._selection_menu = menubar.addMenu('Selection')
+        self._selection_menu.addAction('Select Region', QKeySequence('R'), lambda: self._start_drawing_items(pgx.XAxisRegion))
+        self._selection_menu.addSeparator()
+        self._selection_menu.addAction('Point Selection Brush', QKeySequence('B'), lambda: self._start_drawing_items(pg.RectROI))
     
     def _init_top_toolbar(self) -> None:
         self._top_toolbar = QToolBar()
