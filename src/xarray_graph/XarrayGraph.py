@@ -1,8 +1,6 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
-- !!! fix bug when changing xdim
-- string coords on x-axis
 - i/o
 - regions
 - ROIs and selections
@@ -535,6 +533,11 @@ class XarrayGraph(QMainWindow):
         # remove dim iter actions from toolbar
         # items are not deleted, so the current iteration state will be restored if the dim is reselected again
         for dim in self._dim_iter_things:
+            # block spinbox signals so that _on_index_selection_changed is not called
+            # if the spinbox had focus and loses it here
+            if 'widget' in self._dim_iter_things[dim]:
+                widget: DimIterWidget = self._dim_iter_things[dim]['widget']
+                widget._spinbox.blockSignals(True)
             for value in self._dim_iter_things[dim].values():
                 if isinstance(value, QAction):
                     self._top_toolbar.removeAction(value)
@@ -568,6 +571,7 @@ class XarrayGraph(QMainWindow):
                 self._dim_iter_things[dim]['widgetAction'] = action
             
             self._dim_iter_things[dim]['active'] = True
+            widget._spinbox.blockSignals(False)
         
         self._before_dim_iter_things_spacer_action.setVisible(len(iter_dims) == 0)
     
@@ -719,8 +723,18 @@ class XarrayGraph(QMainWindow):
         default_line_width = self._linewidth_spinbox.value()
         
         for plot in plots:
-            print(plot._info)
+            # print('-'*50)
+            # print(plot._info)
             view: pgx.View = plot.getViewBox()
+
+            # categorical (string) xdim values?
+            xticks = None  # will use default ticks
+            xdata = self._selected_vars_combined_coords[self.xdim].values
+            if not np.issubdtype(xdata.dtype, np.number):
+                xtick_values = np.arange(len(xdata))
+                xtick_labels = xdata  # str xdim values
+                xticks = [list(zip(xtick_values, xtick_labels))]
+            plot.getAxis('bottom').setTicks(xticks)
                 
             if item_types is None or pgx.Graph in item_types:
                 # existing graphs in plot
@@ -730,17 +744,22 @@ class XarrayGraph(QMainWindow):
                 count = 0
                 color_index = 0
                 for path in self._selected_var_paths:
-                    print(path)
+                    # print(path)
                     var_name = path.rstrip('/').split('/')[-1]
                     if var_name not in plot._info['data_vars']:
                         continue
                     data_var = self.datatree[path]
                     
                     for coords in plot._info['non_xdim_coord_permutations']:
-                        print(coords)
+                        # print(coords)
                         data_var_slice = data_var.sel(coords)
                         xdata = data_var_slice[self.xdim].values
                         ydata = data_var_slice.values
+
+                        # categorical xdim values?
+                        if not np.issubdtype(xdata.dtype, np.number):
+                            intersect, xdata_indices, xtick_labels_indices = np.intersect1d(xdata, xtick_labels, assume_unique=True, return_indices=True)
+                            xdata = np.sort(xtick_labels_indices)
                         
                         # graph data in plot
                         if len(graphs) > count:
