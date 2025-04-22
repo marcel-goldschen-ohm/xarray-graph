@@ -80,6 +80,7 @@ class XarrayGraph(QMainWindow):
 
         self._datatree: xr.DataTree = xr.DataTree()
         self._xdim: str = None
+        self._active_regions: dict[str, list[dict]] = {}  # dim: list of region dict
 
         self._init_ui()
     
@@ -295,8 +296,8 @@ class XarrayGraph(QMainWindow):
             print('refresh()')
         
         all_nodes = list(self.datatree.subtree)
-        self._combined_coords: xr.Dataset = self._get_union_of_all_coords(all_nodes)
-        self._combined_var_names = self._get_union_of_all_data_var_names(all_nodes)
+        self._datatree_combined_coords: xr.Dataset = self._get_union_of_all_coords(all_nodes)
+        self._datatree_combined_var_names = self._get_union_of_all_data_var_names(all_nodes)
         
         self._update_data_vars_filter_actions()
         self._update_datatree_view()
@@ -304,10 +305,13 @@ class XarrayGraph(QMainWindow):
         self._console.setVisible(self._toggle_console_action.isChecked())
         self._on_tree_selection_changed()
     
+    def replot(self) -> None:
+        self._update_plot_items(item_types=[pgx.Graph])
+    
     def tileDimension(self, dim: str, orientation: Qt.Orientation | None) -> None:
         if DEBUG:
-            print(f'tile_dim({dim}, {orientation})')
-        
+            print(f'tileDimension({dim}, {orientation})')
+
         if getattr(self, '_vertical_tile_dimension', None) == dim:
             self._vertical_tile_dimension = None
         if getattr(self, '_horizontal_tile_dimension', None) == dim:
@@ -318,7 +322,21 @@ class XarrayGraph(QMainWindow):
         elif orientation == Qt.Orientation.Horizontal:
             self._horizontal_tile_dimension = dim
         
-        self.refresh()  # overkill?
+        if orientation is not None:
+            selected_coords = self._selected_vars_visible_coords[dim]
+            if selected_coords.size == 1:
+                max_default_tile_size = 10
+                dim_coords = self._selected_vars_combined_coords[dim]
+                if dim_coords.size <= max_default_tile_size:
+                    selected_coords = dim_coords
+                else:
+                    i = np.where(dim_coords == selected_coords[0])[0][0]
+                    stop = min(i + max_default_tile_size, dim_coords.size)
+                    start = max(0, stop - max_default_tile_size)
+                    selected_coords = dim_coords[start:stop]
+                self._dim_iter_things[dim]['widget'].setSelectedCoords(selected_coords.values)
+        
+        self.refresh()
     
     def autoscale(self) -> None:
         plots = self._plots.flatten().tolist()
@@ -362,8 +380,81 @@ class XarrayGraph(QMainWindow):
             for view in ylinked_views:
                 view.setYRange(ymin, ymax)
     
-    def addRegion(self, region: dict) -> None:
-        pass
+    def addRegion(self, region: dict, dim: str = None) -> None:
+        if dim is None:
+            dim = self.xdim
+        
+        if dim not in self._active_regions:
+            self._active_regions[dim] = []
+        regions = self._active_regions[dim]
+        if region not in regions:
+            regions.append(region)
+        
+        if dim == self.xdim:
+            if region not in self.activeRegions():
+                for plot in self._plots.flatten().tolist():
+                    item = pgx.XAxisRegion()
+                    item.setState(region)
+                    item._region_ref = region
+                    item.sigRegionChanged.connect(lambda item=item: self._on_region_item_changed(item))
+                    item.sigRegionDragFinished.connect(lambda item=item: self._on_region_item_changed(item))
+                    item.sigEditingFinished.connect(lambda item=item: self._on_region_item_changed(item))
+                    item.sigRequestDeletion.connect(lambda item=item: self.removeRegions([getattr(item, '_region_ref', None)]))
+                    plot.vb.addItem(item)
+                    item.setZValue(0)
+    
+    def removeRegions(self, regions: list[dict] = None, dim: str = None) -> None:
+        if dim is None:
+            dim = self.xdim
+        
+        if regions is None:
+            # remove all active regions
+            self._active_regions = {}
+        else:
+            for region in regions:
+                try:
+                    self._active_regions[dim].remove(region)
+                except (KeyError, ValueError):
+                    pass
+        
+        if dim == self.xdim:
+            self.hideRegions(regions)
+    
+    def hideRegions(self, regions: list[dict] = None) -> None:
+        for plot in self._plots.flatten().tolist():
+            items = [item for item in plot.vb.allChildren() if isinstance(item, pgx.XAxisRegion)]
+            for item in items:
+                if (regions is None) or (getattr(item, '_region_ref', None) in regions):
+                    plot.vb.removeItem(item)
+                    item.deleteLater()
+    
+    def activeRegions(self) -> list[dict]:
+        try:
+            plot: pgx.Plot = self._plots.flatten()[0]
+            items = [item for item in plot.vb.allChildren() if isinstance(item, pgx.XAxisRegion)]
+            regions = [getattr(item, '_region_ref', None) for item in items]
+            return [region for region in regions if region is not None]
+        except IndexError:
+            return []
+    
+    def toggleActiveRegions(self) -> None:
+        if not hasattr(self, '_hidden_regions'):
+            self._hidden_regions = {}
+        
+        # if active regions, hide them
+        # any previously hidden regions for self.xdim will be lost 
+        regions = self.activeRegions()
+        if regions:
+            self._hidden_regions[self.xdim] = regions
+            for region in regions:
+                self._active_regions[self.xdim].remove(region)
+            self.hideRegions()
+            return
+        
+        # if no active regions, try and restore hidden regions
+        if self.xdim in self._hidden_regions:
+            for region in self._hidden_regions[self.xdim]:
+                self.addRegion(region)
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
@@ -427,8 +518,13 @@ class XarrayGraph(QMainWindow):
         return dims
     
     def _get_current_data_var_filter(self) -> dict[str, bool]:
+        widget_actions = self._filter_menu.actions()
+        before = widget_actions.index(self._before_filter_data_vars_action)
+        after = widget_actions.index(self._after_filter_data_vars_action)
+        widget_actions = widget_actions[before+1:after]
+
         data_var_filter = {}
-        for action in self._data_vars_filter_button_menu.actions():
+        for action in widget_actions:
             checkbox = action.defaultWidget()
             data_var_filter[checkbox.text()] = checkbox.isChecked()
         return data_var_filter
@@ -468,7 +564,9 @@ class XarrayGraph(QMainWindow):
                 self._selected_node_paths.append(path)
                 for var_name in self.datatree[path].data_vars:
                     if var_filter.get(var_name, True):
-                        self._selected_var_paths.append(path + '/' + var_name)
+                        var_path = path + '/' + var_name
+                        if var_path not in self._selected_var_paths:
+                            self._selected_var_paths.append(var_path)
             elif self._datatree_model.dataTypeAtPath(path) == 'var':
                 if path not in self._selected_var_paths:
                     if len(self._selected_paths) == 1:
@@ -481,6 +579,18 @@ class XarrayGraph(QMainWindow):
             elif self._datatree_model.dataTypeAtPath(path) == 'coord':
                 if path not in self._selected_coord_paths:
                     self._selected_coord_paths.append(path)
+        
+        # map selected var paths to their respective branch root paths
+        self._selected_branch_root_paths: list[str] = []
+        self._selected_var_path_to_branch_root_path_map: dict[str: str] = {}
+        for path in self._selected_var_paths:
+            parent_node_path = '/'.join(path.rstrip('/').split('/')[:-1])
+            parent_node = self.datatree[parent_node_path]
+            branch_root = find_branch_root(parent_node)
+            branch_root_path = branch_root.path
+            self._selected_var_path_to_branch_root_path_map[path] = branch_root_path
+            if branch_root_path not in self._selected_branch_root_paths:
+                self._selected_branch_root_paths.append(branch_root_path)
         
         # try and ensure valid xdim
         ordered_dims = self._get_ordered_dims([self.datatree[path] for path in self._selected_var_paths])
@@ -495,7 +605,7 @@ class XarrayGraph(QMainWindow):
         selected_data_vars = [self.datatree[path] for path in self._selected_var_paths]
         self._selected_vars_combined_coords: xr.Dataset = self._get_union_of_all_coords(selected_data_vars)
         self._selected_var_names = self._get_union_of_all_data_var_names(selected_data_vars)
-        self._selected_units = self._get_union_of_all_units(selected_data_vars)
+        self._selected_var_units = self._get_union_of_all_units(selected_data_vars)
         
         # update toolbar dim iter widgets for selected variables
         self._update_dim_iter_things()
@@ -523,6 +633,25 @@ class XarrayGraph(QMainWindow):
     def _on_points_selection_changed(self) -> None:
         pass
     
+    def _on_region_item_changed(self, item: pgx.XAxisRegion) -> None:
+        region = getattr(item, '_region_ref', None)
+        if region is None:
+            return
+        
+        # update region dict from item state
+        state = item.getState()
+        for key, value in state.items():
+            region[key] = value
+        
+        # update
+        for plot in self._plots.flatten().tolist():
+            items = [item for item in plot.vb.allChildren() if isinstance(item, pgx.XAxisRegion)]
+            for item_ in items:
+                if item_ is item:
+                    continue
+                if getattr(item_, '_region_ref', None) is region:
+                    item_.setState(region)
+    
     @Slot(QGraphicsObject)
     def _on_item_added_to_axes(self, item: QGraphicsObject) -> None:
         view: pgx.View = self.sender()
@@ -530,26 +659,19 @@ class XarrayGraph(QMainWindow):
 
         if isinstance(item, pgx.XAxisRegion):
             # get x-axis region info from item
-            region: dict = item.getState()
+            region: dict = None#pgx.editAxisRegion(item, parent=self)
+            if region is None:
+                region: dict = item.getState()
             
-            # remove item and add region to all plots
+            # remove initial region (we'll add it to all plots below)
             view.removeItem(item)
-            item.deleteLater()
-            self.addRegion(region)
+            QTimer.singleShot(10, lambda item=item: item.deleteLater())  # slight delay avoids segfault!?
             
             # draw one region at a time
             self._stop_drawing_items()
-            
-            # # edit newly added region
-            # items = self._region_plot_items()
-            # for item in items:
-            #     if item._region_ref == region:
-            #         state = pgx.editAxisRegion(item, parent=self)
-            #         if state is not None:
-            #             for key, value in state.items():
-            #                 item._region_ref[key] = value
-            #             self._update_region_groups_menu()
-            #         break
+
+            # add region to all plots
+            self.addRegion(region)
 
         if isinstance(item, pg.RectROI):
             # select points in ROI
@@ -557,7 +679,7 @@ class XarrayGraph(QMainWindow):
             
             # remove ROI
             view.removeItem(item)
-            item.deleteLater()
+            QTimer.singleShot(10, lambda item=item: item.deleteLater())
     
     def _update_datatree_view(self) -> None:
         self._datatree_view.setDataTree(self.datatree)
@@ -627,26 +749,30 @@ class XarrayGraph(QMainWindow):
         self._before_dim_iter_things_spacer_action.setVisible(len(iter_dims) == 0)
     
     def _update_data_vars_filter_actions(self) -> None:
-        widget_actions = self._data_vars_filter_button_menu.actions()
+        widget_actions = self._filter_menu.actions()
+        before = widget_actions.index(self._before_filter_data_vars_action)
+        after = widget_actions.index(self._after_filter_data_vars_action)
+        widget_actions = widget_actions[before+1:after]
+
         checkboxes = [action.defaultWidget() for action in widget_actions]
         var_names = [checkbox.text() for checkbox in checkboxes]
 
         # remove old actions
         for action in widget_actions:
-            self._data_vars_filter_button_menu.removeAction(action)
+            self._filter_menu.removeAction(action)
         
         # add new actions
-        for var_name in self._combined_var_names:
+        for var_name in self._datatree_combined_var_names:
             if var_name in var_names:
                 i = var_names.index(var_name)
-                self._data_vars_filter_button_menu.addAction(widget_actions[i])
+                self._filter_menu.insertAction(self._after_filter_data_vars_action, widget_actions[i])
             else:
                 checkbox = QCheckBox(var_name)
                 checkbox.setChecked(True)
                 checkbox.toggled.connect(lambda checked: self.refresh())
                 action = QWidgetAction(self)
                 action.setDefaultWidget(checkbox)
-                self._data_vars_filter_button_menu.addAction(action)
+                self._filter_menu.insertAction(self._after_filter_data_vars_action, action)
     
     def _update_plot_grids(self) -> None:
         # one plot grid per selected variable
@@ -698,7 +824,7 @@ class XarrayGraph(QMainWindow):
         n_vars, n_grid_rows, n_grid_cols = self._plots.shape
         for i in range(n_vars):
             var_name = self._selected_var_names[i]
-            yunits = self._selected_units.get(var_name, None)
+            yunits = self._selected_var_units.get(var_name, None)
             var_coords = self._selected_vars_visible_coords.copy(deep=False)  # TODO: may include extra coords? get rid of these?
             
             for row in range(n_grid_rows):
@@ -724,14 +850,14 @@ class XarrayGraph(QMainWindow):
                     }
     
     def _update_axes_labels(self) -> None:
-        xunits = self._selected_units.get(self.xdim, None)
+        xunits = self._selected_var_units.get(self.xdim, None)
         axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{self._axislabel_fontsize_spinbox.value()}pt'}
 
         vdim, hdim, vcoords, hcoords = self._get_current_tile_dims()
         n_vars, n_grid_rows, n_grid_cols = self._plots.shape
         for i in range(n_vars):
             var_name = self._selected_var_names[i]
-            yunits = self._selected_units.get(var_name, None)
+            yunits = self._selected_var_units.get(var_name, None)
             for row in range(n_grid_rows):
                 for col in range(n_grid_cols):
                     plot = self._plots[i, row, col]
@@ -774,8 +900,6 @@ class XarrayGraph(QMainWindow):
         default_line_width = self._linewidth_spinbox.value()
         
         for plot in plots:
-            # print('-'*50)
-            # print(plot._info)
             view: pgx.View = plot.getViewBox()
 
             # categorical (string) xdim values?
@@ -800,9 +924,13 @@ class XarrayGraph(QMainWindow):
                     if var_name not in plot._info['data_vars']:
                         continue
                     data_var = self.datatree[path]
+                    if self.xdim not in data_var.coords:
+                        continue
                     
                     for coords in plot._info['non_xdim_coord_permutations']:
-                        # print(coords)
+                        coords = {dim: values for dim, values in coords.items() if dim in data_var.coords}
+                        if not coords:
+                            continue
                         data_var_slice = data_var.sel(coords)
                         xdata = data_var_slice[self.xdim].values
                         ydata = data_var_slice.values
@@ -878,6 +1006,14 @@ class XarrayGraph(QMainWindow):
             # for button in buttons:
             #     button.setIconSize(icon_size)
     
+    # def _update_region_items(self) -> None:
+    #     for plot in self._plots.flatten().tolist():
+    #         items = [item for item in plot.vb.allChildren() if isinstance(item, pgx.XAxisRegion)]
+    #         for item in items:
+    #             region = getattr(item, '_region_ref', None)
+    #             if region is not None:
+    #                 item.setState(region)
+    
     def _start_drawing_items(self, item_type) -> None:
         for plot in self._plots.flatten().tolist():
             plot.vb.sigItemAdded.connect(self._on_item_added_to_axes)
@@ -887,6 +1023,9 @@ class XarrayGraph(QMainWindow):
         for plot in self._plots.flatten().tolist():
             plot.vb.stopDrawingItems()
             plot.vb.sigItemAdded.disconnect(self._on_item_added_to_axes)
+    
+    # def _any_regions_visible(self) -> bool:
+    #     pass
     
     def _init_ui(self) -> None:
         self.setWindowTitle(self.__class__.__name__)
@@ -967,6 +1106,15 @@ class XarrayGraph(QMainWindow):
             text = 'Autoscale', 
             toolTip = 'Autoscale',
             triggered = lambda: self.autoscale())
+
+        self._include_masked_action = QAction(
+            parent = self, 
+            text = 'Include Masked', 
+            toolTip = 'Include Masked',
+            shortcut = QKeySequence('I'),
+            checkable=True, 
+            checked=False,
+            triggered = lambda: self.refresh())
     
     def _init_menubar(self) -> None:
         menubar = self.menuBar()
@@ -1002,8 +1150,14 @@ class XarrayGraph(QMainWindow):
 
         self._selection_menu = menubar.addMenu('Selection')
         self._selection_menu.addAction('Select Region', QKeySequence('R'), lambda: self._start_drawing_items(pgx.XAxisRegion))
+        self._selection_menu.addAction('Toggle Active Regions', QKeySequence('T'), self.toggleActiveRegions)
         self._selection_menu.addSeparator()
         self._selection_menu.addAction('Point Selection Brush', QKeySequence('B'), lambda: self._start_drawing_items(pg.RectROI))
+        self._selection_menu.addSeparator()
+        self._selection_menu.addAction('Mask Selection', QKeySequence('M'))
+        self._selection_menu.addAction('Unmask Selection', QKeySequence('U'))
+        self._selection_menu.addSeparator()
+        self._selection_menu.addAction(self._include_masked_action)
     
     def _init_top_toolbar(self) -> None:
         self._top_toolbar = QToolBar()
@@ -1020,20 +1174,23 @@ class XarrayGraph(QMainWindow):
             pressed=self.refresh,
         )
 
-        self._data_vars_filter_button = QToolButton(
+        self._filter_button = QToolButton(
             icon=get_icon('mdi6.filter-multiple-outline'), # 'fa6s.sliders'
             toolTip='Filter data_vars',
             popupMode=QToolButton.ToolButtonPopupMode.InstantPopup,
         )
-        self._data_vars_filter_button_menu = QMenu()
-        self._data_vars_filter_button.setMenu(self._data_vars_filter_button_menu)
+        self._filter_menu = QMenu()
+        self._before_filter_data_vars_action = self._filter_menu.addAction('data_vars:')
+        self._before_filter_data_vars_action.setEnabled(False)
+        self._after_filter_data_vars_action = self._filter_menu.addSeparator()
+        self._filter_button.setMenu(self._filter_menu)
 
         self._before_dim_iter_things_spacer = QWidget()
         self._before_dim_iter_things_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         self._top_toolbar.addWidget(self._logo_button)
         self._top_toolbar.addSeparator()
-        self._top_toolbar.addWidget(self._data_vars_filter_button)
+        self._top_toolbar.addWidget(self._filter_button)
         self._before_dim_iter_things_spacer_action = self._top_toolbar.addWidget(self._before_dim_iter_things_spacer)
         self._after_dim_iter_things_separator_action = self._top_toolbar.addSeparator()
         self._top_toolbar.addAction(self._home_action)
@@ -1128,23 +1285,25 @@ class XarrayGraph(QMainWindow):
         # self._notes_edit.textChanged.connect(lambda: self.metadata.update({'notes', self._notes_edit.toPlainText()}))
     
     def _init_settings_panel(self) -> None:
-        self._include_masked_sweeps_checkbox = QCheckBox('Include Masked Sweeps', checked=False)
-        # self._include_masked_sweeps_checkbox.stateChanged.connect(lambda state: self.refresh())
+        # self._include_masked_checkbox = QCheckBox(checked=False)
+        # self._include_masked_checkbox.stateChanged.connect(self.refresh)
 
-        self._sweep_xoffset_edit = QLineEdit()
-        self._sweep_xoffset_edit.setToolTip('Sweep X Offset\n!!! In data units, not necessarily displayed units')
-        self._sweep_xoffset_edit.setText('0')
-        # self._sweep_xoffset_edit.editingFinished.connect(lambda: self.replot())
+        # self._apply_offsets_checkbox = QCheckBox(checked=False)
+        # self._apply_offsets_checkbox.stateChanged.connect(self.refresh)
 
-        self._sweep_yoffset_edit = QLineEdit()
-        self._sweep_yoffset_edit.setToolTip('Sweep Y Offset\n!!! In data units, not necessarily displayed units')
-        self._sweep_yoffset_edit.setText('0')
-        # self._sweep_yoffset_edit.editingFinished.connect(lambda: self.replot())
+        # self._offsets_edit = QLineEdit()
+        # self._offsets_edit.setPlaceholderText('dim: value units, ...')
+        # self._offsets_edit.editingFinished.connect(self.replot)
+
+        # format_separator = QFrame()
+        # format_separator.setFrameShape(QFrame.HLine)
+        # format_separator.setFrameShadow(QFrame.Sunken)
+        # format_separator.setContentsMargins(0, 25, 0, 25)
 
         self._linewidth_spinbox = QSpinBox()
         self._linewidth_spinbox.setValue(DEFAULT_LINE_WIDTH)
         self._linewidth_spinbox.setMinimum(1)
-        self._linewidth_spinbox.valueChanged.connect(lambda: self._update_plot_items(item_types=[pgx.Graph]))
+        self._linewidth_spinbox.valueChanged.connect(self.replot)
 
         self._axislabel_fontsize_spinbox = QSpinBox()
         self._axislabel_fontsize_spinbox.setValue(DEFAULT_AXIS_LABEL_FONT_SIZE)
@@ -1178,13 +1337,11 @@ class XarrayGraph(QMainWindow):
         form.setSpacing(5)
         form.setHorizontalSpacing(10)
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        # separator = QFrame()
-        # separator.setFrameShape(QFrame.HLine)
-        # separator.setFrameShadow(QFrame.Sunken)
-        # form.addRow(separator)
-        form.addRow(self._include_masked_sweeps_checkbox)
-        form.addRow('Sweep X Offset', self._sweep_xoffset_edit)
-        form.addRow('Sweep Y Offset', self._sweep_yoffset_edit)
+        # form.addRow('Include Masked', self._include_masked_checkbox)
+        # form.addRow('Apply Offsets', self._apply_offsets_checkbox)
+        # form.addRow('Offsets', self._offsets_edit)
+        # form.addRow(format_separator)
+        # form.addRow(' ', None)
         form.addRow('Line width', self._linewidth_spinbox)
         form.addRow('Axis label size', self._axislabel_fontsize_spinbox)
         form.addRow('Axis tick label size', self._axistick_fontsize_spinbox)
@@ -1244,7 +1401,14 @@ class DimIterWidget(QWidget):
         self._tile_action_group.addAction(self._tile_horizontally_action)
         self._tile_action_group.setExclusive(True)
 
-        self._label = QLabel('dim')
+        self._dim_label = QLabel('dim')
+        self._dim_label.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred))
+
+        self._size_label = QLabel(': n')
+        self._size_label.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred))
+        self._size_label_opacity_effect = QGraphicsOpacityEffect(self._size_label)
+        self._size_label_opacity_effect.setOpacity(0.5)
+        self._size_label.setGraphicsEffect(self._size_label_opacity_effect)
 
         self._xdim_button = QToolButton(
             icon=get_icon('ph.arrow-line-down'),
@@ -1269,18 +1433,19 @@ class DimIterWidget(QWidget):
         grid = QGridLayout(self)
         grid.setContentsMargins(5, 2, 5, 2)
         grid.setSpacing(2)
-        grid.addWidget(self._label, 0, 0)
-        grid.addWidget(self._xdim_button, 0, 1)
-        grid.addWidget(self._tile_button, 0, 2)
-        grid.addWidget(self._spinbox, 1, 0, 1, 3)
+        grid.addWidget(self._dim_label, 0, 0)
+        grid.addWidget(self._size_label, 0, 1)
+        grid.addWidget(self._xdim_button, 0, 2)
+        grid.addWidget(self._tile_button, 0, 3)
+        grid.addWidget(self._spinbox, 1, 0, 1, 4)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
     
     def dim(self) -> str:
-        return self._label.text()
+        return self._dim_label.text()
     
     def setDim(self, dim: str) -> None:
-        self._label.setText(dim)
+        self._dim_label.setText(dim)
         if self._xgraph is not None:
             self.setParentXarrayGraph(self._xgraph)
     
@@ -1296,6 +1461,7 @@ class DimIterWidget(QWidget):
         if self._spinbox.selectedValues().size == 0 and coords.size > 0:
             self._spinbox.setIndices([0])
         self._spinbox.blockSignals(False)
+        self._size_label.setText(f': {coords.size}')
     
     def selectedCoords(self) -> np.ndarray:
         return self._spinbox.selectedValues()
@@ -1443,6 +1609,20 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> None:
                 )
 
 
+def find_branch_root(dt: xr.DataTree) -> xr.DataTree:
+    # Xarray DataTree requires that data must be aligned within a tree branch.
+    # Return the root of the branch containing dt above which nodes are no longer aligned.
+    while dt.parent is not None:
+        if not dt.parent.has_data:
+            break
+        try:
+            xr.align(dt.dataset, dt.parent.dataset, join='exact')
+            dt = dt.parent
+        except:
+            break
+    return dt
+
+
 def test_live():
     app = QApplication()
 
@@ -1451,7 +1631,16 @@ def test_live():
 
     dt: xr.DataTree = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
     dt.dataset = dt.to_dataset().assign({'GGE': dt['EEG']})
-    xg.datatree = dt
+
+    ds2 = dt.to_dataset().rename({'condition': 'trial', 'GGE': 'BEE'})
+    ds2['EEG'] += 1e-6
+    ds2['BEE'] += 1e-6
+
+    root = xr.DataTree()
+    root['Data'] = dt
+    root['Data2'] = ds2
+    
+    xg.datatree = root
     xg._datatree_view.setVariablesVisible(True)
     xg._datatree_view.expandAll()
     xg._datatree_view.setSelectedPaths(['/Data'])
