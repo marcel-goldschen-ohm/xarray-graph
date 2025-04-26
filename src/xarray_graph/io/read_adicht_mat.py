@@ -12,13 +12,13 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     # print(matdict)
 
     current = matdict['current']
-    if current.ndim == 1:
-        current = current.reshape((1, -1))  # (sweep, time)
+    # if current.ndim == 1:
+    #     current = current.reshape((1, -1))  # (sweep, time)
     current_units = matdict['current_units']
 
     voltage = matdict['voltage']
-    if voltage.ndim == 1:
-        voltage = voltage.reshape((1, -1))  # (sweep, time)
+    # if voltage.ndim == 1:
+    #     voltage = voltage.reshape((1, -1))  # (sweep, time)
     voltage_units = matdict['voltage_units']
     
     time = np.arange(current.shape[-1]) * matdict['time_interval_sec']
@@ -26,8 +26,8 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
 
     ds = xr.Dataset(
         data_vars={
-            'Im': xr.DataArray(data=current, dims=['sweep', 'time'], attrs={'units': current_units}),
-            'Vm': xr.DataArray(data=voltage, dims=['sweep', 'time'], attrs={'units': voltage_units}),
+            'Im': xr.DataArray(data=current, dims=['time'], attrs={'units': current_units}),
+            'Vm': xr.DataArray(data=voltage, dims=['time'], attrs={'units': voltage_units}),
         },
         coords={
             'time': xr.DataArray(data=time, dims=['time'], attrs={'units': time_units}),
