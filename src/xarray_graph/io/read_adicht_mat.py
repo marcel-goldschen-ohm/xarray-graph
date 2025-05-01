@@ -52,12 +52,13 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
 
 if __name__ == '__main__':
     filepath = 'your/path/to/file.mat'  # change this
+    filepath = 'examples/GOLabChart.mat'
     dt = read_adicht_mat(filepath)
     print(dt)
 
     import matplotlib.pyplot as plt
     for i, name in enumerate(dt.data_vars):
         plt.subplot(len(dt.data_vars), 1, i + 1)
-        dt[name].mean(dim='sweep').plot()
+        dt[name].plot()
     plt.tight_layout()
     plt.show()
