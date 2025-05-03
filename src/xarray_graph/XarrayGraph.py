@@ -279,6 +279,15 @@ class XarrayGraph(QMainWindow):
         self.datatree = dt
         self.datatree.attrs['filepath'] = str(filepath)
         self.setWindowTitle(filepath.name)
+
+        if not self._datatree_view.selectedPaths():
+            try:
+                nodes = list(self.datatree.children.values())[0].leaves
+                if nodes:
+                    paths = [node.path for node in nodes]
+                    self._datatree_view.setSelectedPaths(paths)
+            except:
+                pass
     
     def save(self) -> None:
         filepath = self.datatree.attrs.get('filepath', None)
