@@ -11,6 +11,62 @@ TODO:
 - measurements
 - summary branches
 - plugin system?
+
+.attrs['annotations'] = [
+    {
+        'type': ...
+        'position': ...
+        'group': ...
+        'locked': ...
+        'coords': {dim: values, ...}  # limit to slice of dataset
+        'data_vars': [name, ...]  # limit to selected data_vars
+        'text': ...
+        'text_vertical_alignment': ...
+        'text_horizontal_alignment': ...
+        'format': {...}
+    }
+    {
+        'type': 'vregion'
+        'position': {x-dim: [min, max]}
+        ...
+    }
+    {
+        'type': 'vline'
+        'position': {x-dim: value}
+        ...
+    }
+    {
+        'type': 'point'
+        'position': {x-dim: value, y-data_var: value}
+        ...
+    }
+    {
+        'type': 'text'
+        'position': {x-dim: value, y-data_var: value}
+        ...
+    }
+    {
+        'type': 'arrow',
+        'position': {x-dim: [start, end], y-data_var: [start, end]}
+        ...
+    }
+    {
+        'type': 'rect'
+        'position': {x-dim: [min, max], y-data_var: [min, max]}
+        ...
+    }
+    {
+        'type': 'ellipse'
+        'position': {x-dim: [min, max], y-data_var: [min, max]} <-- non-rotated bounding box
+        ...
+    }
+    {
+        'type': 'polygon'
+        'position': {x-dim: values, y-data_var: values}
+        'closed': bool
+        ...
+    }
+]
 """
 
 from __future__ import annotations
@@ -143,6 +199,7 @@ class XarrayGraph(QMainWindow):
         
         self._xdim = xdim
         self.refresh()
+        self.autoscale()
     
     def windows(self) -> list[XarrayGraph]:
         windows = []
@@ -298,7 +355,7 @@ class XarrayGraph(QMainWindow):
         self._update_datatree_view()
         self._update_control_panel_view()
         self._console.setVisible(self._toggle_console_action.isChecked())
-        self._update_regions()
+        self._update_annotation_items()
         self._on_tree_selection_changed()
     
     def replot(self) -> None:
@@ -335,46 +392,52 @@ class XarrayGraph(QMainWindow):
         self.refresh()
     
     def autoscale(self) -> None:
-        plots = self._plots.flatten().tolist()
-        
         xlinked_views = []
-        ylinked_views = []
         xlinked_range = []
-        ylinked_range = []
-        for plot in plots:
-            view = plot.getViewBox()
-            xlinked_view = view.linkedView(view.XAxis)
-            ylinked_view = view.linkedView(view.YAxis)
-            if (xlinked_view is None) and (ylinked_view is None):
-                view.enableAutoRange()
-            if xlinked_view is not None:
-                view.enableAutoRange(axis=view.YAxis)
-                xlim, ylim = view.childrenBounds()
-                xlinked_range.append(xlim)
-                if xlinked_view not in xlinked_views:
-                    xlinked_views.append(xlinked_view)
-                    xlim, ylim = xlinked_view.childrenBounds()
-                    xlinked_range.append(xlim)
-            if ylinked_view is not None:
-                view.enableAutoRange(axis=view.XAxis)
-                xlim, ylim = view.childrenBounds()
-                ylinked_range.append(ylim)
-                if ylinked_view not in ylinked_views:
-                    ylinked_views.append(ylinked_view)
-                    xlim, ylim = ylinked_view.childrenBounds()
-                    ylinked_range.append(ylim)
-            view.updateAutoRange()
+        n_vars, n_rows, n_cols = self._plots.shape
+        for i in range(n_vars):
+            ylinked_views = []
+            ylinked_range = []
+            for row in range(n_rows):
+                for col in range(n_cols):
+                    plot = self._plots[i, row, col]
+                    view = plot.getViewBox()
+                    xlinked_view = view.linkedView(view.XAxis)
+                    ylinked_view = view.linkedView(view.YAxis)
+                    if (xlinked_view is None) and (ylinked_view is None):
+                        view.enableAutoRange()
+                    elif xlinked_view is None:
+                        view.enableAutoRange(axis=view.XAxis)
+                    elif ylinked_view is None:
+                        view.enableAutoRange(axis=view.YAxis)
+                    view.updateAutoRange()
+
+                    if xlinked_view is not None:
+                        xlim, ylim = view.childrenBounds()
+                        xlinked_range.append(xlim)
+                        if xlinked_view not in xlinked_views:
+                            xlinked_views.append(xlinked_view)
+                            xlim, ylim = xlinked_view.childrenBounds()
+                            xlinked_range.append(xlim)
+                    if ylinked_view is not None:
+                        xlim, ylim = view.childrenBounds()
+                        ylinked_range.append(ylim)
+                        if ylinked_view not in ylinked_views:
+                            ylinked_views.append(ylinked_view)
+                            xlim, ylim = ylinked_view.childrenBounds()
+                            ylinked_range.append(ylim)
+            
+            if ylinked_views:
+                ymin = np.min(ylinked_range)
+                ymax = np.max(ylinked_range)
+                for view in ylinked_views:
+                    view.setYRange(ymin, ymax)
         
         if xlinked_views:
             xmin = np.min(xlinked_range)
             xmax = np.max(xlinked_range)
             for view in xlinked_views:
                 view.setXRange(xmin, xmax)
-        if ylinked_views:
-            ymin = np.min(ylinked_range)
-            ymax = np.max(ylinked_range)
-            for view in ylinked_views:
-                view.setYRange(ymin, ymax)
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
@@ -468,7 +531,66 @@ class XarrayGraph(QMainWindow):
         hcoords = None if hdim is None else self._selected_vars_visible_coords[hdim].values
         return vdim, hdim, vcoords, hcoords
     
-    def _get_regions(self, root: xr.DataTree = None) -> tuple[list[str], list[dict]]:
+    def _get_annotations(self, root: xr.DataTree = None) -> list[dict]:
+        if root is None:
+            root = self.datatree
+        
+        annotations = []
+        for node in root.subtree:
+            annotations += node.attrs.get('annotations', [])
+            for name in node.data_vars:
+                var = node.data_vars[name]
+                annotations += var.attrs.get('annotations', [])
+        return annotations
+    
+    def _get_annotation_path(self, annotation: dict) -> str | None:
+        for node in self.datatree.subtree:
+            if ('annotations' in node.attrs) and (annotation in node.attrs['annotations']):
+                return node.path
+            for name in node.data_vars:
+                var = node.data_vars[name]
+                if ('annotations' in var.attrs) and (annotation in var.attrs['annotations']):
+                    return node.path + '/' + name
+    
+    def _get_annotation_plots(self, annotation: dict) -> list[pgx.Plot]:
+        atype = annotation.get('type', None)
+        pos = annotation.get('position', {})
+        dims = tuple(pos.keys())
+        
+        try:
+            xdim = dims[0]
+        except IndexError:
+            xdim = None
+        if xdim != self.xdim:
+            return []
+        try:
+            ydim = dims[1]
+        except IndexError:
+            ydim = None
+        
+        path = self._get_annotation_path(annotation)
+        obj = self.datatree[path]
+        data_vars = annotation.get('data_vars', [])
+        coords = annotation.get('coords', {})
+        if coords:
+            coords_ds = self._datatree_combined_coords.sel(coords)
+        
+        plots = []
+        for plot in self._plots.flatten().tolist():
+            if ydim is not None:
+                if ydim not in plot._info['data_vars']:
+                    continue
+            if data_vars:
+                if not [name for name in data_vars if name in plot._info['data_vars']]:
+                    continue
+            if coords:
+                a, b = xr.align([coords_ds, plot._info['coords']])
+                if np.array(a.sizes.values()).prod() == 0:
+                    continue
+            plots.append(plot)
+        return plots
+    
+    def ___OLD_get_regions(self, root: xr.DataTree = None) -> tuple[list[str], list[dict]]:
         if root is None:
             root = self.datatree
         
@@ -486,20 +608,20 @@ class XarrayGraph(QMainWindow):
                         regions.append(region)
         return paths, regions
     
-    def _get_selected_regions(self) -> tuple[list[str], list[dict]]:
+    def ___OLD_get_selected_regions(self) -> tuple[list[str], list[dict]]:
         paths, regions = self._get_regions()
         selected_regions = regions # TODO...
         selected_paths = [paths[regions.index(region)] for region in selected_regions]
         return selected_paths, selected_regions
     
-    def _set_selected_regions(self, regions: list[dict]) -> None:
+    def ___OLD_set_selected_regions(self, regions: list[dict]) -> None:
         all_paths, all_regions = self._get_regions()
         self._selected_regions = [region for region in regions if region in all_regions]
         self._selected_region_paths = [all_paths[all_regions.index(region)] for region in self._selected_regions]
         # TODO: update selection UI
         self._update_active_regions()
     
-    def _get_regions_overlapping_current_selection(self, regions: list[dict]) -> list[dict]:
+    def ___OLD_get_regions_overlapping_current_selection(self, regions: list[dict]) -> list[dict]:
         overlapping_regions = []
         for region in regions:
             lims: dict[str, tuple] = region['region']
@@ -615,10 +737,15 @@ class XarrayGraph(QMainWindow):
         # update plot grids
         self._update_plot_grids()
     
-    # def _on_points_selection_changed(self) -> None:
-    #     pass
+    def _on_annotation_item_changed(self, item: QGraphicsObject) -> None:
+        annotation = getattr(item, '_annotation', None)
+        if annotation is None:
+            return
+        
+        self._update_annotation_from_item(item)
+        self._update_annotation_items([annotation])  # in case annotation viewed in multiple plots
     
-    def _on_region_item_changed(self, item: pgx.XAxisRegion) -> None:
+    def ___OLD_on_region_item_changed(self, item: pgx.XAxisRegion) -> None:
         region = getattr(item, '_region_ref', None)
         if region is None:
             return
@@ -646,33 +773,46 @@ class XarrayGraph(QMainWindow):
         # plot: pgx.Plot = view.parentItem()
 
         if isinstance(item, pgx.XAxisRegion):
-            # get region info from item
-            #pgx.editAxisRegion(item, parent=self)
-            region: dict = item.getState(dim=self.xdim)
-            item._region_ref = region
+            # # get region info from item
+            # #pgx.editAxisRegion(item, parent=self)
+            # region: dict = item.getState(dim=self.xdim)
+            # item._region_ref = region
             
-            # remove initial region (we'll add it to all plots with appropriate signals/slots during update of regions)
-            view.removeItem(item)
-            QTimer.singleShot(10, lambda item=item: item.deleteLater())  # slight delay avoids segfault!?
+            # # remove initial region (we'll add it to all plots with appropriate signals/slots during update of regions)
+            # view.removeItem(item)
+            # QTimer.singleShot(10, lambda item=item: item.deleteLater())  # slight delay avoids segfault!?
             
-            # draw one region at a time
+            # # draw one region at a time
+            # self._stop_drawing_items()
+
+            # # add region to datatree
+            # if 'regions' not in self.datatree.attrs:
+            #     self.datatree.attrs['regions'] = []
+            # self.datatree.attrs['regions'].append(region)
+
+            # # if not previously showing regions, deselect all regions for xdim except the new one
+            # if not self._show_regions_checkbox.isChecked():
+            #     selected_regions_without_xdim = [region for region in self._selected_regions if self.xdim not in region['region']]
+            #     self._set_selected_regions(selected_regions_without_xdim + [region])
+            # else:
+            #     self._set_selected_regions(self._selected_regions + [region])
+            
+            # # ensure new region is visible
+            # if not self._show_regions_checkbox.isChecked():
+            #     self._show_regions_checkbox.setChecked(True)
+
+            if 'annotations' not in self.datatree.attrs:
+                self.datatree.attrs['annotations'] = []
+            annotation = {
+                'type': 'vregion',
+                'position': {self.xdim: item.getRegion()},
+            }
+            self.datatree.attrs['annotations'].append(annotation)
             self._stop_drawing_items()
-
-            # add region to datatree
-            if 'regions' not in self.datatree.attrs:
-                self.datatree.attrs['regions'] = []
-            self.datatree.attrs['regions'].append(region)
-
-            # if not previously showing regions, deselect all regions for xdim except the new one
-            if not self._show_regions_checkbox.isChecked():
-                selected_regions_without_xdim = [region for region in self._selected_regions if self.xdim not in region['region']]
-                self._set_selected_regions(selected_regions_without_xdim + [region])
-            else:
-                self._set_selected_regions(self._selected_regions + [region])
-            
-            # ensure new region is visible
-            if not self._show_regions_checkbox.isChecked():
-                self._show_regions_checkbox.setChecked(True)
+            item._annotation = annotation
+            self._update_item_from_annotation(item)
+            self._setup_annotation_item_connections(item)
+            self._update_annotation_items([annotation])  # in case annotation viewed in multiple plots
 
         if isinstance(item, pg.RectROI):
             # select points in ROI
@@ -819,7 +959,7 @@ class XarrayGraph(QMainWindow):
         self._update_axes_tick_font()
         self._update_axes_linking()
         self._update_plot_items()
-        self._update_region_items()
+        self._update_annotation_items()
     
     def _update_plot_info(self) -> None:
         vdim, hdim, vcoords, hcoords = self._get_current_tile_dims()
@@ -1028,7 +1168,89 @@ class XarrayGraph(QMainWindow):
             # for button in buttons:
             #     button.setIconSize(icon_size)
     
-    def _update_regions(self) -> None:
+    def _update_annotation_items(self, annotations: list[dict] = None) -> None:
+        print('_update_annotation_items()')
+        plots = self._plots.flatten().tolist()
+        if annotations is None:
+            annotations = self._get_annotations()
+            # TODO: selected annotations only
+
+            # remove nonselected annotations from plots
+            # unless we specified to update specific annotations, then assume all others are unchanged
+            for plot in plots:
+                annotation_items = [item for item in plot.vb.allChildren() if getattr(item, '_annotation', None)]
+                items_to_remove = [item for item in annotation_items if item._annotation not in annotations]
+                for item in items_to_remove:
+                    plot.vb.removeItem(item)
+                    item.deleteLater()
+
+        # add or update selected annotations in associated plots
+        # and remove the annotation from any nonassociated plots
+        for annotation in annotations:
+            # add or update annotation in these plots
+            plots_with_annotation = self._get_annotation_plots(annotation)
+            for plot in plots_with_annotation:
+                items = [item for item in plot.vb.allChildren() if getattr(item, '_annotation', None) is annotation]
+                try:
+                    item = items[0]
+                    self._update_item_from_annotation(item)
+                except (ValueError, IndexError):
+                    item = self._add_annotation_to_plot(annotation, plot)
+            
+            # remove annotation from these plots
+            plots_without_annotation = [plot for plot in plots if plot not in plots_with_annotation]
+            for plot in plots_without_annotation:
+                items = [item for item in plot.vb.allChildren() if getattr(item, '_annotation', None) is annotation]
+                try:
+                    item = items[0]
+                    plot.vb.removeItem(item)
+                    item.deleteLater()
+                except (ValueError, IndexError):
+                    pass
+    
+    def _update_item_from_annotation(self, item: QGraphicsObject) -> None:
+        annotation = getattr(item, '_annotation', None)
+        if annotation is None:
+            return
+        
+        atype = annotation.get('type', '').lower()
+        if atype == 'vregion':
+            item.setRegion(annotation['position'][self.xdim])
+    
+    def _update_annotation_from_item(self, item: QGraphicsObject) -> None:
+        annotation = getattr(item, '_annotation', None)
+        if annotation is None:
+            return
+        
+        atype = annotation.get('type', '').lower()
+        if atype == 'vregion':
+            annotation['position'][self.xdim] = item.getRegion()
+    
+    def _add_annotation_to_plot(self, annotation: dict, plot: pgx.Plot) -> QGraphicsObject:
+        atype = annotation.get('type', '').lower()
+        if atype == 'vregion':
+            item = pgx.XAxisRegion()
+        else:
+            return
+        item._annotation = annotation
+        self._update_item_from_annotation(item)
+        self._setup_annotation_item_connections(item)
+        plot.vb.addItem(item)
+        item.setZValue(0)
+        return item
+    
+    def _setup_annotation_item_connections(self, item: QGraphicsObject) -> None:
+        annotation = getattr(item, '_annotation', None)
+        if annotation is None:
+            return
+        
+        atype = annotation.get('type', '').lower()
+        if atype == 'vregion':
+            item.sigRegionChanged.connect(lambda item=item: self._on_annotation_item_changed(item))
+            item.sigRegionDragFinished.connect(lambda item=item: self._on_annotation_item_changed(item))
+            item.sigEditingFinished.connect(lambda item=item: self._on_annotation_item_changed(item))
+    
+    def ___OLD_update_regions(self) -> None:
         # all regions in datatree
         self._region_paths, self._regions = self._get_regions()
 
@@ -1038,12 +1260,12 @@ class XarrayGraph(QMainWindow):
         # active regions = selected regions overlapping current slice of datatree
         self._update_active_regions()
     
-    def _update_active_regions(self) -> None:
+    def ___OLD_update_active_regions(self) -> None:
         self._active_regions = self._get_regions_overlapping_current_selection(self._selected_regions)
         self._active_region_paths = [self._selected_region_paths[self._selected_regions.index(region)] for region in self._selected_regions]
         self._update_region_items()
     
-    def _update_region_items(self) -> None:
+    def ___OLD_update_region_items(self) -> None:
         regions = getattr(self, '_active_regions', [])
         if not regions or not self._show_regions_checkbox.isChecked():
             self._clear_region_items()
@@ -1067,7 +1289,7 @@ class XarrayGraph(QMainWindow):
             for region in regions_to_add:
                 self._add_region_item(region, [plot])
     
-    def _add_region_item(self, region: dict, plots: list[pgx.Plot] = None) -> None:
+    def ___OLD_add_region_item(self, region: dict, plots: list[pgx.Plot] = None) -> None:
         if plots is None:
             plots = self._plots.flatten().tolist()
         
@@ -1092,14 +1314,14 @@ class XarrayGraph(QMainWindow):
             plot.vb.addItem(item)
             item.setZValue(0)
     
-    def _clear_region_items(self) -> None:
+    def ___OLD_clear_region_items(self) -> None:
         for plot in self._plots.flatten().tolist():
             items = [item for item in plot.vb.allChildren() if isinstance(item, pgx.XAxisRegion)]
             for item in items:
                 plot.vb.removeItem(item)
                 item.deleteLater()
     
-    def _delete_region(self, region) -> None:
+    def ___OLD_delete_region(self, region) -> None:
         paths, regions = self._get_regions()
         i = regions.index(region)
         if i == -1:
@@ -1108,25 +1330,25 @@ class XarrayGraph(QMainWindow):
         self.datatree[path].attrs['regions'].remove(region)
         self._update_regions()
     
-    def _clear_active_regions(self) -> None:
+    def ___OLD_clear_active_regions(self) -> None:
         answer = QMessageBox.question(self, 'Clear Regions?', 'Clear all active regions?')
         if answer != QMessageBox.StandardButton.Yes:
             return
         self._set_selected_regions([])
     
-    def _group_active_regions(self) -> None:
+    def ___OLD_group_active_regions(self) -> None:
         regions = getattr(self, '_active_regions', [])
         if not regions:
             return
         # TODO
 
-    def _format_active_regions(self) -> None:
+    def ___OLD_format_active_regions(self) -> None:
         regions = getattr(self, '_active_regions', [])
         if not regions:
             return
         # TODO
 
-    def _assign_active_regions(self) -> None:
+    def ___OLD_assign_active_regions(self) -> None:
         regions = getattr(self, '_active_regions', [])
         if not regions:
             return
@@ -1267,18 +1489,21 @@ class XarrayGraph(QMainWindow):
         self._export_menu.addAction('HDF5', lambda: self.saveAs(filetype='HDF5'))
 
         self._selection_menu = menubar.addMenu('Selection')
-        self._selection_menu.addAction('Select New Region', QKeySequence('R'), lambda: self._start_drawing_items(pgx.XAxisRegion))
-        self._selection_menu.addSeparator()
-        self._selection_menu.addAction('Toggle Visibility of Active Regions', QKeySequence('T'), lambda: self._show_regions_checkbox.setChecked(not self._show_regions_checkbox.isChecked()))
-        # self._selection_menu.addAction('Clear Active Regions', QKeySequence('C'), self._clear_active_regions)
-        self._selection_menu.addAction('Group Active Regions', QKeySequence('G'), self._group_active_regions)
-        self._selection_menu.addAction('Format Active Regions', QKeySequence('F'), self._format_active_regions)
-        self._selection_menu.addAction('Assign Active Regions to DataTree', QKeySequence('A'), self._assign_active_regions)
+        self._selection_menu.addAction('Select Region', QKeySequence('R'), lambda: self._start_drawing_items(pgx.XAxisRegion))
+        # self._selection_menu.addSeparator()
+        # self._selection_menu.addAction('Toggle Visibility of Active Regions', QKeySequence('T'), lambda: self._show_regions_checkbox.setChecked(not self._show_regions_checkbox.isChecked()))
+        # # self._selection_menu.addAction('Clear Active Regions', QKeySequence('C'), self._clear_active_regions)
+        # self._selection_menu.addAction('Group Active Regions', QKeySequence('G'), self._group_active_regions)
+        # self._selection_menu.addAction('Format Active Regions', QKeySequence('F'), self._format_active_regions)
+        # self._selection_menu.addAction('Assign Active Regions to DataTree', QKeySequence('A'), self._assign_active_regions)
         # self._selection_menu.addSeparator()
         # self._selection_menu.addAction('Point Selection Brush', QKeySequence('B'), lambda: self._start_drawing_items(pg.RectROI))
         self._selection_menu.addSeparator()
         self._selection_menu.addAction('Mask Selection', QKeySequence('M'))
         self._selection_menu.addAction('Unmask Selection', QKeySequence('U'))
+
+        self._annotation_menu = menubar.addMenu('Annotation')
+        self._annotation_menu.addAction('Add Region', lambda: self._start_drawing_items(pgx.XAxisRegion))
     
     def _init_top_toolbar(self) -> None:
         self._top_toolbar = QToolBar()
@@ -1771,6 +1996,7 @@ def test_live():
     ds2 = dt.to_dataset().rename({'condition': 'trial', 'GGE': 'BEE'})
     ds2['EEG'] += 1e-6
     ds2['BEE'] += 1e-6
+    ds2['BEE'] *= 10
 
     root = xr.DataTree()
     root['Data'] = dt
