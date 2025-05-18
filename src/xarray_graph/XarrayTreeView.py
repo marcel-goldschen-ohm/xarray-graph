@@ -21,12 +21,12 @@ class XarrayTreeView(TreeView):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
         # optionally show vars and coords
-        self._showVarsAction = QAction('Show Vars')
+        self._showVarsAction = QAction('Show Variables')
         self._showVarsAction.setCheckable(True)
         self._showVarsAction.setChecked(True)
         self._showVarsAction.triggered.connect(self.refresh)
 
-        self._showCoordsAction = QAction('Show Coords')
+        self._showCoordsAction = QAction('Show Coordinates')
         self._showCoordsAction.setCheckable(True)
         self._showCoordsAction.setChecked(True)
         self._showCoordsAction.triggered.connect(self.refresh)

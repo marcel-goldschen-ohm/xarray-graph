@@ -35,12 +35,14 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     )
 
     if 'events' in matdict and matdict['events']:
-        ds.attrs['regions'] = []
+        ds.attrs['ROIs'] = []
         for event in matdict['events']:
             time = event['time_sec']
             text = event['text']
-            ds.attrs['regions'].append({
-                'region': [time, time],
+            ds.attrs['ROIs'].append({
+                'type': 'vregion',
+                'position': {'time': [time, time]},
+                'movable': False,
                 'text': text,
             })
     

@@ -30,8 +30,8 @@ class XarrayTreeModel(AbstractTreeModel):
     def setDataTree(self, dt: xr.DataTree | None, include_vars: bool = True, include_coords: bool = True) -> None:
         self._dataTree = dt
         if dt is None:
-            root = AbstractTreeItem()
-            self.setRoot(root)
+            root_item = AbstractTreeItem()
+            self.setRoot(root_item)
             return
         root_item: AbstractTreeItem = AbstractTreeItem(name=dt.name, parent=None)
         for node in dt.subtree:
