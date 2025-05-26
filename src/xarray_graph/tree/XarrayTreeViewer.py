@@ -7,7 +7,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 from pyqt_ext.tree import AbstractTreeItem, KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
-from xarray_graph import XarrayTreeModel, XarrayTreeView
+from xarray_graph.tree import XarrayTreeModel, XarrayTreeView
 
 
 class XarrayTreeViewer(QSplitter):

@@ -8,7 +8,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 from pyqt_ext.tree import AbstractTreeItem, TreeView
-from xarray_graph import AnnotationTreeModel
+from xarray_graph.tree import AnnotationTreeModel
 
 
 class AnnotationTreeView(TreeView):
@@ -53,11 +53,15 @@ class AnnotationTreeView(TreeView):
         TreeView.setModel(self, model)
         self.refresh()
     
-    def selectedAnnotations(self) -> list[dict]:
+    def selectedAnnotations(self, returnPaths: bool = False) -> list[dict]:
         model: AnnotationTreeModel = self.model()
         if model is None:
+            if returnPaths:
+                return [], []
             return []
         annotations = []
+        if returnPaths:
+            paths = []
         for index in self.selectionModel().selectedIndexes():
             item = model.itemFromIndex(index)
             if item is None:
@@ -66,6 +70,21 @@ class AnnotationTreeView(TreeView):
                 annotation = getattr(item, '_data', None)
                 if annotation is not None:
                     annotations.append(annotation)
+                    if returnPaths:
+                        parentItem = item.parent
+                        if isinstance(parentItem._data, str):
+                            parentItem = item.parent
+                        obj = parentItem._data
+                        if isinstance(obj, xr.DataTree):
+                            paths.append(obj.path)
+                        elif isinstance(obj, xr.DataArray):
+                            name = obj.name
+                            obj = parentItem.parent._data
+                            paths.append(f'{obj.path}/{name}')
+                        else:
+                            paths.append(None)
+        if returnPaths:
+            return annotations, paths
         return annotations
 
     def setSelectedAnnotations(self, annotations: list[dict]) -> None:
@@ -88,9 +107,6 @@ class AnnotationTreeView(TreeView):
             self.selectionModel().select(toSelect, flags)
         self._clearSelectionAccumulators()
         self._updateSelection()
-    
-    def _deleteSelection(self) -> None:
-        pass # TODO
     
     @Slot(QItemSelection, QItemSelection)
     def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection):
