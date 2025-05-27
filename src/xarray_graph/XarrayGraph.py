@@ -1,18 +1,20 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- open branch in new window
+- major refactor to make functionality more modular, extensible, maintainable, and clear
+- add extensive comments
+- add unit tests
+- separate datatree for preview?
+- fix autosdcale bug for linked views with different xlims
 - limit branch ROIs to their branch
-- allow moving ROIs to root node
 - skip entirely masked traces when not showing masked
 - load multiple files as distinct branches
     - notes per branch?
     - per branch default xdim?
-- curve fitting
-- baseline correction
-- rundown correction
 - measurements
 - format selected ROIs
-- store ROI format (but not if default)?
+- persistant format settings for graphs and ROIs
 - abf file support
 - checkbox for selecting/deselecting all data_vars in filter menu
 - hide nonselected data_var filter checkboxes?
@@ -405,26 +407,34 @@ class XarrayGraph(QMainWindow):
 
                     if xlinked_view is not None:
                         xlim, ylim = view.childrenBounds()
-                        xlinked_range.append(xlim)
+                        # print(xlim, ylim)
+                        if xlim is not None:
+                            xlinked_range.append(xlim)
                         if xlinked_view not in xlinked_views:
                             xlinked_views.append(xlinked_view)
                             xlim, ylim = xlinked_view.childrenBounds()
-                            xlinked_range.append(xlim)
+                            if xlim is not None:
+                                xlinked_range.append(xlim)
                     if ylinked_view is not None:
                         xlim, ylim = view.childrenBounds()
-                        ylinked_range.append(ylim)
+                        if ylim is not None:
+                            ylinked_range.append(ylim)
                         if ylinked_view not in ylinked_views:
                             ylinked_views.append(ylinked_view)
                             xlim, ylim = ylinked_view.childrenBounds()
-                            ylinked_range.append(ylim)
+                            if ylim is not None:
+                                ylinked_range.append(ylim)
             
             if ylinked_views:
+                ylinked_range = np.array(ylinked_range)
                 ymin = np.min(ylinked_range)
                 ymax = np.max(ylinked_range)
                 for view in ylinked_views:
                     view.setYRange(ymin, ymax)
         
         if xlinked_views:
+            # print(xlinked_range)
+            xlinked_range = np.array(xlinked_range)
             xmin = np.min(xlinked_range)
             xmax = np.max(xlinked_range)
             for view in xlinked_views:
@@ -502,7 +512,7 @@ class XarrayGraph(QMainWindow):
 
             vbox.addSpacing(20)
             vbox.addWidget(QLabel('Move To:'))
-            paths = [node.path for node in self.datatree.children.values()]
+            paths = ['/'] + [node.path for node in self.datatree.children.values()]
             model = QStringListModel(paths)
             view = QListView()
             view.setModel(model)
