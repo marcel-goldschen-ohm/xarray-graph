@@ -1945,7 +1945,12 @@ class XarrayGraph(QMainWindow):
     
     def _update_ROI_font(self) -> None:
         """ Use settings font for all ROI regions in each plot. """
-        pass # TODO
+
+        for plot in self._plots.flatten().tolist():
+            view: pgx.View = plot.getViewBox()
+            for item in view.allChildren():
+                if isinstance(item, pgx.XAxisRegion):
+                    item.setFontSize(self._ROI_fontsize_spinbox.value())
 
     def _update_curve_fit_control_panel(self) -> None:
         fitTypes = [self._fitTypeComboBox.itemText(i) for i in range(self._fitTypeComboBox.count())]
@@ -1961,7 +1966,11 @@ class XarrayGraph(QMainWindow):
     
     def _update_icons(self) -> None:
         """ Apply settings icon options to all toolbar icons. """
-        pass # TODO
+
+        size = self._toolbar_iconsize_spinbox.value()
+        icon_size = QSize(size, size)
+        for toolbar in [self._top_toolbar, self._left_toolbar]:
+            toolbar.setIconSize(icon_size)
 
     def _init_UI(self) -> None:
         """ Initialize all UI components. """
