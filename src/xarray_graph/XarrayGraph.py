@@ -2002,7 +2002,7 @@ class XarrayGraph(QMainWindow):
                 yout[out_mask] = prediction
 
                 # show (or stop showing) residuals?
-                if update_data or (self._fitPreviewResidualsCheckbox.isChecked() and not no_residuals):
+                if update_data or (self._fitLivePreviewCheckbox.isChecked() and self._fitPreviewResidualsCheckbox.isChecked() and not no_residuals):
                     ymasked = None
                     masked_graph: pgx.Graph = data_graph._metadata.get('masked graph', None)
                     if masked_graph is not None:
@@ -2742,6 +2742,8 @@ class XarrayGraph(QMainWindow):
 
         self._fitPreviewResidualsCheckbox = QCheckBox('Preview Residuals', checked=False)
         self._fitPreviewResidualsCheckbox.stateChanged.connect(lambda state: self._update_curve_fit_preview(update_data=True))
+        self._fitPreviewResidualsCheckbox.setEnabled(self._fitLivePreviewCheckbox.isChecked())
+        self._fitLivePreviewCheckbox.stateChanged.connect(lambda state: self._fitPreviewResidualsCheckbox.setEnabled(self._fitLivePreviewCheckbox.isChecked()))
 
         self._fitButton = QPushButton('Fit')
         self._fitButton.pressed.connect(lambda: self._update_curve_fit_preview(force_preview=True))
