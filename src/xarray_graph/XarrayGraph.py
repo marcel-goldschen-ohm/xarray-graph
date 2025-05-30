@@ -1,8 +1,13 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
-- measurements
+- measurement dims/coords (deal with reductions)?
+- print preview params to console?
+- fix bugs where preview does not update as it should
+- centralize preview update logic? right now its all over the place
 - fix autoscale bug for linked views with different xlims
+- rename nodes in datatree view
+- move nodes within datatree view?
 - limit branch ROIs to their branch
 - skip entirely masked traces when not showing masked
 - window/branch management:
@@ -19,6 +24,7 @@ TODO:
 - format selected ROIs
 - persistant format settings for graphs and ROIs
 - abf file support
+- other file support? neurodata without borders?
 - checkbox for selecting/deselecting all data_vars in filter menu
 - hide nonselected data_var filter checkboxes?
 - plugin system?
@@ -150,7 +156,20 @@ class XarrayGraph(QMainWindow):
 
     def about(self) -> None:
         """ Popup about message dialog. """
-        pass # TODO
+
+        text = f"""
+        {self.__class__.__name__}
+        
+        PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
+
+        Author: Marcel Goldschen-Ohm
+
+        Repository: https://github.com/marcel-goldschen-ohm/xarray-graph
+        PyPI: https://pypi.org/project/xarray-graph
+        """
+        text = textwrap.dedent(text).strip()
+        
+        QMessageBox.about(self, f'About {self.__class__.__name__}', text)
 
     def settings(self) -> None:
         """ Popup settings panel. """
@@ -741,17 +760,17 @@ class XarrayGraph(QMainWindow):
     def saveCurveFit(self) -> None:
         """ Save the current curve fit preview to the datatree. """
 
-        # get the node name for the fit
+        # get the node name under which to save the fits
         fitType = self._fitTypeComboBox.currentText()
         result_name, ok = QInputDialog.getText(self, 'Save Curve Fit As', 'Fit dataset name:', text=f'{fitType}')
         if not ok or not result_name:
             return
 
-        # ensure fit has not been zeroed to show residuals
+        # ensure curve fit has not been zeroed to show residuals
         if self._fitPreviewResidualsCheckbox.isChecked():
             self._update_curve_fit_preview(force_preview=True, no_residuals=True)
         
-        # gather fit results and associated paths
+        # gather fit results (preview) and associated paths
         result_var_paths = []
         result_node_paths = []
         new_result_vars = []
@@ -787,7 +806,7 @@ class XarrayGraph(QMainWindow):
                 result_node_paths.append(result_node_path)
                 new_result_vars.append(new_result_var)
 
-        # save fit results to datatree
+        # save fits to datatree
         for result_node_path, result_var_path, new_result_var in zip(result_node_paths, result_var_paths, new_result_vars):
             var_name = new_result_var.name
             try:
@@ -806,7 +825,7 @@ class XarrayGraph(QMainWindow):
                 new_result_mask = ~(new_result_var.isnull().values)
                 existing_result_var.values[new_result_mask] = new_result_var.values[new_result_mask]
         
-        # switch to datatree panel (also stops any curve fit live preview/residuals)
+        # switch to datatree panel (also stops any live preview/residuals)
         self._toggle_datatree_panel_action.setChecked(True)
 
         # update datatree view and plots (in case we added new nodes/data_vars)
@@ -820,7 +839,93 @@ class XarrayGraph(QMainWindow):
             if not self._datatree_view.isExpanded(index):
                 self._datatree_view.setExpanded(index, True)
         
-        # ensure new fits are selected in datatree view
+        # ensure new results are selected in datatree view
+        selectedPaths = self._datatree_view.selectedPaths()
+        selectionChanged = False
+        for result_path in result_var_paths:
+            if result_path not in selectedPaths:
+                selectedPaths.append(result_path)
+                selectionChanged = True
+        if selectionChanged:
+            self._datatree_view.setSelectedPaths(selectedPaths)
+    
+    def saveMeasurement(self) -> None:
+        """ Save the current measurement preview to the datatree. """
+
+        # get the node name under which to save the measurements
+        measureType = self._measure_type_combobox.currentText()
+        result_name, ok = QInputDialog.getText(self, 'Save Measurement As', 'Measurement dataset name:', text=f'{measureType}')
+        if not ok or not result_name:
+            return
+        
+        # gather measurement results (preview) and associated paths
+        result_var_paths = []
+        result_node_paths = []
+        new_result_vars = []
+        for plot in self._plots.flatten().tolist():
+            # existing graphs in plot
+            graphs = [item for item in plot.listDataItems() if isinstance(item, pgx.Graph)]
+            preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
+            
+            for preview_graph in preview_graphs:
+                path = preview_graph._metadata.get('path', None)
+                if path is None:
+                    continue
+
+                var_name = path.rstrip('/').split('/')[-1]
+                parent_node_path = '/'.join(path.rstrip('/').split('/')[:-1])
+                parent_node = self.datatree[parent_node_path]
+
+                if result_name in parent_node.data_vars or result_name in parent_node.coords:
+                    QMessageBox.warning(self, 'Error', 'Dataset name cannot be the name of a variable or dimension.')
+                    return
+                
+                result_node_path = f'/{result_name}'
+                result_var_path = f'{result_node_path}/{var_name}'
+                
+                xmeasure, ymeasure = preview_graph.getOriginalDataset()
+
+                new_result_var = xr.DataArray(data=ymeasure, dims=[self.xdim], coords={self.xdim: xmeasure}, name=var_name)
+
+                result_var_paths.append(result_var_path)
+                result_node_paths.append(result_node_path)
+                new_result_vars.append(new_result_var)
+
+        # save fits to datatree
+        for result_node_path, result_var_path, new_result_var in zip(result_node_paths, result_var_paths, new_result_vars):
+            var_name = new_result_var.name
+            try:
+                result_node = self._datatree[result_node_path]
+            except KeyError:
+                result_node = None
+            if result_node is None:
+                # create new result node
+                self._datatree[result_node_path] = xr.Dataset(data_vars={var_name: new_result_var})
+            elif var_name not in result_node.data_vars:
+                # create new result data_var in existing node
+                result_node.dataset = result_node.to_dataset().assign({var_name: new_result_var})
+            else:
+                # update existing result data_var
+                existing_result_var = result_node[var_name]
+                new_result_mask = ~(new_result_var.isnull().values)
+                existing_result_var.values[new_result_mask] = new_result_var.values[new_result_mask]
+        
+        # switch to datatree panel (also stops any live preview)
+        self._toggle_datatree_panel_action.setChecked(True)
+
+        # update datatree view and plots (in case we added new nodes/data_vars)
+        print(self.datatree)
+        self.refresh()
+
+        # ensure result nodes are expanded
+        for result_node_path in result_node_paths:
+            item = self._datatree_view.model().root()
+            item = item[result_node_path.lstrip('/')]
+            index = self._datatree_view.model().indexFromItem(item)
+            if not self._datatree_view.isExpanded(index):
+                self._datatree_view.setExpanded(index, True)
+        
+        # ensure new results are selected in datatree view
         selectedPaths = self._datatree_view.selectedPaths()
         selectionChanged = False
         for result_path in result_var_paths:
@@ -1070,6 +1175,14 @@ class XarrayGraph(QMainWindow):
         if self.isROIsVisible() and self.selectedROIs():
             self._on_curve_fit_changed()
     
+    def _on_measurement_changed(self) -> None:
+        if self._measurement_live_preview_enabled():
+            self._update_measurement_preview()
+
+    def _on_measure_type_changed(self) -> None:
+        self._update_measurement_control_panel()
+        self._on_measurement_changed()
+    
     def _on_notes_changed(self) -> None:
         notes = self._notes_edit.toPlainText()
         if notes.strip() == '':
@@ -1158,14 +1271,8 @@ class XarrayGraph(QMainWindow):
     def _fit(self, x: np.ndarray, y: np.ndarray):
         """ Fit y(x) """
 
-        # remove NaN            and optionally limit to ROIs
+        # remove NaN
         mask = np.isnan(x) | np.isnan(y)
-        # if self._limitFitInputToROIsCheckbox.isChecked():
-        #     ROI_mask = np.full(x.shape, False, dtype=bool)
-        #     for ROI in self.selectedROIs():
-        #         xmin, xmax = ROI['position'][self.xdim]
-        #         ROI_mask[(x >= xmin) & (x <= xmax)] = True
-        #     mask &= ~ROI_mask
         if np.any(mask):
             x = x[~mask]
             y = y[~mask]
@@ -1318,6 +1425,33 @@ class XarrayGraph(QMainWindow):
     def _curve_fit_depends_on_ROIs(self) -> bool:
         return self._limitFitInputToROIsCheckbox.isChecked() or self._limitFitOutputToROIsCheckbox.isChecked()
     
+    def _measure(self, x: np.ndarray, y: np.ndarray) -> tuple[float | np.ndarray, float | np.ndarray]:
+        """ Measurement (reduction) for y(x) """
+
+        # remove NaN
+        mask = np.isnan(x) | np.isnan(y)
+        if np.any(mask):
+            x = x[~mask]
+            y = y[~mask]
+        
+        measureType = self._measure_type_combobox.currentText()
+        if measureType == 'Mean':
+            return np.mean(x), np.mean(y)
+        elif measureType == 'Median':
+            return np.mean(x), np.median(y)
+        elif measureType == 'Min':
+            i = np.argmin(y)
+            return x[i], y[i]
+        elif measureType == 'Max':
+            i = np.argmax(y)
+            return x[i], y[i]
+        elif measureType == 'AbsMax':
+            i = np.argmax(np.abs(y))
+            return x[i], y[i]
+    
+    def _measurement_live_preview_enabled(self) -> bool:
+        return self._toggle_measurement_panel_action.isChecked() and self._measureLivePreviewCheckbox.isChecked()
+    
     def _update_datatree_view(self) -> None:
         """ Update the datatree view for the current datatree. """
         self._datatree_view.setDataTree(self.datatree)
@@ -1452,11 +1586,27 @@ class XarrayGraph(QMainWindow):
         action2widget = {
             self._toggle_datatree_panel_action: self._datatree_viewer,
             self._toggle_curve_fit_panel_action: self._curve_fit_panel,
+            self._toggle_measurement_panel_action: self._measurement_panel,
             self._toggle_notes_panel_action: self._notes_edit,
         }
         widget = action2widget[action]
         self._left_panels_stack.setCurrentWidget(widget)
         self._left_panels_stack.setVisible(True)
+    
+    def _update_curve_fit_control_panel(self) -> None:
+        fitTypes = [self._fitTypeComboBox.itemText(i) for i in range(self._fitTypeComboBox.count())]
+        fitType = self._fitTypeComboBox.currentText()
+        self._polynomialGroupBox.setVisible(fitType == 'Polynomial')
+        self._splineGroupBox.setVisible(fitType == 'Spline')
+        isExpression = self._fitTypeComboBox.currentIndex() >= fitTypes.index('Expression')
+        self._expressionGroupBox.setVisible(isExpression)
+        if isExpression:
+            self._fitControlsSpacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        else:
+            self._fitControlsSpacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.MinimumExpanding)
+    
+    def _update_measurement_control_panel(self) -> None:
+        pass
     
     def _update_plot_grids(self) -> None:
         """ Update plot grids for selected variables and current plot tiling. """
@@ -1761,6 +1911,10 @@ class XarrayGraph(QMainWindow):
         if self._curve_fit_live_preview_enabled():
             self._update_curve_fit_preview()
 
+    def _update_preview(self) -> None:
+        self._update_curve_fit_preview()
+        self._update_measurement_preview()
+    
     def _update_curve_fit_preview(self, force_preview: bool = False, update_data: bool = False, no_residuals: bool = False) -> None:
         """ Update curve fit preview of currently plotted data. """
 
@@ -1895,6 +2049,91 @@ class XarrayGraph(QMainWindow):
                     plot.removeItem(graph)
                     graph.deleteLater()
     
+    def _update_measurement_preview(self, force_preview: bool = False) -> None:
+        """ Update measurement preview of currently plotted data. """
+
+        ROIs = self.selectedROIs()
+        has_ROIs = self.isROIsVisible() and ROIs
+        
+        for plot in self._plots.flatten().tolist():
+            # existing graphs in plot
+            graphs = [item for item in plot.listDataItems() if isinstance(item, pgx.Graph)]
+            data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
+
+            # clear all preview graphs
+            if not force_preview and not self._measurement_live_preview_enabled():
+                for graph in preview_graphs:
+                    plot.removeItem(graph)
+                    graph.deleteLater()
+                continue
+            
+            # update graphs in plot
+            preview_count = 0
+            for data_graph in data_graphs:
+                xdata, ydata = data_graph.getOriginalDataset()
+
+                # get measurement
+                if has_ROIs and self._measure_per_ROI_checkbox.isChecked():
+                    xmeasure = []
+                    ymeasure = []
+                    for ROI in ROIs:
+                        xmin, xmax = ROI['position'][self.xdim]
+                        ROI_mask = (xdata >= xmin) & (xdata <= xmax)
+                        x, y = self._measure(xdata[ROI_mask], ydata[ROI_mask])
+                        if isinstance(y, np.ndarray):
+                            xmeasure += x.tolist()
+                            ymeasure += y.tolist()
+                        else:
+                            xmeasure.append(x)
+                            ymeasure.append(y)
+                    xmeasure, ymeasure = np.array(xmeasure), np.array(ymeasure)
+                elif has_ROIs and self._measure_in_ROIs_only_checkbox.isChecked():
+                    ROI_mask = np.full(xdata.shape, False, dtype=bool)
+                    for ROI in ROIs:
+                        xmin, xmax = ROI['position'][self.xdim]
+                        ROI_mask[(xdata >= xmin) & (xdata <= xmax)] = True
+                    xdata = xdata.copy()
+                    ydata = ydata.copy()
+                    xdata[~ROI_mask] = np.nan
+                    ydata[~ROI_mask] = np.nan
+                    xmeasure, ymeasure = self._measure(xdata, ydata)
+                else:
+                    xmeasure, ymeasure = self._measure(xdata, ydata)
+                
+                if not isinstance(ymeasure, np.ndarray):
+                    xmeasure, ymeasure = np.array([xmeasure]), np.array([ymeasure])
+                
+                # graph measurement
+                if len(preview_graphs) > preview_count:
+                    # update existing data in plot
+                    preview_graph = preview_graphs[preview_count]
+                    preview_graph.setData(x=xmeasure, y=ymeasure)
+                else:
+                    # add new data to plot
+                    preview_graph = pgx.Graph(x=xmeasure, y=ymeasure)
+                    plot.addItem(preview_graph)
+                    preview_graphs.append(preview_graph)
+                preview_count += 1
+                        
+                preview_graph._metadata = copy(data_graph._metadata)
+                preview_graph._metadata['type'] = 'preview'
+                preview_graph.setZValue(2)
+                preview_graph.setName(data_graph.name() + ' preview')
+                style: pgx.GraphStyle = data_graph.graphStyle()
+                style['marker'] = 'o'
+                style['linestyle'] = 'none'
+                style['markeredgewidth'] = 2
+                style['color'] = '(255, 0, 0)'
+                preview_graph.setGraphStyle(style)
+            
+            # remove extra graph items from plot
+            for graphs, count in [(preview_graphs, preview_count)]:
+                while len(graphs) > count:
+                    graph = graphs.pop()
+                    plot.removeItem(graph)
+                    graph.deleteLater()
+    
     def _update_plot_ROIs(self) -> None:
         """ Update ROI regions in each plot to show current ROItree selection. """
 
@@ -1952,18 +2191,6 @@ class XarrayGraph(QMainWindow):
                 if isinstance(item, pgx.XAxisRegion):
                     item.setFontSize(self._ROI_fontsize_spinbox.value())
 
-    def _update_curve_fit_control_panel(self) -> None:
-        fitTypes = [self._fitTypeComboBox.itemText(i) for i in range(self._fitTypeComboBox.count())]
-        fitType = self._fitTypeComboBox.currentText()
-        self._polynomialGroupBox.setVisible(fitType == 'Polynomial')
-        self._splineGroupBox.setVisible(fitType == 'Spline')
-        isExpression = self._fitTypeComboBox.currentIndex() >= fitTypes.index('Expression')
-        self._expressionGroupBox.setVisible(isExpression)
-        if isExpression:
-            self._fitControlsSpacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
-        else:
-            self._fitControlsSpacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.MinimumExpanding)
-    
     def _update_icons(self) -> None:
         """ Apply settings icon options to all toolbar icons. """
 
@@ -1985,6 +2212,7 @@ class XarrayGraph(QMainWindow):
         self._init_settings()
         self._init_datatree_viewer()
         self._init_curve_fit_panel()
+        self._init_measurement_panel()
         self._init_notes_edit()
 
         self._data_var_views_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -1992,6 +2220,7 @@ class XarrayGraph(QMainWindow):
         self._left_panels_stack = QStackedWidget()
         self._left_panels_stack.addWidget(self._datatree_viewer)
         self._left_panels_stack.addWidget(self._curve_fit_panel)
+        self._left_panels_stack.addWidget(self._measurement_panel)
         self._left_panels_stack.addWidget(self._notes_edit)
 
         self._inner_vsplitter = QSplitter(Qt.Orientation.Vertical)
@@ -2150,6 +2379,15 @@ class XarrayGraph(QMainWindow):
             checkable=True, 
             checked=False)
 
+        self._toggle_measurement_panel_action = QAction(
+            parent=self, 
+            icon=get_icon('mdi.chart-scatter-plot'), 
+            iconVisibleInMenu=False,
+            text='Measure', 
+            toolTip='Measure', 
+            checkable=True, 
+            checked=False)
+
         self._toggle_notes_panel_action = QAction(
             parent=self, 
             icon=get_icon('mdi6.text-box-edit-outline'), 
@@ -2162,10 +2400,11 @@ class XarrayGraph(QMainWindow):
         self._left_panel_action_group = QActionGroup(self)
         self._left_panel_action_group.addAction(self._toggle_datatree_panel_action)
         self._left_panel_action_group.addAction(self._toggle_curve_fit_panel_action)
+        self._left_panel_action_group.addAction(self._toggle_measurement_panel_action)
         self._left_panel_action_group.addAction(self._toggle_notes_panel_action)
         self._left_panel_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
         self._left_panel_action_group.triggered.connect(lambda checked: self._update_left_panel())
-        self._left_panel_action_group.triggered.connect(lambda checked: self._update_curve_fit_preview())
+        self._left_panel_action_group.triggered.connect(lambda checked: self._update_preview())
 
         self._group_selected_ROIs_action = QAction(
             parent=self, 
@@ -2325,6 +2564,7 @@ class XarrayGraph(QMainWindow):
 
         self._left_toolbar.addAction(self._toggle_datatree_panel_action)
         self._left_toolbar.addAction(self._toggle_curve_fit_panel_action)
+        self._left_toolbar.addAction(self._toggle_measurement_panel_action)
         self._left_toolbar.addAction(self._toggle_notes_panel_action)
         self._left_toolbar.addWidget(vspacer)
         self._left_toolbar.addAction(self._settings_action)
@@ -2536,6 +2776,62 @@ class XarrayGraph(QMainWindow):
         self._curve_fit_panel.setWidgetResizable(True)
 
         self._update_curve_fit_control_panel()
+    
+    def _init_measurement_panel(self) -> None:
+        """ Initialize measurement control panel. """
+
+        self._measure_type_combobox = QComboBox()
+        self._measure_type_combobox.addItems(['Mean', 'Median'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
+        # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        # self._measure_type_combobox.addItems(['Peaks'])
+        # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        # self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
+        self._measure_type_combobox.currentIndexChanged.connect(self._on_measure_type_changed)
+
+        # options and buttons
+        self._measure_in_ROIs_only_checkbox = QCheckBox('Measure within ROIs only')
+        self._measure_in_ROIs_only_checkbox.setChecked(True)
+        self._measure_in_ROIs_only_checkbox.stateChanged.connect(lambda state: self._update_measurement_preview())
+
+        self._measure_per_ROI_checkbox = QCheckBox('Measure for each ROI')
+        self._measure_per_ROI_checkbox.setChecked(True)
+        self._measure_in_ROIs_only_checkbox.setEnabled(not self._measure_per_ROI_checkbox.isChecked)
+        self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self._measure_in_ROIs_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
+        self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self._update_measurement_preview())
+
+        self._measureLivePreviewCheckbox = QCheckBox('Live Preview', checked=False)
+        self._measureLivePreviewCheckbox.stateChanged.connect(lambda state: self._update_measurement_preview())
+
+        self._measureButton = QPushButton('Measure')
+        self._measureButton.pressed.connect(lambda: self._update_measurement_preview(force_preview=True))
+
+        self._saveMeasurementButton = QPushButton('Save Measurement')
+        self._saveMeasurementButton.pressed.connect(self.saveMeasurement)
+
+        # layout
+        vbox = QVBoxLayout()
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._measure_type_combobox)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._measure_in_ROIs_only_checkbox)
+        vbox.addWidget(self._measure_per_ROI_checkbox)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._measureLivePreviewCheckbox)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._measureButton)
+        vbox.addWidget(self._saveMeasurementButton)
+        vbox.addStretch()
+
+        # scroll area
+        self._measurement_panel = QScrollArea()
+        self._measurement_panel.setFrameShape(QFrame.Shape.NoFrame)
+        self._measurement_panel.setLayout(vbox)
+        self._measurement_panel.setWidgetResizable(True)
+
+        self._update_measurement_control_panel()
     
     def _init_notes_edit(self) -> None:
         """ Initialize notes editor. """
@@ -2868,16 +3164,20 @@ def find_aligned_root(dt: xr.DataTree) -> xr.DataTree:
 def find_subtree_alignment_roots(dt: xr.DataTree) -> list[xr.DataTree]:
     if dt.has_data:
         return [dt]
-    roots = []
+    roots: list[xr.DataTree] = []
     for node in dt.subtree:
-        if node.has_data and not node.parent.has_data:
-            ok = True
-            for root in roots:
-                if root in node.ancestors:
-                    ok = False
-                    break
-            if ok:
-                roots.append(node)
+        if not node.has_data:
+            continue
+        root: xr.DataTree = node
+        while root.parent is not None and root.parent.has_data:
+            root = root.parent
+        ok = True
+        for found_root in roots:
+            if root is found_root:
+                ok = False
+                break
+        if ok:
+            roots.append(root)
     return roots
 
 
