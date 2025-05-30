@@ -1,5 +1,8 @@
-from xarray_graph.XarrayGraph import XarrayGraph
+import requests
+import io
+import xarray as xr
 from qtpy.QtWidgets import QApplication, QMessageBox
+from xarray_graph.XarrayGraph import XarrayGraph
 
 
 def main():
@@ -17,26 +20,22 @@ def main():
     answer = QMessageBox.question(xg, 'Example?', 'Load example data?')
     if answer == QMessageBox.StandardButton.Yes:
         try:
-            load_example(xg)
+            xg.datatree = load_example()
+            xg._datatree_view.expandAll()
         except Exception as err:
             QMessageBox.critical(xg, 'Failed to load example', str(err))
     
     app.exec()
 
 
-def load_example(xg: XarrayGraph):
-    import xarray as xr
-    import requests
-    import io
-
+def load_example() -> xr.DataTree:
     url = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc'
     req = requests.get(url, stream=True)
     if req.status_code != 200:
         raise ValueError(f'Failed to download example data: request status code = {req.status_code}')
     
     dt: xr.DataTree = xr.open_datatree(io.BytesIO(req.content), 'h5netcdf')
-    xg.datatree = dt
-    xg._datatree_view.expandAll()
+    return dt
 
 
 if __name__ == '__main__':

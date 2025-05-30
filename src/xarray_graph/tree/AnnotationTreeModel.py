@@ -269,10 +269,10 @@ class AnnotationTreeModel(AbstractTreeModel):
 
 class AnnotationDndTreeModel(AnnotationTreeModel):
 
-    def __init__(self, dt: DataTree = None, parent: QObject = None):
+    def __init__(self, dt: xr.DataTree = None, parent: QObject = None):
         AnnotationTreeModel.__init__(self, dt=dt, parent=parent)
     
-    def supportedDropActions(self) -> Qt.DropActions:
+    def supportedDropActions(self) -> Qt.DropAction.ActionMask:
         return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
 
 
