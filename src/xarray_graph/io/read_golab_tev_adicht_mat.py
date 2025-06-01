@@ -4,21 +4,20 @@ import numpy as np
 import scipy as sp
 import xarray as xr
 
+
 def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     """Read data from a LabChart .adicht file that has been converted to a MATLAB .mat file into an xarray.Dataset.
     """
+    
+    from xarray_graph.XarrayGraph import ROI_KEY, MASK_KEY, NOTES_KEY
     
     matdict = sp.io.loadmat(str(filepath), simplify_cells=True)
     # print(matdict)
 
     current = matdict['current']
-    # if current.ndim == 1:
-    #     current = current.reshape((1, -1))  # (sweep, time)
     current_units = matdict['current_units']
 
     voltage = matdict['voltage']
-    # if voltage.ndim == 1:
-    #     voltage = voltage.reshape((1, -1))  # (sweep, time)
     voltage_units = matdict['voltage_units']
     
     time = np.arange(current.shape[-1]) * matdict['time_interval_sec']
@@ -35,11 +34,11 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     )
 
     if 'events' in matdict and matdict['events']:
-        ds.attrs['ROIs'] = []
+        ds.attrs[ROI_KEY] = []
         for event in matdict['events']:
             time = event['time_sec']
             text = event['text']
-            ds.attrs['ROIs'].append({
+            ds.attrs[ROI_KEY].append({
                 'type': 'vregion',
                 'position': {'time': [time, time]},
                 'movable': False,
@@ -47,7 +46,7 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
             })
     
     if 'notes' in matdict:
-        ds.attrs['notes'] = matdict['notes']
+        ds.attrs[NOTES_KEY] = matdict['notes']
     
     return xr.DataTree(dataset=ds)
 

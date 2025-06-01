@@ -1,6 +1,7 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- how to handle selecting non-aligned data?
 - measurement dims/coords (deal with reductions)?
 - print preview params to console?
 - fix bugs where preview does not update as it should
@@ -11,9 +12,8 @@ TODO:
 - limit branch ROIs to their branch
 - skip entirely masked traces when not showing masked
 - window/branch management:
-    - load multiple files as distinct branches
-        - notes per branch?
-        - per branch default xdim?
+    - notes per branch?
+    - per branch default xdim?
     - open branch in new window
     - merge/concat branches/windows
     - split branches into separate windows
@@ -23,6 +23,7 @@ TODO:
 - manage settings via hashable dict vs qt componenets
 - format selected ROIs
 - persistant format settings for graphs and ROIs
+- make loading adicht labchart matlab conversion generic (right now specific to golab dual TEV recordings)
 - abf file support
 - other file support? neurodata without borders?
 - checkbox for selecting/deselecting all data_vars in filter menu
@@ -196,11 +197,24 @@ class XarrayGraph(QMainWindow):
             if filetype == 'Zarr Directory':
                 filepath = QFileDialog.getExistingDirectory(self, 'Open Zarr Directory')
             else:
-                filepath, _ = QFileDialog.getOpenFileName(self, 'Open File')
+                filepath, _ = QFileDialog.getOpenFileNames(self, 'Open File(s)')
             if not filepath:
                 return
+            if isinstance(filepath, list) and len(filepath) == 1:
+                filepath = filepath[0]
+        
+        # handle sequence of multiple filepaths
+        if isinstance(filepath, list):
+            # filepath is a sequence of multiple filepaths
+            actions = [action] + ['merge'] * (len(filepath) - 1)
+            for path, action in zip(filepath, actions):
+                self.load(path, action=action)
+            return
+        
+        # ensure Path filepath object
         if isinstance(filepath, str):
             filepath = Path(filepath)
+        
         if not filepath.exists():
             QMessageBox.warning(self, 'File Not Found', f'File not found: {filepath}')
             return
@@ -269,11 +283,17 @@ class XarrayGraph(QMainWindow):
                 roots = list(datatree.children.values())
             for root in roots:
                 name = get_unique_name(root.name, list(self.datatree.children.keys()))
+                if not name.startswith(filepath.stem):
+                    name = f'{filepath.stem} {name}'
                 root.orphan()
                 root.name = name
                 self.datatree[f'/{name}'] = root
+            notes = datatree.attrs.get(NOTES_KEY, '')
+            if notes:
+                old_notes = self.datatree.attrs.get(NOTES_KEY, '')
+                self.datatree.attrs[NOTES_KEY] = old_notes + f'\n\n{filepath.stem}:\n' + notes
             self._filepath = None  # datatree is no longer for a single file
-            # TODO: merge notes
+            self.refresh()
         
         # update notes editor
         notes = self.datatree.attrs.get(NOTES_KEY, '')
@@ -1459,20 +1479,47 @@ class XarrayGraph(QMainWindow):
     def _update_ROItree_view(self) -> None:
         """ Update the ROI tree view for the current datatree selection. """
 
-        # limit paths to selected objects that have ROIs
+        # limit paths to selected objects that have ROIs (and their ancestor nodes)
         ROI_paths = []
         for path in self._selected_datatree_paths:
             obj = self.datatree[path]
             if ROI_KEY in obj.attrs:
                 ROI_paths.append(path)
+            if path == '/':
+                continue
+            if isinstance(obj, xr.DataTree):
+                parent_node = obj.parent
+            elif isinstance(obj, xr.DataArray):
+                parent_path = '/'.join(path.rstrip('/').split('/')[:-1])
+                parent_node = self.datatree[parent_path]
+            while parent_node is not None:
+                if ROI_KEY in parent_node.attrs and parent_node.path not in ROI_paths:
+                    ROI_paths.append(parent_node.path)
+                parent_node = parent_node.parent
+        
+        # order paths according to datatree
+        ordered_ROI_paths = []
+        if ROI_paths:
+            for node in self.datatree.subtree:
+                if node.path in ROI_paths:
+                    ordered_ROI_paths.append(node.path)
+                for name in node.data_vars:
+                    path = f'{node.path}/{name}'
+                    if path in ROI_paths:
+                        ordered_ROI_paths.append(path)
+                # for name in node.coords:
+                #     path = f'{node.path}/{name}'
+                #     if path in ROI_paths:
+                #         ordered_ROI_paths.append(path)
         
         # always include the root datatree node
-        ROI_paths = ['/'] + ROI_paths
+        if '/' not in ordered_ROI_paths:
+            ordered_ROI_paths = ['/'] + ordered_ROI_paths
         
         selected_ROIs = self._ROItree_view.selectedAnnotations()
         self._ROItree_view.blockSignals(True)
         self._ROItree_view.storeState()
-        self._ROItree_view.setDataTree(self.datatree, paths=ROI_paths, key=ROI_KEY)
+        self._ROItree_view.setDataTree(self.datatree, paths=ordered_ROI_paths, key=ROI_KEY)
         self._ROItree_view.restoreState()
         self._ROItree_view.setSelectedAnnotations(selected_ROIs)
         self._ROItree_view.blockSignals(False)
@@ -1900,7 +1947,7 @@ class XarrayGraph(QMainWindow):
             
             # remove extra graph items from plot
             cleanup_graphs = [(data_graphs, data_count), (masked_graphs, masked_count)]
-            if not self._curve_fit_live_preview_enabled():
+            if not self._curve_fit_live_preview_enabled() and not self._measurement_live_preview_enabled():
                 cleanup_graphs += [(preview_graphs, preview_count)]
             for graphs, count in cleanup_graphs:
                 while len(graphs) > count:
@@ -1910,10 +1957,14 @@ class XarrayGraph(QMainWindow):
         
         if self._curve_fit_live_preview_enabled():
             self._update_curve_fit_preview()
+        elif self._measurement_live_preview_enabled():
+            self._update_measurement_preview()
 
     def _update_preview(self) -> None:
-        self._update_curve_fit_preview()
-        self._update_measurement_preview()
+        if self._toggle_curve_fit_panel_action.isChecked():
+            self._update_curve_fit_preview()
+        else:
+            self._update_measurement_preview()
     
     def _update_curve_fit_preview(self, force_preview: bool = False, update_data: bool = False, no_residuals: bool = False) -> None:
         """ Update curve fit preview of currently plotted data. """
