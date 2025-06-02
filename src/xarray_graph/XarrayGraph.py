@@ -1,12 +1,16 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- apply preview filter before curve fit or measurement?
+- fix bug where not all linked views with different xlims are graphed
+    - maybe has to do with different xdim units in different branches?
 - how to handle selecting non-aligned data?
 - measurement dims/coords (deal with reductions)?
+- measure multiple peaks
 - print preview params to console?
+- align traces on onset of impulse response in signal
 - fix bugs where preview does not update as it should
 - centralize preview update logic? right now its all over the place
-- fix autoscale bug for linked views with different xlims
 - rename nodes in datatree view
 - move nodes within datatree view?
 - limit branch ROIs to their branch
@@ -17,6 +21,7 @@ TODO:
     - open branch in new window
     - merge/concat branches/windows
     - split branches into separate windows
+- implement other (non-gaussian) filters
 - refactor to make functionality more modular, extensible, maintainable, and clear
 - add extensive comments
 - add unit tests
@@ -777,6 +782,9 @@ class XarrayGraph(QMainWindow):
         
         self.refresh()
     
+    def saveFilteredData(self) -> None:
+        pass
+    
     def saveCurveFit(self) -> None:
         """ Save the current curve fit preview to the datatree. """
 
@@ -1148,6 +1156,9 @@ class XarrayGraph(QMainWindow):
         if self._curve_fit_live_preview_enabled() and self._curve_fit_depends_on_ROIs():
             self._update_curve_fit_preview()
 
+    def _on_filter_type_changed(self) -> None:
+        pass
+    
     def _on_curve_fit_changed(self) -> None:
         if self._curve_fit_live_preview_enabled():
             self._update_curve_fit_preview()
@@ -1287,6 +1298,33 @@ class XarrayGraph(QMainWindow):
         item.sigEditingFinished.connect(lambda: self._update_ROItree_view())
         
         item.setZValue(0)
+    
+    def _filter(self, x: xr.DataArray, y: xr.DataArray) -> xr.DataArray:
+
+        filterType = self._filter_type_combobox.currentText()
+        bandType = self._filter_band_type_combobox.currentText()
+        cutoffs = [float(fc) for fc in self._filter_cutoff_edit.text().split(',') if fc.strip() != '']
+        if not cutoffs:
+            return
+        cutoff_units = self._filter_cutoff_units_edit.text().strip()
+        
+        y = y.copy(deep=False) # do NOT copy y.values
+        dx = (x.values[1] - x.values[0])  # !!! assumes constant sample rate
+        xunits = x.attrs.get('units', None)
+
+        if filterType == 'Gaussian':
+            # must be lowpass
+            lowpass_cutoff = cutoffs[0]
+            if cutoff_units and xunits:
+                lowpass_cutoff *= UREG(cutoff_units)
+                dx *= UREG(xunits)
+                lowpass_cycles_per_sample = (lowpass_cutoff.to(f'1/{xunits}') * dx).magnitude
+            else:
+                lowpass_cycles_per_sample = lowpass_cutoff
+            sigma = 1 / (2 * np.pi * lowpass_cycles_per_sample)
+            y.values = sp.ndimage.gaussian_filter1d(y.values, sigma)
+        
+        return y
     
     def _fit(self, x: np.ndarray, y: np.ndarray):
         """ Fit y(x) """
@@ -1451,6 +1489,8 @@ class XarrayGraph(QMainWindow):
         # remove NaN
         mask = np.isnan(x) | np.isnan(y)
         if np.any(mask):
+            xoriginal = x
+            yoriginal = y
             x = x[~mask]
             y = y[~mask]
         
@@ -1468,6 +1508,43 @@ class XarrayGraph(QMainWindow):
         elif measureType == 'AbsMax':
             i = np.argmax(np.abs(y))
             return x[i], y[i]
+        elif measureType == 'Peaks':
+            peakType = self._measure_peak_type_combobox.currentText()
+            maxPeaks = self._max_num_peaks_per_region_spinbox.value()
+            npts = self._measure_peak_avg_half_width_spinbox.value()
+            
+            if peakType == 'Positive':
+                if maxPeaks == 1:
+                    # single peak
+                    peak_indices = [np.argmax(y)]
+                else:
+                    # multiple peaks
+                    pass # TODO
+            elif peakType == 'Negative':
+                if maxPeaks == 1:
+                    # single peak
+                    peak_indices = [np.argmin(y)]
+                else:
+                    # multiple peaks
+                    pass # TODO
+            
+            if npts == 0:
+                # value at peak
+                return x[peak_indices], y[peak_indices]
+            else:
+                # average around peak
+                xmeasure = []
+                ymeasure = []
+                for i, peak_index in enumerate(peak_indices):
+                    unmasked_indices = np.where(~mask)[0]
+                    within_peak_indices = unmasked_indices[max(0, peak_index - npts):min(peak_index + npts + 1, len(mask))]
+                    within_peak_indices = [i for i in within_peak_indices if ~mask[i]]
+                    xmeasure.append(np.mean(x[within_peak_indices]))
+                    ymeasure.append(np.mean(y[within_peak_indices]))
+                if len(ymeasure) == 1:
+                    return xmeasure[0], ymeasure[0]
+                else:
+                    return np.array(xmeasure), np.array(ymeasure)
     
     def _measurement_live_preview_enabled(self) -> bool:
         return self._toggle_measurement_panel_action.isChecked() and self._measureLivePreviewCheckbox.isChecked()
@@ -1632,6 +1709,7 @@ class XarrayGraph(QMainWindow):
         
         action2widget = {
             self._toggle_datatree_panel_action: self._datatree_viewer,
+            self._toggle_filter_panel_action: self._filter_panel,
             self._toggle_curve_fit_panel_action: self._curve_fit_panel,
             self._toggle_measurement_panel_action: self._measurement_panel,
             self._toggle_notes_panel_action: self._notes_edit,
@@ -1639,6 +1717,9 @@ class XarrayGraph(QMainWindow):
         widget = action2widget[action]
         self._left_panels_stack.setCurrentWidget(widget)
         self._left_panels_stack.setVisible(True)
+    
+    def _update_filter_control_panel(self) -> None:
+        pass
     
     def _update_curve_fit_control_panel(self) -> None:
         fitTypes = [self._fitTypeComboBox.itemText(i) for i in range(self._fitTypeComboBox.count())]
@@ -1653,7 +1734,8 @@ class XarrayGraph(QMainWindow):
             self._fitControlsSpacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.MinimumExpanding)
     
     def _update_measurement_control_panel(self) -> None:
-        pass
+        measureType = self._measure_type_combobox.currentText()
+        self._measure_peak_group.setVisible(measureType == 'Peaks')
     
     def _update_plot_grids(self) -> None:
         """ Update plot grids for selected variables and current plot tiling. """
@@ -1851,7 +1933,8 @@ class XarrayGraph(QMainWindow):
                         if not coords:
                             continue
                         data_var_slice = data_var.sel(coords)
-                    xdata = data_var_slice.coords[self.xdim].values
+                    xdim_coord_slice = data_var_slice.coords[self.xdim]
+                    xdata = xdim_coord_slice.values
                     ydata = data_var_slice.values
 
                     if np.all(np.isnan(ydata)):
@@ -1861,7 +1944,13 @@ class XarrayGraph(QMainWindow):
                     if not np.issubdtype(xdata.dtype, np.number):
                         intersect, xdata_indices, all_xtick_labels_indices = np.intersect1d(xdata, all_xtick_labels, assume_unique=True, return_indices=True)
                         xdata = np.sort(all_xtick_labels_indices)
+                        xdim_coord_slice = data_var_slice.coords[self.xdim].copy(data=xdata)
                     
+                    # filter data?
+                    if self._filterLivePreviewCheckbox.isChecked():
+                        ydata = self._filter(xdim_coord_slice, data_var_slice).values
+                    
+                    # mask data?
                     mask_slice = None
                     if (mask is not None) and (var_name != MASK_KEY):
                         mask_slice = mask.sel(coords)
@@ -2262,6 +2351,7 @@ class XarrayGraph(QMainWindow):
         self._init_left_toolbar()
         self._init_settings()
         self._init_datatree_viewer()
+        self._init_filter_panel()
         self._init_curve_fit_panel()
         self._init_measurement_panel()
         self._init_notes_edit()
@@ -2270,6 +2360,7 @@ class XarrayGraph(QMainWindow):
 
         self._left_panels_stack = QStackedWidget()
         self._left_panels_stack.addWidget(self._datatree_viewer)
+        self._left_panels_stack.addWidget(self._filter_panel)
         self._left_panels_stack.addWidget(self._curve_fit_panel)
         self._left_panels_stack.addWidget(self._measurement_panel)
         self._left_panels_stack.addWidget(self._notes_edit)
@@ -2315,10 +2406,10 @@ class XarrayGraph(QMainWindow):
         msg = """
         ----------------------------------------------------
         Welcome to XarrayGraph console!
-        self          -> This instance of XarrayGraph
-        self.datatree -> The Xarray DataTree
+          self          -> This instance of XarrayGraph
+          self.datatree -> The Xarray DataTree
         Array access: self.datatree['/path/to/array']
-        Shortcut:     self['/path/to/array']
+            shortcut: self['/path/to/array']
         Modules loaded at startup: numpy as np, xarray as xr
         ----------------------------------------------------
         """
@@ -2421,6 +2512,17 @@ class XarrayGraph(QMainWindow):
             checkable=True, 
             checked=True)
 
+        self._toggle_filter_panel_action = QAction(
+            parent=self, 
+            icon=get_icon('mdi.sine-wave'), 
+            # icon=get_icon('ph.waves'), 
+            # icon=get_icon('mdi.waveform'), 
+            iconVisibleInMenu=False,
+            text='Filter', 
+            toolTip='Filter', 
+            checkable=True, 
+            checked=False)
+
         self._toggle_curve_fit_panel_action = QAction(
             parent=self, 
             icon=get_icon('mdi.chart-bell-curve-cumulative'), 
@@ -2450,6 +2552,7 @@ class XarrayGraph(QMainWindow):
 
         self._left_panel_action_group = QActionGroup(self)
         self._left_panel_action_group.addAction(self._toggle_datatree_panel_action)
+        self._left_panel_action_group.addAction(self._toggle_filter_panel_action)
         self._left_panel_action_group.addAction(self._toggle_curve_fit_panel_action)
         self._left_panel_action_group.addAction(self._toggle_measurement_panel_action)
         self._left_panel_action_group.addAction(self._toggle_notes_panel_action)
@@ -2614,6 +2717,7 @@ class XarrayGraph(QMainWindow):
         vspacer.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
 
         self._left_toolbar.addAction(self._toggle_datatree_panel_action)
+        self._left_toolbar.addAction(self._toggle_filter_panel_action)
         self._left_toolbar.addAction(self._toggle_curve_fit_panel_action)
         self._left_toolbar.addAction(self._toggle_measurement_panel_action)
         self._left_toolbar.addAction(self._toggle_notes_panel_action)
@@ -2701,6 +2805,65 @@ class XarrayGraph(QMainWindow):
         # attrs_model: KeyValueTreeModel = self._datatree_viewer._attrs_view.model()
         # attrs_model.sigValueChanged.connect(self.refresh)
     
+    def _init_filter_panel(self) -> None:
+
+        self._filter_type_combobox = QComboBox()
+        self._filter_type_combobox.addItems(['Gaussian', 'Median', 'Bessel', 'Butterworth', 'FIR'])
+        self._filter_type_combobox.currentIndexChanged.connect(self._on_filter_type_changed)
+
+        self._filter_band_type_combobox = QComboBox()
+        self._filter_band_type_combobox.addItems(['Lowpass', 'Bandpass', 'Highpass'])
+        self._filter_band_type_combobox.currentIndexChanged.connect(self._on_filter_type_changed)
+
+        self._filter_cutoff_edit = QLineEdit('')
+        self._filter_cutoff_edit.setPlaceholderText('single [, band]')
+        self._filter_cutoff_edit.editingFinished.connect(self._update_plot_data)
+
+        self._filter_cutoff_units_edit = QLineEdit('')
+        self._filter_cutoff_units_edit.setPlaceholderText('Hz')
+        self._filter_cutoff_units_edit.editingFinished.connect(self._update_plot_data)
+
+        self._filter_band_group = QGroupBox()
+        form = QFormLayout(self._filter_band_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.addRow(self._filter_band_type_combobox)
+        form.addRow('Cutoff', self._filter_cutoff_edit)
+        form.addRow('Cutoff units', self._filter_cutoff_units_edit)
+
+        # options and buttons
+        self._filterLivePreviewCheckbox = QCheckBox('Live Preview', checked=False)
+        self._filterLivePreviewCheckbox.stateChanged.connect(lambda state: self._update_plot_data())
+
+        self._filterButton = QPushButton('Filter')
+        self._filterButton.pressed.connect(lambda: self._update_plot_data())
+
+        self._saveFilteredDataButton = QPushButton('Save Filtered')
+        self._saveFilteredDataButton.pressed.connect(self.saveFilteredData)
+
+        # layout
+        vbox = QVBoxLayout()
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.setSpacing(5)
+        vbox.addWidget(self._filter_type_combobox)
+        vbox.addWidget(self._filter_band_group)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._filterLivePreviewCheckbox)
+        vbox.addSpacing(10)
+        vbox.addWidget(self._filterButton)
+        vbox.addWidget(self._saveFilteredDataButton)
+        vbox.addStretch()
+
+        # scroll area
+        self._filter_panel = QScrollArea()
+        self._filter_panel.setFrameShape(QFrame.Shape.NoFrame)
+        self._filter_panel.setLayout(vbox)
+        self._filter_panel.setWidgetResizable(True)
+
+        self._update_filter_control_panel()
+    
     def _init_curve_fit_panel(self) -> None:
         """ Initialize curve fit control panel. """
 
@@ -2727,8 +2890,8 @@ class XarrayGraph(QMainWindow):
                 'params': {
                     'Y0': {'value': 0, 'vary': False, 'min': -np.inf, 'max': np.inf},
                     'Y1': {'value': 1, 'vary': True, 'min': -np.inf, 'max': np.inf},
-                    'EC50': {'value': 1, 'vary': True, 'min': 0, 'max': np.inf},
-                    'n': {'value': 1, 'vary': True, 'min': 0, 'max': np.inf},
+                    'EC50': {'value': 1, 'vary': True, 'min': 1e-15, 'max': np.inf},
+                    'n': {'value': 1, 'vary': True, 'min': 1e-2, 'max': 10},
                 },
             },
         }
@@ -2837,11 +3000,43 @@ class XarrayGraph(QMainWindow):
         self._measure_type_combobox.addItems(['Mean', 'Median'])
         self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
         self._measure_type_combobox.addItems(['Min', 'Max', 'AbsMax'])
-        # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
-        # self._measure_type_combobox.addItems(['Peaks'])
+        self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
+        self._measure_type_combobox.addItems(['Peaks'])
         # self._measure_type_combobox.insertSeparator(self._measure_type_combobox.count())
         # self._measure_type_combobox.addItems(['Standard Deviation', 'Variance'])
         self._measure_type_combobox.currentIndexChanged.connect(self._on_measure_type_changed)
+
+        self._measure_peak_type_combobox = QComboBox()
+        self._measure_peak_type_combobox.addItems(['Positive', 'Negative'])
+        self._measure_peak_type_combobox.setCurrentText('Positive')
+        self._measure_peak_type_combobox.currentIndexChanged.connect(lambda index: self._update_measurement_preview())
+
+        self._max_num_peaks_per_region_spinbox = QSpinBox()
+        self._max_num_peaks_per_region_spinbox.setMinimum(0)
+        self._max_num_peaks_per_region_spinbox.setMaximum(1000000)
+        self._max_num_peaks_per_region_spinbox.setSpecialValueText('Any')
+        self._max_num_peaks_per_region_spinbox.setValue(0)
+        self._max_num_peaks_per_region_spinbox.valueChanged.connect(lambda value: self._update_measurement_preview())
+
+        self._measure_peak_avg_half_width_spinbox = QSpinBox()
+        self._measure_peak_avg_half_width_spinbox.setMinimum(0)
+        self._measure_peak_avg_half_width_spinbox.setSpecialValueText('None')
+        self._measure_peak_avg_half_width_spinbox.setValue(0)
+        self._measure_peak_avg_half_width_spinbox.valueChanged.connect(lambda value: self._update_measurement_preview())
+
+        self._measure_peak_threshold_edit = QLineEdit('0')
+        self._measure_peak_threshold_edit.editingFinished.connect(self._update_measurement_preview)
+
+        self._measure_peak_group = QGroupBox()
+        form = QFormLayout(self._measure_peak_group)
+        form.setContentsMargins(3, 3, 3, 3)
+        form.setSpacing(3)
+        form.setHorizontalSpacing(5)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.addRow('Peak type', self._measure_peak_type_combobox)
+        form.addRow('Max # peaks', self._max_num_peaks_per_region_spinbox)
+        form.addRow(f'{u'\u00b1'} sample mean', self._measure_peak_avg_half_width_spinbox)
+        form.addRow('Peak threshold', self._measure_peak_threshold_edit)
 
         # options and buttons
         self._measure_in_ROIs_only_checkbox = QCheckBox('Measure within ROIs only')
@@ -2868,6 +3063,7 @@ class XarrayGraph(QMainWindow):
         vbox.setContentsMargins(5, 5, 5, 5)
         vbox.setSpacing(5)
         vbox.addWidget(self._measure_type_combobox)
+        vbox.addWidget(self._measure_peak_group)
         vbox.addSpacing(10)
         vbox.addWidget(self._measure_in_ROIs_only_checkbox)
         vbox.addWidget(self._measure_per_ROI_checkbox)
