@@ -9,6 +9,10 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     """Read data from a LabChart .adicht file that has been converted to a MATLAB .mat file into an xarray.Dataset.
     """
     
+    # Import within function to avoid error due to circular dependency
+    # as XarrayGraph also imports this function.
+    # Putting the import within the function delays this import until use,
+    # which means XarrayGraph will already have been imported.
     from xarray_graph.XarrayGraph import ROI_KEY, MASK_KEY, NOTES_KEY
     
     matdict = sp.io.loadmat(str(filepath), simplify_cells=True)
