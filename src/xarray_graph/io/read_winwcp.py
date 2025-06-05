@@ -131,8 +131,8 @@ def read_winwcp(filepath: str | os.PathLike) -> xr.DataTree:
         for j in range(n_channels):
             data[channel_names[j]][i] = calibrated_sweep[j]
     
+    # all sweeps have the same sample interval (most likely case)
     if np.unique(data['sweep_sample_interval']).size == 1:
-        # all sweeps have the same sample interval (most likely case)
         return xr.DataTree(dataset=data)
 
     # Differing sweep sample intervals (least likely case).
