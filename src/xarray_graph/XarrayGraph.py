@@ -6,7 +6,6 @@ TODO:
 - how to handle selecting non-aligned data?
 - measurement dims/coords (deal with reductions)?
 - measure multiple peaks
-- print preview params to console?
 - align traces on onset of impulse response in signal
 - fix bugs where preview does not update as it should
 - centralize preview update logic? right now its all over the place
@@ -79,6 +78,7 @@ XARRAY_GRAPH_VERSION = version('xarray-graph')
 # global variables
 ROI_KEY = '_ROI_'
 MASK_KEY = '_mask_'
+CURVE_FIT_KEY = '_curve_fit_'
 NOTES_KEY = '_notes_'
 MASK_COLOR = '(200, 200, 200)'
 
@@ -897,6 +897,8 @@ class XarrayGraph(QMainWindow):
         result_var_paths = []
         result_node_paths = []
         new_result_vars = []
+        new_result_coords = []
+        new_result_fits = []
         for plot in self._plots.flatten().tolist():
             # existing graphs in plot
             graphs = [item for item in plot.listDataItems() if isinstance(item, pgx.Graph)]
@@ -928,9 +930,11 @@ class XarrayGraph(QMainWindow):
                 result_var_paths.append(result_var_path)
                 result_node_paths.append(result_node_path)
                 new_result_vars.append(new_result_var)
+                new_result_coords.append(preview_graph._metadata.get('coords', None))
+                new_result_fits.append(preview_graph._metadata.get('fit', None))
 
         # save fits to datatree
-        for result_node_path, result_var_path, new_result_var in zip(result_node_paths, result_var_paths, new_result_vars):
+        for result_node_path, result_var_path, new_result_var, new_result_coord, new_result_fit in zip(result_node_paths, result_var_paths, new_result_vars, new_result_coords, new_result_fits):
             var_name = new_result_var.name
             try:
                 result_node = self._datatree[result_node_path]
@@ -939,6 +943,7 @@ class XarrayGraph(QMainWindow):
             if result_node is None:
                 # create new result node
                 self._datatree[result_node_path] = xr.Dataset(data_vars={var_name: new_result_var})
+                result_node = self._datatree[result_node_path]
             elif var_name not in result_node.data_vars:
                 # create new result data_var in existing node
                 result_node.dataset = result_node.to_dataset().assign({var_name: new_result_var})
@@ -947,6 +952,31 @@ class XarrayGraph(QMainWindow):
                 existing_result_var = result_node[var_name]
                 new_result_mask = ~(new_result_var.isnull().values)
                 existing_result_var.values[new_result_mask] = new_result_var.values[new_result_mask]
+            if new_result_fit is not None:
+                coords_key = ', '.join([f'{name}: {str(coord)}' for name, coord in new_result_coord.items()])
+                if new_result_fit['type'] == 'Expression':
+                    result: lmfit.model.ModelResult = new_result_fit['result']
+                    model: lmfit.models.ExpressionModel = result.model
+                    params = self._getEquationTableParams()
+                    for name in result.params:
+                        params[name]['value'] = float(result.params[name].value)
+                    new_result_fit = {
+                        'type': new_result_fit['type'],
+                        'expression': model.expr,
+                        'params': params,
+                    }
+                for key, value in new_result_fit.items():
+                    if isinstance(value, np.ndarray):
+                        new_result_fit[key] = tuple(value.tolist())
+                print('-'*82)
+                print('Curve fit result for', result_var_path)
+                print(coords_key)
+                print(new_result_fit)
+                print('-'*82)
+                var = result_node[var_name]
+                if CURVE_FIT_KEY not in var.attrs:
+                    var.attrs[CURVE_FIT_KEY] = {}
+                var.attrs[CURVE_FIT_KEY][coords_key] = new_result_fit
         
         # switch to datatree panel (also stops any live preview/residuals)
         self._toggle_datatree_panel_action.setChecked(True)
@@ -1442,20 +1472,42 @@ class XarrayGraph(QMainWindow):
         
         fitType = self._fitTypeComboBox.currentText()
         if fitType == 'Mean':
-            return np.mean(y)
+            return {
+                'type': fitType,
+                'value': np.mean(y)
+            }
         elif fitType == 'Median':
-            return np.median(y)
+            return {
+                'type': fitType,
+                'value': np.median(y)
+            }
         elif fitType == 'Min':
-            return np.min(y)
+            return {
+                'type': fitType,
+                'value': np.min(y)
+            }
         elif fitType == 'Max':
-            return np.max(y)
+            return {
+                'type': fitType,
+                'value': np.max(y)
+            }
         elif fitType == 'AbsMax':
-            return np.max(np.abs(y))
+            return {
+                'type': fitType,
+                'value': np.max(np.abs(y))
+            }
         elif fitType == 'Line':
-            return np.polyfit(x, y, 1)
+            return {
+                'type': fitType,
+                'coef': np.polyfit(x, y, 1)
+            }
         elif fitType == 'Polynomial':
             degree = self._polynomialDegreeSpinBox.value()
-            return np.polyfit(x, y, degree)
+            return {
+                'type': fitType,
+                'degree': degree,
+                'coef': np.polyfit(x, y, degree)
+            }
         # elif fitType == 'BSpline':
         #     # !!! this is SLOW for even slightly large arrays
         #     n_pts = len(x)
@@ -1479,29 +1531,39 @@ class XarrayGraph(QMainWindow):
             # if len(knots) < 2:
             #     knots = x[[1, -2]]
             knots, coef, degree = sp.interpolate.splrep(x, y, t=knots)
-            return knots, coef, degree
+            return {
+                'type': fitType,
+                'knots': knots,
+                'coef': coef,
+                'degree': degree,
+            }
         elif fitType == 'Expression' or fitType in list(self._namedExpressions.keys()):
             model: lmfit.models.ExpressionModel = self._getExpressionModel()
             if model is None:
                 return None
             result: lmfit.model.ModelResult = model.fit(y, params=model.make_params(), x=x)
             # print(result.fit_report())
-            return result
+            return {
+                'type': fitType,
+                'result': result,
+            }
         
     def _predict(self, x: np.ndarray, fit_result) -> np.ndarray:
         """ Eval fit(x) """
 
         fitType = self._fitTypeComboBox.currentText()
         if fitType in ['Mean', 'Median', 'Min', 'Max', 'AbsMax']:
-            return np.full(len(x), fit_result)
+            value = fit_result['value']
+            return np.full(len(x), value)
         elif fitType in ['Line', 'Polynomial']:
-            return np.polyval(fit_result, x)
-        elif fitType == 'BSpline':
-            bspline: sp.interpolate.BSpline = fit_result
-            return bspline(x)
+            coef = fit_result['coef']
+            return np.polyval(coef, x)
+        # elif fitType == 'BSpline':
+        #     bspline: sp.interpolate.BSpline = fit_result
+        #     return bspline(x)
         elif fitType == 'Spline':
-            # knots, coef, degree = fit_result
-            return sp.interpolate.splev(x, fit_result, der=0)
+            knots, coef, degree = [fit_result[key] for key in ['knots', 'coef', 'degree']]
+            return sp.interpolate.splev(x, (knots, coef, degree ), der=0)
         elif fitType == 'Expression' or fitType in list(self._namedExpressions.keys()):
             if fit_result is None:
                 model = self._getExpressionModel()
@@ -1509,8 +1571,8 @@ class XarrayGraph(QMainWindow):
                     return None
                 params = model.make_params()
             else:
-                result: lmfit.model.ModelResult = fit_result
-                model: lmfit.models.ExpressionModel = fit_result.model
+                result: lmfit.model.ModelResult = fit_result['result']
+                model: lmfit.models.ExpressionModel = result.model
                 params = result.params
             return model.eval(params=params, x=x)
     
@@ -2303,6 +2365,7 @@ class XarrayGraph(QMainWindow):
                         
                 preview_graph._metadata = copy(data_graph._metadata)
                 preview_graph._metadata['type'] = 'preview'
+                preview_graph._metadata['fit'] = fit_result
                 preview_graph.setZValue(2)
                 preview_graph.setName(data_graph.name() + ' preview')
                 style: pgx.GraphStyle = data_graph.graphStyle()
