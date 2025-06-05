@@ -1,9 +1,8 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- handle different units for same variable (e.g., A vs. mA)
 - apply preview filter before curve fit or measurement?
-- fix bug where not all linked views with different xlims are graphed
-    - maybe has to do with different xdim units in different branches?
 - how to handle selecting non-aligned data?
 - measurement dims/coords (deal with reductions)?
 - measure multiple peaks
@@ -57,6 +56,7 @@ from qtconsole.inprocess import QtInProcessKernelManager
 import pyqtgraph as pg
 import pyqt_ext.pyqtgraph_ext as pgx
 
+# from xarray_graph.xarray_utils import *
 from xarray_graph.tree import *
 from xarray_graph.io import *
 
@@ -90,7 +90,7 @@ filetype_extensions_map: dict[str, list[str]] = {
     'WinWCP': ['.wcp'],
     'Axon ABF': ['.abf'],
     'HEKA': ['.dat'],
-    'LabChart TEV MATLAB Conversion (GOLab)': ['.mat'],
+    'MATLAB (GOLab TEVC)': ['.mat'],
 }
 
 default_settings = {
@@ -255,7 +255,7 @@ class XarrayGraph(QMainWindow):
             return
         elif filetype == 'HEKA':
             datatree: xr.DataTree = read_heka(filepath)
-        elif filetype == 'LabChart TEV MATLAB Conversion (GOLab)':
+        elif filetype == 'MATLAB (GOLab TEVC)':
             datatree: xr.DataTree = read_adicht_mat(filepath)
         else:
             try:
@@ -381,12 +381,15 @@ class XarrayGraph(QMainWindow):
     def refresh(self) -> None:
         """ Refresh the entire UI based on the current data. """
 
-        # combined coords for entire data tree
-        coords = []
+        # combined coords (and masks) for entire data tree
+        all_coords = []
         root_nodes = find_subtree_alignment_roots(self.datatree)
         for node in root_nodes:
-            coords.append(node.to_dataset().reset_coords(drop=True).coords)
-        self._datatree_combined_coords: xr.Dataset = xr.merge(coords, compat='no_conflicts')
+            vars_to_drop = list(node.data_vars)
+            coords_ds = node.to_dataset().reset_coords(drop=True).drop_vars(vars_to_drop)
+            coords_ds = to_base_units(coords_ds)
+            all_coords.append(coords_ds)
+        self._datatree_combined_coords: xr.Dataset = xr.merge(all_coords, compat='no_conflicts', join='outer')
 
         # update UI
         self._update_datatree_view()
@@ -783,7 +786,99 @@ class XarrayGraph(QMainWindow):
         self.refresh()
     
     def saveFilteredData(self) -> None:
-        pass
+        """ Save the current filtered data to the datatree. """
+
+        # get the node name under which to save the filtered data
+        filterType = self._filter_type_combobox.currentText()
+        result_name, ok = QInputDialog.getText(self, 'Save Filtered Data As', 'Filtered dataset name:', text=f'{filterType}')
+        if not ok or not result_name:
+            return
+
+        # ensure curve fit has not been zeroed to show residuals
+        if self._fitPreviewResidualsCheckbox.isChecked():
+            self._update_curve_fit_preview(no_residuals=True)
+        
+        # gather filter results and associated paths
+        result_var_paths = []
+        result_node_paths = []
+        new_result_vars = []
+        for plot in self._plots.flatten().tolist():
+            # existing graphs in plot
+            graphs = [item for item in plot.listDataItems() if isinstance(item, pgx.Graph)]
+            data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            
+            for data_graph in data_graphs:
+                path = data_graph._metadata.get('path', None)
+                if path is None:
+                    continue
+
+                var_name = path.rstrip('/').split('/')[-1]
+                parent_node_path = '/'.join(path.rstrip('/').split('/')[:-1])
+                parent_node = self.datatree[parent_node_path]
+
+                if result_name in parent_node.data_vars or result_name in parent_node.coords:
+                    QMessageBox.warning(self, 'Error', 'Filter dataset name cannot be the name of a variable or dimension.')
+                    return
+                
+                result_node_path = f'{parent_node_path}/{result_name}'
+                result_var_path = f'{result_node_path}/{var_name}'
+                
+                parent_var = parent_node.data_vars[var_name]
+                parent_var_slice = data_graph._metadata.get('data', None)
+                xfiltered, yfiltered = data_graph.getOriginalDataset()
+
+                new_result_var = parent_var.copy(data=np.full(parent_var.values.shape, np.nan))
+                new_result_var.loc[parent_var_slice.coords] = yfiltered
+
+                result_var_paths.append(result_var_path)
+                result_node_paths.append(result_node_path)
+                new_result_vars.append(new_result_var)
+
+        # save filtered data to datatree
+        for result_node_path, result_var_path, new_result_var in zip(result_node_paths, result_var_paths, new_result_vars):
+            var_name = new_result_var.name
+            try:
+                result_node = self._datatree[result_node_path]
+            except KeyError:
+                result_node = None
+            if result_node is None:
+                # create new result node
+                self._datatree[result_node_path] = xr.Dataset(data_vars={var_name: new_result_var})
+            elif var_name not in result_node.data_vars:
+                # create new result data_var in existing node
+                result_node.dataset = result_node.to_dataset().assign({var_name: new_result_var})
+            else:
+                # update existing result data_var
+                existing_result_var = result_node[var_name]
+                new_result_mask = ~(new_result_var.isnull().values)
+                existing_result_var.values[new_result_mask] = new_result_var.values[new_result_mask]
+        
+        # turn off filter preview
+        self._filterLivePreviewCheckbox.setChecked(False)
+        
+        # switch to datatree panel
+        self._toggle_datatree_panel_action.setChecked(True)
+
+        # update datatree view and plots (in case we added new nodes/data_vars)
+        self.refresh()
+
+        # ensure result nodes are expanded
+        for result_node_path in result_node_paths:
+            item = self._datatree_view.model().root()
+            item = item[result_node_path.lstrip('/')]
+            index = self._datatree_view.model().indexFromItem(item)
+            if not self._datatree_view.isExpanded(index):
+                self._datatree_view.setExpanded(index, True)
+        
+        # ensure new results are selected in datatree view
+        selectedPaths = self._datatree_view.selectedPaths()
+        selectionChanged = False
+        for result_path in result_var_paths:
+            if result_path not in selectedPaths:
+                selectedPaths.append(result_path)
+                selectionChanged = True
+        if selectionChanged:
+            self._datatree_view.setSelectedPaths(selectedPaths)
     
     def saveCurveFit(self) -> None:
         """ Save the current curve fit preview to the datatree. """
@@ -1034,8 +1129,13 @@ class XarrayGraph(QMainWindow):
 
         # combined coords, data_var names, and units for selection
         selected_vars = [self.datatree[path] for path in self._selected_var_paths]
-        coords = [var.reset_coords(drop=True).coords for var in selected_vars]
-        self._selection_combined_coords: xr.Dataset = xr.merge(coords, compat='no_conflicts')
+        selected_coords = []#var.reset_coords(drop=True).coords for var in selected_vars]
+        for var in selected_vars:
+            coords_ds = xr.Dataset(
+                coords={name: to_base_units(coord) for name, coord in var.coords.items()}
+            )
+            selected_coords.append(coords_ds)
+        self._selection_combined_coords: xr.Dataset = xr.merge(selected_coords, compat='no_conflicts', join='outer')
         self._selected_var_names = []
         self._selection_units = {}
         for var in selected_vars:
@@ -1156,8 +1256,13 @@ class XarrayGraph(QMainWindow):
         if self._curve_fit_live_preview_enabled() and self._curve_fit_depends_on_ROIs():
             self._update_curve_fit_preview()
 
+    def _on_filter_changed(self) -> None:
+        if self._filterLivePreviewCheckbox.isChecked():
+            self._update_plot_data()
+    
     def _on_filter_type_changed(self) -> None:
-        pass
+        self._update_filter_control_panel()
+        self._on_filter_changed()
     
     def _on_curve_fit_changed(self) -> None:
         if self._curve_fit_live_preview_enabled():
@@ -1719,7 +1824,26 @@ class XarrayGraph(QMainWindow):
         self._left_panels_stack.setVisible(True)
     
     def _update_filter_control_panel(self) -> None:
-        pass
+        filterType = self._filter_type_combobox.currentText()
+        if filterType == 'Gaussian':
+            self._filter_band_type_combobox.blockSignals(True)
+            self._filter_band_type_combobox.setCurrentText('Lowpass')
+            self._filter_band_type_combobox.setEnabled(False)
+            # for i in range(self._filter_band_type_combobox.count()):
+            #     item = self._filter_band_type_combobox.model().item(i)
+            #     if item.text() == 'Lowpass':
+            #         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEnabled)
+            #     else:
+            #         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self._filter_band_type_combobox.blockSignals(False)
+        
+        bandType = self._filter_band_type_combobox.currentText()
+        if bandType == 'Lowpass':
+            self._filter_cutoff_edit.setPlaceholderText('lowpass frequency')
+        elif bandType == 'Highpass':
+            self._filter_cutoff_edit.setPlaceholderText('highpass frequency')
+        elif bandType == 'Bandpass':
+            self._filter_cutoff_edit.setPlaceholderText('low, high band frequencies')
     
     def _update_curve_fit_control_panel(self) -> None:
         fitTypes = [self._fitTypeComboBox.itemText(i) for i in range(self._fitTypeComboBox.count())]
@@ -1904,9 +2028,10 @@ class XarrayGraph(QMainWindow):
                 if var_name not in plot._metadata['data_vars']:
                     continue
                 
-                data_var = self.datatree[var_path]
+                data_var = self.datatree[var_path].reset_coords(drop=True)
                 if self.xdim not in data_var.coords:
                     continue
+                data_var = to_base_units(data_var)
 
                 node_path = var_path.rstrip('/').rstrip(var_name).rstrip('/')
                 node = self.datatree[node_path]
@@ -1927,12 +2052,13 @@ class XarrayGraph(QMainWindow):
                     non_xdim_coord_permutations = [{}]
                 for coords in non_xdim_coord_permutations:
                     if not coords:
-                        data_var_slice = data_var.copy(deep=False)
+                        data_var_slice = data_var
                     else:
                         coords = {dim: values for dim, values in coords.items() if dim in data_var.coords}
                         if not coords:
-                            continue
-                        data_var_slice = data_var.sel(coords)
+                            data_var_slice = data_var
+                        else:
+                            data_var_slice = data_var.sel(coords)
                     xdim_coord_slice = data_var_slice.coords[self.xdim]
                     xdata = xdim_coord_slice.values
                     ydata = data_var_slice.values
@@ -1948,7 +2074,9 @@ class XarrayGraph(QMainWindow):
                     
                     # filter data?
                     if self._filterLivePreviewCheckbox.isChecked():
-                        ydata = self._filter(xdim_coord_slice, data_var_slice).values
+                        filtered_var_slice = self._filter(xdim_coord_slice, data_var_slice)
+                        if filtered_var_slice is not None:
+                            ydata = filtered_var_slice.values
                     
                     # mask data?
                     mask_slice = None
@@ -2626,7 +2754,7 @@ class XarrayGraph(QMainWindow):
         self._import_menu.addAction('WinWCP', lambda: self.load(filetype='WinWCP'))
         self._import_menu.addAction('HEKA', lambda: self.load(filetype='HEKA'))
         self._import_menu.addAction('Axon ABF', lambda: self.load(filetype='Axon ABF'))
-        self._import_menu.addAction('LabChart TEV MATLAB Conversion (GOLab)', lambda: self.load(filetype='LabChart TEV MATLAB Conversion (GOLab)'))
+        self._import_menu.addAction('MATLAB (GOLab TEVC)', lambda: self.load(filetype='MATLAB (GOLab TEVC)'))
 
         self._export_menu.addAction('Zarr Zip', lambda: self.saveAs(filetype='Zarr Zip'))
         self._export_menu.addAction('Zarr Directory', lambda: self.saveAs(filetype='Zarr Directory'))
@@ -2809,7 +2937,9 @@ class XarrayGraph(QMainWindow):
 
         self._filter_type_combobox = QComboBox()
         self._filter_type_combobox.addItems(['Gaussian', 'Median', 'Bessel', 'Butterworth', 'FIR'])
+        self._filter_type_combobox.setCurrentText('Gaussian')
         self._filter_type_combobox.currentIndexChanged.connect(self._on_filter_type_changed)
+        self._filter_type_combobox.setEnabled(False) # only Gaussian filter working at the moment
 
         self._filter_band_type_combobox = QComboBox()
         self._filter_band_type_combobox.addItems(['Lowpass', 'Bandpass', 'Highpass'])
@@ -2817,11 +2947,11 @@ class XarrayGraph(QMainWindow):
 
         self._filter_cutoff_edit = QLineEdit('')
         self._filter_cutoff_edit.setPlaceholderText('single [, band]')
-        self._filter_cutoff_edit.editingFinished.connect(self._update_plot_data)
+        self._filter_cutoff_edit.editingFinished.connect(self._on_filter_changed)
 
         self._filter_cutoff_units_edit = QLineEdit('')
-        self._filter_cutoff_units_edit.setPlaceholderText('Hz')
-        self._filter_cutoff_units_edit.editingFinished.connect(self._update_plot_data)
+        self._filter_cutoff_units_edit.setPlaceholderText('cylces / \u0394x')
+        self._filter_cutoff_units_edit.editingFinished.connect(self._on_filter_changed)
 
         self._filter_band_group = QGroupBox()
         form = QFormLayout(self._filter_band_group)
@@ -3430,6 +3560,23 @@ def find_subtree_alignment_roots(dt: xr.DataTree) -> list[xr.DataTree]:
     return roots
 
 
+def to_base_units(data: xr.DataArray | xr.Dataset) -> xr.DataArray | xr.Dataset:
+    if isinstance(data, xr.DataArray):
+        if 'units' not in data.attrs:
+            return data
+        quantity = data.values * UREG(data.attrs['units'])
+        quantity = quantity.to_base_units()
+        base_data = data.copy(data=quantity.magnitude)
+        base_data.attrs['units'] = str(quantity.units)
+        return base_data
+    elif isinstance(data, xr.Dataset):
+        return xr.Dataset(
+            data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
+            coords={name: to_base_units(coord) for name, coord in data.coords.items()},
+            attrs=data.attrs,
+        )
+
+
 def test_live():
     app = QApplication()
 
@@ -3437,6 +3584,23 @@ def test_live():
     xg.show()
     xg.datatree = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
     app.exec()
+
+
+# def test_stuff():
+#     t1 = np.load('time_0.npy')
+#     t2 = np.load('time_1.npy')
+#     ds1 = xr.Dataset(
+#         coords={
+#             'time': xr.DataArray(data=t1, dims=['time'], attrs={'units': 'second'})
+#         }
+#     )
+#     ds2 = xr.Dataset(
+#         coords={
+#             'time': xr.DataArray(data=t2, dims=['time'], attrs={'units': 'second'})
+#         }
+#     )
+#     ds = xr.merge([ds1, ds2], compat='no_conflicts', join='outer')
+#     print(ds)
 
 
 if __name__ == '__main__':
