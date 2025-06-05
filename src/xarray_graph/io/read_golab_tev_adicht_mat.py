@@ -7,6 +7,8 @@ import xarray as xr
 
 def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     """Read data from a LabChart .adicht file that has been converted to a MATLAB .mat file into an xarray.Dataset.
+
+    This loader is specific for GOLab TEVC recordings.
     """
     
     # Import within function to avoid error due to circular dependency
