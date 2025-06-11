@@ -116,11 +116,11 @@ class XarrayTreeModel(AbstractTreeModel):
                 path: str = self.pathFromIndex(index)
                 data_type: str | None = self.dataTypeAtPath(path)
                 if data_type == 'node':
-                    node: DataTree = dt[path]
+                    node: xr.DataTree = dt[path]
                     sizes = node.dataset.sizes
                     return '(' + ', '.join([f'{dim}: {size}' for dim, size in sizes.items()]) + ')'
                 if data_type == 'var':
-                    node: DataTree = dt[self.pathFromItem(item.parent)]
+                    node: xr.DataTree = dt[self.pathFromItem(item.parent)]
                     rep = str(node.dataset)
                     i = rep.find('Data variables:')
                     i = rep.find(item.name, i)  # find var
@@ -130,7 +130,7 @@ class XarrayTreeModel(AbstractTreeModel):
                     j = rep.find('\n', i)
                     return rep[i:j] if j > 0 else rep[i:]
                 if data_type == 'coord':
-                    node: DataTree = dt[self.pathFromItem(item.parent)]
+                    node: xr.DataTree = dt[self.pathFromItem(item.parent)]
                     rep = str(node.dataset)
                     i = rep.find('Coordinates:')
                     i = rep.find(item.name, i)  # find coord
@@ -178,7 +178,7 @@ class XarrayTreeModel(AbstractTreeModel):
                     return True
                 elif data_type in ['var', 'coord']:
                     # rename array
-                    node: DataTree = dt[self.pathFromItem(item.parent)]
+                    node: xr.DataTree = dt[self.pathFromItem(item.parent)]
                     node.dataset = node.to_dataset().rename_vars({old_name: new_name})
                     item.name = new_name
                     return True
@@ -209,7 +209,7 @@ class XarrayTreeModel(AbstractTreeModel):
         return success
     
     def moveRow(self, src_parent_index: QModelIndex, src_row: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
-        dt: DataTree = self.dataTree()
+        dt: xr.DataTree = self.dataTree()
         if dt is None:
             return False
         src_parent_item: AbstractTreeItem = self.itemFromIndex(src_parent_index)
@@ -259,7 +259,7 @@ class XarrayTreeModel(AbstractTreeModel):
 
 class XarrayDndTreeModel(XarrayTreeModel):
 
-    def __init__(self, dt: DataTree = None, parent: QObject = None):
+    def __init__(self, dt: xr.DataTree = None, parent: QObject = None):
         XarrayTreeModel.__init__(self, dt=dt, parent=parent)
     
     def supportedDropActions(self) -> Qt.DropActions:

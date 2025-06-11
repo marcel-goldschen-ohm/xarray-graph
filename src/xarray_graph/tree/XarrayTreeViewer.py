@@ -44,7 +44,7 @@ class XarrayTreeViewer(QSplitter):
     def _on_selection_changed(self) -> None:
         selected_items = self._data_view.selectedItems()
         model: XarrayTreeModel = self._data_view.model()
-        dt: DataTree = model.dataTree()
+        dt: xr.DataTree = model.dataTree()
         if (model is None) or (dt is None) or len(selected_items) > 1:
             # clear tabs
             self._info_view.clear()
@@ -58,7 +58,7 @@ class XarrayTreeViewer(QSplitter):
             item: AbstractTreeItem = selected_items[0]
 
         path: str = model.pathFromItem(item)
-        obj: DataTree | xr.DataArray = dt[path]
+        obj: xr.DataTree | xr.DataArray = dt[path]
         if isinstance(obj, xr.DataTree):
             text = str(obj.dataset)
             attrs = obj.attrs

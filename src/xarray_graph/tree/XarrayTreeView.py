@@ -71,8 +71,8 @@ class XarrayTreeView(TreeView):
         TreeView.setModel(self, model)
         self.refresh()
     
-    def contextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
-        menu: QMenu = TreeView.contextMenu(self, index)
+    def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
+        menu: QMenu = TreeView.customContextMenu(self, index)
 
         menu.addSeparator()
         menu.addAction(self._showVarsAction)

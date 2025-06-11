@@ -1367,6 +1367,18 @@ class XarrayGraph(QMainWindow):
         # If you want to prevent the application from closing, use event.ignore()
         event.accept()
 
+    # def _get_trace(self, path_to_data_var: str, slice_coords, raw: bool = False) -> xr.DataArray:
+
+    #     trace: xr.DataArray = self.datatree[path_to_data_var].sel(slice_coords)
+
+    #     if raw:
+    #         return trace
+                    
+    #     if self._filterLivePreviewCheckbox.isChecked():
+    #         trace = self._apply_filter(trace, self.xdim)
+        
+    #     return trace
+    
     def _get_data_var_filter(self) -> dict[str, bool]:
         menu = self._filter_menu
         widget_actions = menu.actions()
@@ -3458,6 +3470,16 @@ class DimIterWidget(QWidget):
         self._tile_horizontally_action.setChecked(True)
         self._tile_button.setIcon(self._tile_horizontally_action.icon())
         self.tileChanged.emit(self.dim(), Qt.Orientation.Horizontal)
+
+
+class IgnoreLettersKeyPressFilter(QObject):
+
+    def eventFilter(self, object, event):
+        if event.type() == QEvent.Type.KeyPress:
+            if event.text().isalpha():
+                # Do not handle letters A-Z
+                return True
+        return False
 
 
 def get_icon(name: str, opacity: float = None, size: int | QSize = None) -> QIcon:
