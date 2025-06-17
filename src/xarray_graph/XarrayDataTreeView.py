@@ -4,9 +4,7 @@ Uses XarrayDataTreeModel for the model interface.
 
 TODO:
 - restore state of dragged items in dropEvent
-- edit attrs via key[value] tree view
 - rename dimensions
-- option to rename a data_var throughout the entire branch or tree
 """
 
 from __future__ import annotations
@@ -17,12 +15,13 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import XarrayDataTreeModel, XarrayDataTreeMimeData
-# from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
+from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
 
 class XarrayDataTreeView(QTreeView):
 
     selectionWasChanged = Signal()
+    finishedEditingAttrs = Signal()
 
     STATE_KEY = '_state_'
 
@@ -399,7 +398,44 @@ class XarrayDataTreeView(QTreeView):
         dlg.exec()
     
     def editAttrs(self, path: str) -> None:
-        pass # TODO...
+        model: XarrayDataTreeModel = self.model()
+        if model is None:
+            return
+        dt: xr.DataTree = model.datatree()
+        if dt is None:
+            return
+        obj: xr.DataTree | xr.DataArray = dt[path]
+        attrs = obj.attrs.copy()
+        
+        root = KeyValueTreeItem(attrs)
+        kvmodel = KeyValueTreeModel(root)
+        view = KeyValueTreeView()
+        view.setAlternatingRowColors(True)
+        view.setModel(kvmodel)
+        view.expandAll()
+        view.resizeAllColumnsToContents()
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(path)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(view)
+
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+        
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setMinimumSize(QSize(400, 400))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        
+        attrs = kvmodel.root().value
+        obj.attrs = attrs
+        
+        self.finishedEditingAttrs.emit()
     
     def eventFilter(self, obj: QObject, event: QEvent) -> None:
         if event.type() == QEvent.Type.Wheel:
@@ -467,10 +503,12 @@ class XarrayDataTreeView(QTreeView):
 def test_live():
     dt = xr.DataTree()
     dt['child1'] = xr.tutorial.load_dataset('air_temperature')
+    dt['child1/twice air'] = dt['child1/air'] * 2
     dt['child2'] = xr.DataTree()
     dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
     dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
-    dt['child3/grandchild2'] = xr.DataTree()
+    dt['child3/grandchild2'] = xr.tutorial.load_dataset('rasm')
+    dt['child4'] = xr.tutorial.load_dataset('air_temperature_gradient')
     print(dt)
 
     app = QApplication()
@@ -478,12 +516,11 @@ def test_live():
     view = XarrayDataTreeView()
     view.setModel(model)
     view.show()
+    view.resize(QSize(800, 600))
+    view.showAll()
     app.exec()
     print(dt)
 
 
 if __name__ == '__main__':
-    try:
-        test_live()
-    except Exception as err:
-        print(err.with_traceback())
+    test_live()

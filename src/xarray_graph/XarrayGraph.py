@@ -56,6 +56,7 @@ import pyqtgraph as pg
 import pyqt_ext.pyqtgraph_ext as pgx
 
 # from xarray_graph.xarray_utils import *
+from xarray_graph import XarrayDataTreeModel, XarrayDataTreeView, XarrayDataTreeViewer
 from xarray_graph.tree import *
 from xarray_graph.io import *
 
@@ -1276,7 +1277,7 @@ class XarrayGraph(QMainWindow):
                     break
         
         # update ROI tree view (only item for ROI)
-        for item in self._ROItree_model.root().depth_first():
+        for item in self._ROItree_model.root().depthFirst():
             if getattr(item, '_data', None) is ROI:
                 item.name = self._ROItree_model._get_annotation_label(ROI)
                 index: QModelIndex = self._ROItree_model.indexFromItem(item)
@@ -1730,7 +1731,7 @@ class XarrayGraph(QMainWindow):
     
     def _update_datatree_view(self) -> None:
         """ Update the datatree view for the current datatree. """
-        self._datatree_view.setDataTree(self.datatree)
+        self._datatree_view.setDatatree(self.datatree)
     
     def _update_ROItree_view(self) -> None:
         """ Update the ROI tree view for the current datatree selection. """
@@ -2983,13 +2984,13 @@ class XarrayGraph(QMainWindow):
     def _init_datatree_viewer(self) -> None:
         """ Initialize datatree viewer. """
 
-        self._datatree_viewer = XarrayTreeViewer()
+        self._datatree_viewer = XarrayDataTreeViewer()
         self._datatree_view = self._datatree_viewer.view()
         self._datatree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._datatree_view.setAlternatingRowColors(False)
-        self._datatree_view.setVariablesVisible(False)
-        self._datatree_view.setCoordinatesVisible(False)
-        self._datatree_model: XarrayTreeModel = XarrayTreeModel(dt=self.datatree)
+        self._datatree_model: XarrayDataTreeModel = XarrayDataTreeModel(self.datatree)
+        self._datatree_model.setDataVarsVisible(True)
+        self._datatree_model.setCoordsVisible(False)
         self._datatree_model.setDetailsColumnVisible(False)
         self._datatree_view.setModel(self._datatree_model)
         self._datatree_view.expandAll()
@@ -3001,7 +3002,7 @@ class XarrayGraph(QMainWindow):
         self._ROItree_view.setModel(self._ROItree_model)
         self._ROItree_view.setHeaderHidden(True)
         self._ROItree_view.selectionWasChanged.connect(lambda: self.setROIsVisible(True))
-        self._datatree_viewer.metadata_tabs.addTab(self._ROItree_view, "ROIs")
+        self._datatree_viewer._tabs.addTab(self._ROItree_view, "ROIs")
 
         # # on attr changes
         # self._datatree_view.sigFinishedEditingAttrs.connect(self.refresh)
