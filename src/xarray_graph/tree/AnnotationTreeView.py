@@ -66,20 +66,20 @@ class AnnotationTreeView(TreeView):
             item = model.itemFromIndex(index)
             if item is None:
                 continue
-            if item.is_leaf():
+            if item.isLeaf():
                 annotation = getattr(item, '_data', None)
                 if annotation is not None:
                     annotations.append(annotation)
                     if returnPaths:
-                        parentItem = item.parent
+                        parentItem = item.parent()
                         if isinstance(parentItem._data, str):
-                            parentItem = item.parent
+                            parentItem = item.parent()
                         obj = parentItem._data
                         if isinstance(obj, xr.DataTree):
                             paths.append(obj.path)
                         elif isinstance(obj, xr.DataArray):
                             name = obj.name
-                            obj = parentItem.parent._data
+                            obj = parentItem.parent()._data
                             paths.append(f'{obj.path}/{name}')
                         else:
                             paths.append(None)
@@ -90,10 +90,10 @@ class AnnotationTreeView(TreeView):
     def setSelectedAnnotations(self, annotations: list[dict]) -> None:
         self.selectionModel().clearSelection()
         toSelect = QItemSelection()
-        for item in self.model().root().depth_first():
+        for item in self.model().root().depthFirst():
             if item is self.model().root():
                 continue
-            if item.is_leaf():
+            if item.isLeaf():
                 annotation = getattr(item, '_data', None)
                 if annotation is not None:
                     if annotation in annotations:
@@ -164,22 +164,22 @@ class AnnotationTreeView(TreeView):
         if deselectedItems:
             toDeselect = QItemSelection()
             for item in deselectedItems:
-                ancestor = item.parent
+                ancestor = item.parent()
                 while ancestor is not None:
                     if mouseItem is not None and mouseItemSelected:
-                        if ancestor.has_ancestor(mouseItem):
+                        if ancestor.hasAncestor(mouseItem):
                             break
                     ancestorIndex = self.model().indexFromItem(ancestor)
                     if self.selectionModel().isSelected(ancestorIndex):
                         toDeselect.select(ancestorIndex, ancestorIndex)
-                    ancestor = ancestor.parent
-                for descendant in item.depth_first():
+                    ancestor = ancestor.parent()
+                for descendant in item.depthFirst():
                     if descendant is item:
                         continue
-                    if not descendant.has_ancestor(item):
+                    if not descendant.hasAncestor(item):
                         break
                     if mouseItem is not None and mouseItemSelected:
-                        if descendant.has_ancestor(mouseItem):
+                        if descendant.hasAncestor(mouseItem):
                             continue
                     descendantIndex = self.model().indexFromItem(descendant)
                     if self.selectionModel().isSelected(descendantIndex):
@@ -212,14 +212,14 @@ class AnnotationTreeView(TreeView):
         indexes = self.selectionModel().selectedIndexes()
         for index in indexes:
             item = self.model().itemFromIndex(index)
-            for descendant in item.depth_first():
+            for descendant in item.depthFirst():
                 descendantIndex = self.model().indexFromItem(descendant)
                 if not self.selectionModel().isSelected(descendantIndex):
                     toSelect.select(descendantIndex, descendantIndex)
-        for item in self.model().root().reverse_depth_first():
+        for item in self.model().root().reverseDepthFirst():
             if item is self.model().root():
                 continue
-            if item.is_leaf():
+            if item.isLeaf():
                 continue
             allChildrenSelected = True
             for child in item.children:

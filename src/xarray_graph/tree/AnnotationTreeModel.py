@@ -150,7 +150,7 @@ class AnnotationTreeModel(AbstractTreeModel):
         if role == Qt.ItemDataRole.DisplayRole or role == Qt.ItemDataRole.EditRole:
             item: AbstractTreeItem = self.itemFromIndex(index)
             if index.column() == 0:
-                return item.name
+                return item.name()
         if role == Qt.ItemDataRole.DecorationRole:
             item: AbstractTreeItem = self.itemFromIndex(index)
             if index.column() == 0:
@@ -158,7 +158,7 @@ class AnnotationTreeModel(AbstractTreeModel):
                 if isinstance(data, xr.DataTree): # node
                     return qta.icon('ph.folder-thin')
                 if isinstance(data, xr.DataArray): # variable or coordinate
-                    node = item.parent._data
+                    node = item.parent()._data
                     if data.name in list(node.data_vars): # variable
                         return qta.icon('ph.cube-thin')
                     if data.name in list(node.coords): # coordinate
@@ -181,17 +181,17 @@ class AnnotationTreeModel(AbstractTreeModel):
                     group = str(value).strip()
                     if not group:
                         return False
-                    if group == item.name:
+                    if group == item.name():
                         # no change
                         return False
-                    parent_item: AbstractTreeItem = item.parent
-                    groups = [child_item.name for child_item in parent_item.children if isinstance(getattr(child_item, '_data', None), str)]
+                    parent_item: AbstractTreeItem = item.parent()
+                    groups = [child_item.name() for child_item in parent_item.children if isinstance(getattr(child_item, '_data', None), str)]
                     if group in groups:
                         # group already exists
                         QMessageBox.warning(None, 'Group already exists', f'Group "{group}" already exists.')
                         return False
                     # update group name
-                    item.name = group
+                    item.setName(group)
                     for annotation_item in item.children:
                         annotation = getattr(annotation_item, '_data', None)
                         if annotation is not None:
@@ -213,7 +213,7 @@ class AnnotationTreeModel(AbstractTreeModel):
                             annotation['text'] = '\n'.join(lines)
                         elif 'text' in annotation:
                             del annotation['text']
-                        item.name = self._get_annotation_label(annotation)
+                        item.setName(self._get_annotation_label(annotation))
                         return True
         return False
     
@@ -222,13 +222,13 @@ class AnnotationTreeModel(AbstractTreeModel):
         """
         data = getattr(item, '_data', None)
         if isinstance(data, str): # annotation group
-            obj = item.parent._data
+            obj = item.parent()._data
             annotations = obj.attrs.get(self._key, [])
             obj.attrs[self._key] = [annotation for annotation in annotations if annotation.get('group', None) != data]
         elif isinstance(data, dict): # annotation
-            obj = item.parent._data
+            obj = item.parent()._data
             if isinstance(obj, str):
-                obj = item.parent.parent._data
+                obj = item.parent().parent()._data
             annotations = obj.attrs.get(self._key, [])
             annotations.remove(data)
         else:
