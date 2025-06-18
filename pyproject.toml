@@ -14,12 +14,13 @@ dependencies = [
     "scipy>=1.11.4",
     "xarray>=2025.3.1",
     "pint",
+    "h5netcdf",
     "zarr",
     "lmfit>=1.2.2",
     "QtPy>=2.4.1",
     "QtAwesome>=1.4.0",
     "pyqtgraph>=0.13.3",
-    "pyqt-ext>=2025.6.18.2",
+    "pyqt-ext>=2025.6.18.3",
     "qtconsole>=5.5.2",
 ]
 authors = [
