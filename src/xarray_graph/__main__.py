@@ -34,7 +34,7 @@ def load_example() -> xr.DataTree:
     if req.status_code != 200:
         raise ValueError(f'Failed to download example data: request status code = {req.status_code}')
     
-    dt: xr.DataTree = xr.open_datatree(io.BytesIO(req.content), 'h5netcdf')
+    dt: xr.DataTree = xr.open_datatree(io.BytesIO(req.content), engine='h5netcdf')
     return dt
 
 
