@@ -9,15 +9,18 @@ description = "PyQt UI for navigating and graphing (x,y) slices of a Xarray Data
 dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
+    "requests",
     "numpy>=1.26.2",
+    "scipy>=1.11.4",
     "xarray>=2025.3.1",
+    "pint",
     "zarr",
+    "lmfit>=1.2.2",
     "QtPy>=2.4.1",
     "QtAwesome>=1.4.0",
-    "pyqt-ext>=2025.4.9.2",
+    "pyqtgraph>=0.13.3",
+    "pyqt-ext>=2025.6.18.2",
     "qtconsole>=5.5.2",
-    "scipy>=1.11.4",
-    "lmfit>=1.2.2",
 ]
 authors = [
     {name = "Marcel Goldschen-Ohm", email = "goldschen-ohm@utexas.edu"},
@@ -29,6 +32,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
+]
+
+[project.optional-dependencies]
+PySide6 = [
+    "PySide6>=6.9",
 ]
 
 
