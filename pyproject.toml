@@ -37,7 +37,7 @@ classifiers = [
 
 [project.optional-dependencies]
 PySide6 = [
-    "PySide6>=6.9",
+    "PySide6<6.9.1",
 ]
 
 
