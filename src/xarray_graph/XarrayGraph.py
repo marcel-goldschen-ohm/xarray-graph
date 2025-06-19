@@ -3242,7 +3242,8 @@ class XarrayGraph(QMainWindow):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.addRow('Peak type', self._measure_peak_type_combobox)
         form.addRow('Max # peaks', self._max_num_peaks_per_region_spinbox)
-        form.addRow(f'{u'\u00b1'} sample mean', self._measure_peak_avg_half_width_spinbox)
+        Delta_symbol = u'\u00b1'
+        form.addRow(f'{Delta_symbol} sample mean', self._measure_peak_avg_half_width_spinbox)
         form.addRow('Peak threshold', self._measure_peak_threshold_edit)
 
         # options and buttons

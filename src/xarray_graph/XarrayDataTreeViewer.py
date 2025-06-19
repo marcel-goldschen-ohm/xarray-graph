@@ -75,7 +75,8 @@ class XarrayDataTreeViewer(QSplitter):
             if isinstance(obj, xr.DataTree):
                 obj = obj.dataset
             if info_text:
-                info_text += f'\n{'-'*50}\n\n'
+                dashed_line: str = '-' * 50
+                info_text += f'\n{dashed_line}\n\n'
             info_text += f'{path}:\n{obj}\n'
         self._info_view.setPlainText(info_text)
 
