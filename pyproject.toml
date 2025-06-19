@@ -20,7 +20,7 @@ dependencies = [
     "QtPy>=2.4.1",
     "QtAwesome>=1.4.0",
     "pyqtgraph>=0.13.3",
-    "pyqt-ext>=2025.6.18.3",
+    "pyqt-ext>=2025.6.19.4",
     "qtconsole>=5.5.2",
 ]
 authors = [
@@ -33,11 +33,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
-]
-
-[project.optional-dependencies]
-PySide6 = [
-    "PySide6<6.9.1",
 ]
 
 

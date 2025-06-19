@@ -21,11 +21,8 @@ pip install xarray-graph
 ```
 Or install latest development version:
 ```shell
+pip install pyqt-ext@git+https://github.com/marcel-goldschen-ohm/pyqt-ext
 pip install xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
-```
-If you also want to install the latest development version of the pyqt-ext package on which xarray-graph depends:
-```shell
-pip install pyqt-ext@git+https://github.com/marcel-goldschen-ohm/pyqt-ext --upgrade
 ```
 
 ## Run
@@ -41,3 +38,9 @@ This is all done in my free time. If you find it useful, why not buy me a cup of
 
 ## Documentation
 :construction:
+
+## Dev notes
+For PDM lockfile:
+```
+pdm lock --strategy cross_platform
+```
