@@ -1,5 +1,5 @@
 # xarray-graph
-PyQt/PySide UI for graphing (x,y) slices of Xarray Datasets in a DataTree.
+PyQt/PySide UI for graphing (x,y) slices of selected Datasets in Xarray DataTrees.
 
 ![GitHub Tag](https://img.shields.io/github/v/tag/marcel-goldschen-ohm/xarray-graph?cacheSeconds=1)
 ![build-test](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/build-test.yml/badge.svg)
@@ -11,9 +11,9 @@ PyQt/PySide UI for graphing (x,y) slices of Xarray Datasets in a DataTree.
 - [Documentation](#documentation)
 
 ## Install
-Requires a PyQt package. Should work with PySide6, PyQt6, or PyQt5. *Note: pyqtgraph is incompatible with PySide6=6.9.1, not sure why?*
+Requires a PyQt package. Should work with PySide6 (the official Python Qt binding), PyQt6, or PyQt5 via the [QtPy](https://github.com/spyder-ide/qtpy) abstraction layer. *Note: PySide6>=6.2.2 for Apple silicon support, and PySide6!=6.9.1 due to a [bug](https://github.com/pyqtgraph/pyqtgraph/issues/3328) that is incompatible with pyqtgraph.*
 ```shell
-pip install "PySide6<6.9.1"
+pip install "PySide6>=6.2.2,!=6.9.1"
 ```
 Install latest release version:
 ```shell
