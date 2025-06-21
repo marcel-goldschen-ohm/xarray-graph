@@ -2,6 +2,7 @@
 
 TODO:
 - bug fix: switching from graph with symbols to one that should be a line does not update style
+- bug fix: moving selected annotations does not work correctly?
 - persistent symbol style for measurements
 - apply preview filter before curve fit or measurement?
 - how to handle selecting non-aligned data?
