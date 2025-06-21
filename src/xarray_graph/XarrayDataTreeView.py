@@ -214,6 +214,8 @@ class XarrayDataTreeView(QTreeView):
                 isSelected = item_state.get('selected', False)
                 if isSelected:
                     selection.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        if selection.count():
+            self.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
     
     @Slot(QItemSelection, QItemSelection)
     def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:

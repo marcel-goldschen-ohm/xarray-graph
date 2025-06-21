@@ -1,7 +1,6 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
-- !! fix bug deselecting tree data on xdim or tile change
 - handle different units for same variable (e.g., A vs. mA)
 - apply preview filter before curve fit or measurement?
 - how to handle selecting non-aligned data?
