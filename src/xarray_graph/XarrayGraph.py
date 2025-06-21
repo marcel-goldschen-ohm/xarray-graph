@@ -1,7 +1,8 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
-- handle different units for same variable (e.g., A vs. mA)
+- bug fix: switching from graph with symbols to one that should be a line does not update style
+- persistent symbol style for measurements
 - apply preview filter before curve fit or measurement?
 - how to handle selecting non-aligned data?
 - measurement dims/coords (deal with reductions)?
@@ -62,8 +63,9 @@ from xarray_graph.io import *
 
 
 # units
-from pint import UnitRegistry
+from pint import UnitRegistry, Quantity
 UREG = UnitRegistry()
+UREG.formatter.default_format = '~'  # short format for symbols (e.g., "A" instead of "ampere")
 
 
 # version info (stored in metadata in case needed later)
@@ -865,9 +867,10 @@ class XarrayGraph(QMainWindow):
 
         # ensure result nodes are expanded
         for result_node_path in result_node_paths:
-            item = self._datatree_view.model().root()
-            item = item[result_node_path.lstrip('/')]
-            index = self._datatree_view.model().indexFromItem(item)
+            # item = self._datatree_view.model().root()
+            # item = item[result_node_path.lstrip('/')]
+            # index = self._datatree_view.model().indexFromItem(item)
+            index = self._datatree_view.model().indexFromPath(result_node_path)
             if not self._datatree_view.isExpanded(index):
                 self._datatree_view.setExpanded(index, True)
         
@@ -987,9 +990,10 @@ class XarrayGraph(QMainWindow):
 
         # ensure result nodes are expanded
         for result_node_path in result_node_paths:
-            item = self._datatree_view.model().root()
-            item = item[result_node_path.lstrip('/')]
-            index = self._datatree_view.model().indexFromItem(item)
+            # item = self._datatree_view.model().root()
+            # item = item[result_node_path.lstrip('/')]
+            # index = self._datatree_view.model().indexFromItem(item)
+            index = self._datatree_view.model().indexFromPath(result_node_path)
             if not self._datatree_view.isExpanded(index):
                 self._datatree_view.setExpanded(index, True)
         
@@ -1039,7 +1043,8 @@ class XarrayGraph(QMainWindow):
                 
                 xmeasure, ymeasure = preview_graph.getOriginalDataset()
 
-                new_result_var = xr.DataArray(data=ymeasure, dims=[self.xdim], coords={self.xdim: xmeasure}, name=var_name)
+                parent_var = parent_node.data_vars[var_name]
+                new_result_var = xr.DataArray(data=ymeasure, dims=[self.xdim], coords={self.xdim: xmeasure}, name=var_name, attrs=parent_var.attrs)
 
                 result_var_paths.append(result_var_path)
                 result_node_paths.append(result_node_path)
@@ -1073,9 +1078,10 @@ class XarrayGraph(QMainWindow):
 
         # ensure result nodes are expanded
         for result_node_path in result_node_paths:
-            item = self._datatree_view.model().root()
-            item = item[result_node_path.lstrip('/')]
-            index = self._datatree_view.model().indexFromItem(item)
+            # item = self._datatree_view.model().root()
+            # item = item[result_node_path.lstrip('/')]
+            # index = self._datatree_view.model().indexFromItem(item)
+            index = self._datatree_view.model().indexFromPath(result_node_path)
             if not self._datatree_view.isExpanded(index):
                 self._datatree_view.setExpanded(index, True)
         
@@ -2086,6 +2092,9 @@ class XarrayGraph(QMainWindow):
 
             # set xticks (in case change between numerical and categorical)
             plot.getAxis('bottom').setTicks(all_xticks)
+
+            # yunits for all graphs in this plot (set by first graph)
+            plot_yunits: str | None = None
             
             # existing graphs in plot
             graphs = [item for item in plot.listDataItems() if isinstance(item, pgx.Graph)]
@@ -2106,7 +2115,12 @@ class XarrayGraph(QMainWindow):
                 data_var = self.datatree[var_path].reset_coords(drop=True)
                 if self.xdim not in data_var.coords:
                     continue
-                data_var = to_base_units(data_var)
+                if plot_yunits is None:
+                    plot_yunits = data_var.attrs.get('units', None)
+                else:
+                    data_var_yunits = data_var.attrs.get('units', None)
+                    if data_var_yunits != plot_yunits:
+                        data_var = to_units(data_var, plot_yunits)
 
                 node_path = var_path.rstrip('/').rstrip(var_name).rstrip('/')
                 node = self.datatree[node_path]
@@ -3662,6 +3676,16 @@ def to_base_units(data: xr.DataArray | xr.Dataset) -> xr.DataArray | xr.Dataset:
             coords={name: to_base_units(coord) for name, coord in data.coords.items()},
             attrs=data.attrs,
         )
+
+
+def to_units(data: xr.DataArray, units: str) -> xr.DataArray:
+    if 'units' not in data.attrs:
+        return data
+    quantity: Quantity = data.values * UREG(data.attrs['units'])
+    quantity = quantity.to(units)
+    data_in_units = data.copy(data=quantity.magnitude)
+    data_in_units.attrs['units'] = units
+    return data_in_units
 
 
 def test_live():
