@@ -124,17 +124,21 @@ class AnnotationTreeModel(AbstractTreeModel):
                 return Qt.ItemFlag.ItemIsDropEnabled
             return Qt.ItemFlag.NoItemFlags
         
-        if index.column() == 0:
-            item: AbstractTreeItem = self.itemFromIndex(index)
-            data = getattr(item, '_data', None)
-            if isinstance(data, xr.DataTree): # node
-                flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-            elif isinstance(data, xr.DataArray): # variable or coordinate
-                flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-            elif isinstance(data, str): # annotation group
-                flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
-            elif isinstance(data, dict): # annotation
-                flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        if index.column() != 0:
+            return Qt.ItemFlag.NoItemFlags
+        
+        item: AbstractTreeItem = self.itemFromIndex(index)
+        data = getattr(item, '_data', None)
+        if isinstance(data, xr.DataTree): # node
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        elif isinstance(data, xr.DataArray): # variable or coordinate
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        elif isinstance(data, str): # annotation group
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        elif isinstance(data, dict): # annotation
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        else:
+            return Qt.ItemFlag.NoItemFlags
         
         # drag and drop
         if self.supportedDropActions() != Qt.DropAction.IgnoreAction:
