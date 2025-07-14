@@ -1,4 +1,7 @@
 """ Tree view of a AnnotationTreeModel with context menu and mouse wheel expand/collapse.
+
+TODO:
+- Add context menu actions for editing and grouping annotations.
 """
 
 from __future__ import annotations
@@ -7,8 +10,8 @@ import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from pyqt_ext.tree import AbstractTreeItem, TreeView
-from xarray_graph.tree import AnnotationTreeModel
+from pyqt_ext.tree import TreeView
+from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel
 
 
 class AnnotationTreeView(TreeView):
@@ -18,36 +21,28 @@ class AnnotationTreeView(TreeView):
 
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-
-        # # these will appear in the item's context menu
-        # self._itemContextMenuFunctions: list[tuple[str, Callable[[AbstractTreeItem]]]] = [
-        #     ('Info', lambda item, self=self: self.popupItemInfo(item)),
-        #     ('Attrs', lambda item, self=self: self.editItemAttrs(item)),
-        #     ('Separator', None),
-        #     ('Remove', lambda item, self=self: self.askToRemoveItem(item)),
-        # ]
     
-    def setDataTree(self, dt: xr.DataTree, paths: list[str] = None, key: str = 'annotations'):
+    def setDataTree(self, datatree: xr.DataTree, paths: list[str] = None, attrs_key: str = 'annotations'):
         model: AnnotationTreeModel = self.model()
         if model is None:
             model = AnnotationTreeModel()
             TreeView.setModel(self, model)
         self.storeState()
-        model.setDataTree(dt, paths=paths, key=key)
+        model.setDataTree(datatree, paths=paths, attrs_key=attrs_key)
         self.restoreState()
         self._paths = paths
-        self._key = key
+        self._attrs_key = attrs_key
     
     def refresh(self):
         model: AnnotationTreeModel = self.model()
         if model is None:
             return
-        dt: xr.DataTree | None = model.dataTree()
-        if dt is None:
+        datatree: xr.DataTree | None = model.dataTree()
+        if datatree is None:
             return
         paths = getattr(self, '_paths', None)
-        key = getattr(self, '_key', 'annotations')
-        self.setDataTree(dt, paths=paths, key=key)
+        attrs_key = getattr(self, '_attrs_key', 'annotations')
+        self.setDataTree(datatree, paths=paths, attrs_key=attrs_key)
     
     def setModel(self, model: AnnotationTreeModel):
         TreeView.setModel(self, model)
@@ -67,19 +62,19 @@ class AnnotationTreeView(TreeView):
             if item is None:
                 continue
             if item.isLeaf():
-                annotation = getattr(item, '_data', None)
+                annotation = getattr(item, 'data', None)
                 if annotation is not None:
                     annotations.append(annotation)
                     if returnPaths:
                         parentItem = item.parent()
-                        if isinstance(parentItem._data, str):
+                        if isinstance(parentItem.data, str):
                             parentItem = item.parent()
-                        obj = parentItem._data
+                        obj = parentItem.data
                         if isinstance(obj, xr.DataTree):
                             paths.append(obj.path)
                         elif isinstance(obj, xr.DataArray):
                             name = obj.name
-                            obj = parentItem.parent()._data
+                            obj = parentItem.parent().data
                             paths.append(f'{obj.path}/{name}')
                         else:
                             paths.append(None)
@@ -90,11 +85,11 @@ class AnnotationTreeView(TreeView):
     def setSelectedAnnotations(self, annotations: list[dict]) -> None:
         self.selectionModel().clearSelection()
         toSelect = QItemSelection()
-        for item in self.model().root().depthFirst():
-            if item is self.model().root():
+        for item in self.model().rootItem().depthFirst():
+            if item is self.model().rootItem():
                 continue
             if item.isLeaf():
-                annotation = getattr(item, '_data', None)
+                annotation = getattr(item, 'data', None)
                 if annotation is not None:
                     if annotation in annotations:
                         index = self.model().indexFromItem(item)
@@ -216,8 +211,8 @@ class AnnotationTreeView(TreeView):
                 descendantIndex = self.model().indexFromItem(descendant)
                 if not self.selectionModel().isSelected(descendantIndex):
                     toSelect.select(descendantIndex, descendantIndex)
-        for item in self.model().root().reverseDepthFirst():
-            if item is self.model().root():
+        for item in self.model().rootItem().reverseDepthFirst():
+            if item is self.model().rootItem():
                 continue
             if item.isLeaf():
                 continue
@@ -253,29 +248,7 @@ class AnnotationTreeView(TreeView):
 
         return menu
     
-    # def popupItemInfo(self, item: AbstractTreeItem):
-    #     model: XarrayTreeModel = self.model()
-    #     if model is None:
-    #         return
-    #     dt: xr.DataTree | None = model.dataTree()
-    #     if dt is None:
-    #         return
-    #     path: str = model.pathFromItem(item)
-    #     obj = dt[path]
-    #     text = str(obj)
-        
-    #     textEdit = QTextEdit()
-    #     textEdit.setPlainText(text)
-    #     textEdit.setReadOnly(True)
-
-    #     dlg = QDialog(self)
-    #     dlg.setWindowTitle(item.path)
-    #     layout = QVBoxLayout(dlg)
-    #     layout.setContentsMargins(0, 0, 0, 0)
-    #     layout.addWidget(textEdit)
-    #     dlg.exec()
-    
-    # def editItemAttrs(self, item: AbstractTreeItem):
+    # def editAnnotation(self, item: AnnotationTreeItem):
     #     model: XarrayTreeModel = self.model()
     #     if model is None:
     #         return
@@ -339,7 +312,7 @@ def test_live():
     print(json.dumps(dt['child1'].attrs['annotations'], indent=2))
 
     print('\nAnnotationTreeModel...')
-    model = AnnotationTreeModel(dt=dt, key='annotations')#, paths=['child1', 'child2'])
+    model = AnnotationTreeModel(datatree=dt, attrs_key='annotations')#, paths=['child1', 'child2'])
     # print(model.root())
 
     app = QApplication()
@@ -348,6 +321,7 @@ def test_live():
     view.show()
     view.resize(400, 350)
     app.exec()
+    
     print('\nFinal DataTree...')
     # print(dt)
     print(json.dumps(dt['child1'].attrs['annotations'], indent=2))

@@ -1,5 +1,7 @@
 from xarray_graph.tree.XarrayTreeModel import XarrayTreeModel, XarrayDndTreeModel
 from xarray_graph.tree.XarrayTreeView import XarrayTreeView
 from xarray_graph.tree.XarrayTreeViewer import XarrayTreeViewer
-from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeModel, AnnotationDndTreeModel
+
+from xarray_graph.tree.AnnotationTreeItem import AnnotationTreeItem
+from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeModel
 from xarray_graph.tree.AnnotationTreeView import AnnotationTreeView
