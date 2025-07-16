@@ -211,7 +211,6 @@ class AnnotationTreeItem(AbstractTreeItem):
                 for child in self.children:
                     annotations = child.annotations()
                     for annotation in annotations:
-                        # if annotation not in annotationsList:
-                        #     continue # should not happen
-                        annotationsList.remove(annotation)
+                        if annotation in annotationsList:
+                            annotationsList.remove(annotation)
                         annotationsList.append(annotation)

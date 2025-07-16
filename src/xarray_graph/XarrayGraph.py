@@ -1783,7 +1783,7 @@ class XarrayGraph(QMainWindow):
         selected_ROIs = self._ROItree_view.selectedAnnotations()
         self._ROItree_view.blockSignals(True)
         self._ROItree_view.storeState()
-        self._ROItree_view.setDataTree(self.datatree, paths=ordered_ROI_paths, key=ROI_KEY)
+        self._ROItree_view.setDataTree(self.datatree, paths=ordered_ROI_paths, attrs_key=ROI_KEY)
         self._ROItree_view.restoreState()
         self._ROItree_view.setSelectedAnnotations(selected_ROIs)
         self._ROItree_view.blockSignals(False)

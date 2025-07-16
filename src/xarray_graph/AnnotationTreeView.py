@@ -8,7 +8,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 from pyqt_ext.tree import TreeView, KeyValueTreeModel, KeyValueTreeView
-from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel
+from xarray_graph import AnnotationTreeItem, AnnotationTreeModel
 
 
 class AnnotationTreeView(TreeView):
@@ -236,39 +236,6 @@ class AnnotationTreeView(TreeView):
         
         self._clearSelectionAccumulators()
         self._is_updating_selection = False
-    
-    # def mousePressEvent(self, event: QMouseEvent) -> None:
-    #     print('-' * 80)
-    #     print('mousePressEvent')
-    #     # if event.button() == Qt.MouseButton.LeftButton:
-    #     #     # modifiers: Qt.KeyboardModifier = event.modifiers()
-    #     #     # if False:#not modifiers: # Qt.KeyboardModifier.ControlModifier not in modifiers:
-    #     #     #     self._clearSelectionAccumulators()
-    #     #     #     self.selectionModel().clearSelection()
-    #     #     # else:
-            
-    #     #     # Deselect all parents of clicked item.
-    #     #     # The selection status of these parents will be updated on mouse release.
-    #     #     pos = event.pos()
-    #     #     index = self.indexAt(pos)
-    #     #     if index.isValid():
-    #     #         item = self.model().itemFromIndex(index)
-    #     #         itemsToDeselect = list(item.parents())
-    #     #         print(itemsToDeselect)
-    #     #         if itemsToDeselect:
-    #     #             indexesToDeselect = [self.model().indexFromItem(item) for item in itemsToDeselect]
-    #     #             toDeselect = QItemSelection()
-    #     #             for index in indexesToDeselect:
-    #     #                 if self.selectionModel().isSelected(index):
-    #     #                     toDeselect.select(index, index)
-    #     #                 break
-    #     #             if toDeselect.indexes():
-    #     #                 flags = (
-    #     #                     QItemSelectionModel.SelectionFlag.Deselect |
-    #     #                     QItemSelectionModel.SelectionFlag.Rows
-    #     #                 )
-    #     #                 self.selectionModel().select(toDeselect, flags)
-    #     TreeView.mousePressEvent(self, event)
     
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

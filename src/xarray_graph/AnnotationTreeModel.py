@@ -16,7 +16,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph.tree import AnnotationTreeItem
+from xarray_graph import AnnotationTreeItem
 from pyqt_ext.tree import AbstractTreeModel, AbstractTreeMimeData
 
 
@@ -134,9 +134,12 @@ class AnnotationTreeModel(AbstractTreeModel):
             if isinstance(data, xr.DataTree) or isinstance(data, xr.DataArray):
                 # can only drop onto DataTree/DataArray items
                 flags |= Qt.ItemFlag.ItemIsDropEnabled
-            elif isinstance(data, str) or isinstance(data, dict): # annotation group or annotation
-                # can drag and drop annotation items or groups
+            elif isinstance(data, str):
+                # can drag and drop onto annotation groups
                 flags |= (Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
+            elif isinstance(data, dict): # annotation group or annotation
+                # can drag but not drop onto annotation items
+                flags |= Qt.ItemFlag.ItemIsDragEnabled
         
         return flags
 

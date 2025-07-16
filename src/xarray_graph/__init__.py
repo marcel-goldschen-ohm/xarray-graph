@@ -1,4 +1,9 @@
+from xarray_graph.AnnotationTreeItem import AnnotationTreeItem
+from xarray_graph.AnnotationTreeModel import AnnotationTreeModel
+from xarray_graph.AnnotationTreeView import AnnotationTreeView
+
 from xarray_graph.XarrayDataTreeModel import XarrayDataTreeModel, XarrayDataTreeMimeData
 from xarray_graph.XarrayDataTreeView import XarrayDataTreeView
 from xarray_graph.XarrayDataTreeViewer import XarrayDataTreeViewer
+
 from xarray_graph.XarrayGraph import XarrayGraph
