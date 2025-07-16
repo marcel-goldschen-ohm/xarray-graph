@@ -1,7 +1,4 @@
 """ Tree view of a AnnotationTreeModel with context menu and mouse wheel expand/collapse.
-
-TODO:
-- Add context menu actions for editing and grouping annotations.
 """
 
 from __future__ import annotations
@@ -10,7 +7,7 @@ import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from pyqt_ext.tree import TreeView
+from pyqt_ext.tree import TreeView, KeyValueTreeModel, KeyValueTreeView
 from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel
 
 
@@ -125,16 +122,16 @@ class AnnotationTreeView(TreeView):
             self._deselected_items = deselectedItems
 
             # print('-' * 80)
-            # print('selectedItems [')
-            # for item in selectedItems:
-            #     print(item.name)
-            # print(']')
-            # print('deselectedItems [')
-            # for item in deselectedItems:
-            #     print(item.name)
-            # print(']')
+            # print('selectedItems', [item.name() for item in selectedItems])
+            # print('deselectedItems', [item.name() for item in deselectedItems])
 
         TreeView.selectionChanged(self, selected, deselected)
+
+        mouseButtons = QApplication.mouseButtons()
+        if mouseButtons == Qt.MouseButton.NoButton:
+            # this is needed because deselection of a part of an extended selection
+            # does not trigger a selectionChanged event until after the mouse button is released
+            self._updateSelection()
     
     def _clearSelectionAccumulators(self) -> None:
         self._selected_items = []
@@ -153,6 +150,10 @@ class AnnotationTreeView(TreeView):
         # grab accumulated selections
         selectedItems = getattr(self, '_selected_items', [])
         deselectedItems = getattr(self, '_deselected_items', [])
+
+        # print('-' * 80)
+        # print('final selectedItems', [item.name() for item in selectedItems])
+        # print('final deselectedItems', [item.name() for item in deselectedItems])
 
         # Deselect all ancestors and descendents of each deselected item.
         # The deselected items are accumulated in the selectionChanged() method.
@@ -236,61 +237,127 @@ class AnnotationTreeView(TreeView):
         self._clearSelectionAccumulators()
         self._is_updating_selection = False
     
+    # def mousePressEvent(self, event: QMouseEvent) -> None:
+    #     print('-' * 80)
+    #     print('mousePressEvent')
+    #     # if event.button() == Qt.MouseButton.LeftButton:
+    #     #     # modifiers: Qt.KeyboardModifier = event.modifiers()
+    #     #     # if False:#not modifiers: # Qt.KeyboardModifier.ControlModifier not in modifiers:
+    #     #     #     self._clearSelectionAccumulators()
+    #     #     #     self.selectionModel().clearSelection()
+    #     #     # else:
+            
+    #     #     # Deselect all parents of clicked item.
+    #     #     # The selection status of these parents will be updated on mouse release.
+    #     #     pos = event.pos()
+    #     #     index = self.indexAt(pos)
+    #     #     if index.isValid():
+    #     #         item = self.model().itemFromIndex(index)
+    #     #         itemsToDeselect = list(item.parents())
+    #     #         print(itemsToDeselect)
+    #     #         if itemsToDeselect:
+    #     #             indexesToDeselect = [self.model().indexFromItem(item) for item in itemsToDeselect]
+    #     #             toDeselect = QItemSelection()
+    #     #             for index in indexesToDeselect:
+    #     #                 if self.selectionModel().isSelected(index):
+    #     #                     toDeselect.select(index, index)
+    #     #                 break
+    #     #             if toDeselect.indexes():
+    #     #                 flags = (
+    #     #                     QItemSelectionModel.SelectionFlag.Deselect |
+    #     #                     QItemSelectionModel.SelectionFlag.Rows
+    #     #                 )
+    #     #                 self.selectionModel().select(toDeselect, flags)
+    #     TreeView.mousePressEvent(self, event)
+    
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._updateSelection(event)
         TreeView.mouseReleaseEvent(self, event)
     
-    def contextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
-        menu: QMenu = TreeView.contextMenu(self, index)
+    def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu | None:
+        model: AnnotationTreeModel = self.model()
+        if model is None:
+            return
+        
+        menu = QMenu(self)
 
-        menu.addSeparator()
-
+        # context menu for item that was clicked on
+        if index.isValid():
+            item: AnnotationTreeItem = model.itemFromIndex(index)
+            item_label = self.truncateLabel(item.path())
+            if item.isAnnotationDict():
+                menu.addAction(f'Edit {item_label}', lambda item=item: self.editAnnotation(item))
+                menu.addSeparator()
+            menu.addAction(f'Remove {item_label}', lambda item=item: self.askToRemoveItems([item]))
+            menu.addSeparator()
+        
+        selectedItems = self.selectedItems()
+        if selectedItems:
+            menu.addAction('Group Selected', self.groupSelectedAnnotations)
+            menu.addSeparator()
+        
+        self.appendDefaultContextMenu(menu)
         return menu
     
-    # def editAnnotation(self, item: AnnotationTreeItem):
-    #     model: XarrayTreeModel = self.model()
-    #     if model is None:
-    #         return
-    #     dt: xr.DataTree | None = model.dataTree()
-    #     if dt is None:
-    #         return
-    #     path: str = model.pathFromItem(item)
-    #     obj = dt[path]
-    #     attrs = obj.attrs.copy()
+    def editAnnotation(self, item: AnnotationTreeItem):
+        if not item.isAnnotationDict():
+            return
         
-    #     root = KeyValueTreeItem('/', attrs)
-    #     kvmodel = KeyValueTreeModel(root)
-    #     view = KeyValueTreeView()
-    #     view.setModel(kvmodel)
-    #     view.expandAll()
-    #     view.resizeAllColumnsToContents()
+        annotation: dict = item.data
+        model = KeyValueTreeModel(annotation)
+        view = KeyValueTreeView()
+        view.setModel(model)
+        view.showAll()
 
-    #     dlg = QDialog(self)
-    #     dlg.setWindowTitle(item.path)
-    #     layout = QVBoxLayout(dlg)
-    #     layout.setContentsMargins(0, 0, 0, 0)
-    #     layout.addWidget(view)
+        dlg = QDialog(self)
+        dlg.setWindowTitle(item.path())
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(view)
 
-    #     btns = QDialogButtonBox()
-    #     btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-    #     btns.accepted.connect(dlg.accept)
-    #     btns.rejected.connect(dlg.reject)
-    #     layout.addWidget(btns)
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Close)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
         
-    #     dlg.setWindowModality(Qt.ApplicationModal)
-    #     dlg.setMinimumSize(QSize(400, 400))
-    #     if dlg.exec() != QDialog.Accepted:
-    #         return
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setMinimumSize(QSize(400, 400))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            pass # return
+
+        # update item label or tree in case of group change
+        self.refresh()
+
+    def groupSelectedAnnotations(self, group: str = None) -> None:
+        """ Group selected annotations under a new group name.
+        """
+        if group is None:
+            group, ok = QInputDialog.getText(self, 'Group Annotations', 'Enter group name:')
+            if not ok:
+                return
         
-    #     attrs = kvmodel.root().value
-    #     obj.attrs = attrs
+        group = group.strip()
+        if not group:
+            return
         
-    #     self.sigFinishedEditingAttrs.emit()
+        selectedAnnotations = self.selectedAnnotations(returnPaths=False)
+        if not selectedAnnotations:
+            return
+        
+        for annotation in selectedAnnotations:
+            annotation['group'] = group
+        
+        self.refresh()
+    
+    def dropEvent(self, event: QDropEvent) -> None:
+        self.storeState()
+        super().dropEvent(event)
+        self.restoreState()
 
 
 def test_live():
-    print('\nDataTree...')
     dt = xr.DataTree()
     dt['child1'] = xr.tutorial.load_dataset('air_temperature')
     dt['child2'] = xr.DataTree()
@@ -299,20 +366,27 @@ def test_live():
     dt['child3/grandchild2'] = xr.DataTree()
     
     dt.attrs['annotations'] = [
-        {'type': 'vregion', 'position': {'lat': [0, 1]}},
-        {'type': 'vregion', 'position': {'lat': [2, 3]}, 'group': 'group2', 'text': '10 mM GABA\n1 mM PTX'},
+        {'type': 'vregion', 'position': {'lat': (0, 1)}},
+        {'type': 'vregion', 'position': {'lat': (2, 3)}, 'group': 'group2', 'text': '10 mM GABA\n1 mM PTX'},
     ]
     dt['child1'].attrs['annotations'] = [
-        {'type': 'vregion', 'position': {'lat': [0, 1]}, 'group': 'group1'},
-        {'type': 'vregion', 'position': {'lat': [2, 3]}, 'group': 'group1'},
-        {'type': 'vregion', 'position': {'lat': [2, 3]}, 'group': 'group2'},
+        {'type': 'vregion', 'position': {'lat': (0, 1)}, 'group': 'group1'},
+        {'type': 'vregion', 'position': {'lat': (2, 3)}, 'group': 'group1'},
+        {'type': 'vregion', 'position': {'lat': (2, 3)}, 'group': 'group2'},
     ]
+
+    # print('\nDataTree...')
     # print(dt)
+
     import json
+    print('root annotations:', '-'*42)
+    print(json.dumps(dt.attrs['annotations'], indent=2))
+    print('child1 annotations:', '-'*42)
     print(json.dumps(dt['child1'].attrs['annotations'], indent=2))
 
-    print('\nAnnotationTreeModel...')
     model = AnnotationTreeModel(datatree=dt, attrs_key='annotations')#, paths=['child1', 'child2'])
+    
+    # print('\nAnnotationTreeModel...')
     # print(model.root())
 
     app = QApplication()
@@ -322,8 +396,12 @@ def test_live():
     view.resize(400, 350)
     app.exec()
     
-    print('\nFinal DataTree...')
+    # print('\nFinal DataTree...')
     # print(dt)
+
+    print('root annotations:', '-'*42)
+    print(json.dumps(dt.attrs['annotations'], indent=2))
+    print('child1 annotations:', '-'*42)
     print(json.dumps(dt['child1'].attrs['annotations'], indent=2))
 
 

@@ -17,11 +17,13 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph.tree import AnnotationTreeItem
-from pyqt_ext.tree import AbstractTreeModel
+from pyqt_ext.tree import AbstractTreeModel, AbstractTreeMimeData
 
 
 class AnnotationTreeModel(AbstractTreeModel):
     
+    MIME_TYPE = 'application/x-AnnotationTreeModel'
+
     def __init__(self, datatree: xr.DataTree = None, paths: list[str] = None, attrs_key: str = 'annotations', parent: QObject = None):
         AbstractTreeModel.__init__(self, parent=parent)
 
@@ -123,7 +125,7 @@ class AnnotationTreeModel(AbstractTreeModel):
         elif isinstance(data, str): # annotation group
             flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
         elif isinstance(data, dict): # annotation
-            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         else:
             return Qt.ItemFlag.NoItemFlags
         
@@ -170,29 +172,68 @@ class AnnotationTreeModel(AbstractTreeModel):
         if role == Qt.ItemDataRole.EditRole:
             if index.column() == 0:
                 item: AnnotationTreeItem = self.itemFromIndex(index)
-                data = getattr(item, 'data', None)
-                if isinstance(data, str):
-                    # annotation group
-                    group = str(value).strip()
-                    if not group:
-                        return False
-                    if group == item.name():
-                        # no change
-                        return False
-                    obj_item: AnnotationTreeItem = item.parent()
-                    groups = [child_item.name() for child_item in obj_item.children if isinstance(getattr(child_item, 'data', None), str)]
-                    if group in groups:
-                        # group already exists
-                        focus_widget: QWidget = QApplication.focusWidget()
-                        QMessageBox.warning(focus_widget, 'Group already exists', f'Group "{group}" already exists.')
-                        return False
-                    # update group name
-                    item.setName(group)
+                if item.isAnnotationGroup():
+                    item.setName(value)
                     return True
-                if isinstance(data, dict):
-                    # annotation
-                    item._set_annotation_label(data, value)
-                    return True
+        return False
+    
+    def mimeData(self, indexes: list[QModelIndex]) -> AbstractTreeMimeData | None:
+        if not indexes:
+            return None
+        if self.rootItem() is None:
+            return None
+        items: list[AnnotationTreeItem] = [self.itemFromIndex(index) for index in indexes if index.isValid()]
+        if not items:
+            return None
+        
+        # only keep root selection items (otherwise the selection heirarchy is flattened)
+        rootItems: list[AnnotationTreeItem] = []
+        for item in items:
+            if (item.parent() is None) or (item.parent() not in items):
+                rootItems.append(item)
+        
+        return AbstractTreeMimeData(self, rootItems, self.MIME_TYPE)
+
+    def dropMimeData(self, data: AbstractTreeMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex) -> bool:
+        if not isinstance(data, AbstractTreeMimeData):
+            return False
+        if not data.hasFormat(self.MIME_TYPE):
+            return False
+        
+        src_model: AbstractTreeModel = data.model
+        src_items: list[AnnotationTreeItem] = data.items
+        if not src_model or not src_items:
+            return False
+
+        # move src_items to the destination (row-th child of parent_index)
+        dst_model: AbstractTreeModel = self
+        if dst_model.rootItem() is None:
+            return False
+        dst_parent_item: AnnotationTreeItem = dst_model.itemFromIndex(parent_index)
+        
+        self.transferItems(src_model, src_items, dst_model, dst_parent_item, row)
+
+        # merge groups of same name
+        groups = [item.data for item in dst_parent_item.children if item.isAnnotationGroup()]
+        for group in groups:
+            if groups.count(group) > 1:
+                # merge groups with same name
+                group_items = [item for item in dst_parent_item.children if item.isAnnotationGroup() and item.data == group]
+                if len(group_items) > 1:
+                    # merge all items into the first group item
+                    self.beginResetModel()
+                    main_group_item = group_items[0]
+                    for item in group_items[1:]:
+                        for child in item.children:
+                            child._parent = main_group_item
+                            main_group_item.children.append(child)
+                        item.children = []
+                        item._parent = None
+                        dst_parent_item.children.remove(item)
+                    self.endResetModel()
+
+        # !? If we return True, the model will attempt to remove rows.
+        # As we already completely handled the move, this will corrupt our model, so return False.
         return False
   
 
