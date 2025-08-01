@@ -3,8 +3,8 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- restore state of dragged items in dropEvent
-- rename dimensions
+- copy/paste support
+- copy inherited coords when reparented if needed?
 """
 
 from __future__ import annotations
@@ -48,22 +48,6 @@ class XarrayDataTreeView(QTreeView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.onCustomContextMenuRequested)
 
-        # These menu action (text, function(path), type) tuples will be used to populate each item's context menu.
-        # If {item} is in the text, it will be replaced by the item's tree path.
-        # If text includes '/', create a submenu (nested submenus are NOT supported).
-        # '---' without any function is treated as a separator.
-        # The callback function should take the item's datatree path as its sole argument.
-        # If type is not None, only include this action for items of that type.
-        self._itemContextMenuFunctions: list[tuple[str, Callable[[str]]]] = [
-            ('{item}/Info', lambda path, self=self: self.popupInfo(path), None),
-            ('{item}/Attrs', lambda path, self=self: self.editAttrs(path), None),
-            ('{item}/---', None, None),
-            ('{item}/Rename Dimensions', None, None),
-            ('{item}/---', None, None),
-            ('{item}/Remove', lambda path, self=self: self.removePath(path), None),
-            ('---', None, None), # to separate this stuff from the rest of the default context menu
-        ]
-
         # optionally show vars and coords
         self._showDataVarsAction = QAction(
             text = 'Show Variables',
@@ -80,6 +64,15 @@ class XarrayDataTreeView(QTreeView):
             checkable = True,
             checked = True,
             toolTip = 'Show coords in the tree view. Uncheck to hide them.',
+            triggered = self._updateModelFromViewOptions
+        )
+
+        self._showInheritedCoordsAction = QAction(
+            text = 'Show Inherited Coordinates',
+            icon = qta.icon('ph.list-numbers-thin'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Show inherited coords in the tree view. Uncheck to hide them.',
             triggered = self._updateModelFromViewOptions
         )
 
@@ -121,6 +114,10 @@ class XarrayDataTreeView(QTreeView):
         self._showCoordsAction.setChecked(model.isCoordsVisible())
         self._showCoordsAction.blockSignals(False)
         
+        self._showInheritedCoordsAction.blockSignals(True)
+        self._showInheritedCoordsAction.setChecked(model.isInheritedCoordsVisible())
+        self._showInheritedCoordsAction.blockSignals(False)
+        
         self._showDetailsColumnAction.blockSignals(True)
         self._showDetailsColumnAction.setChecked(model.isDetailsColumnVisible())
         self._showDetailsColumnAction.blockSignals(False)
@@ -133,6 +130,7 @@ class XarrayDataTreeView(QTreeView):
         self.storeState()
         model.setDataVarsVisible(self._showDataVarsAction.isChecked())
         model.setCoordsVisible(self._showCoordsAction.isChecked())
+        model.setInheritedCoordsVisible(self._showInheritedCoordsAction.isChecked())
         model.setDetailsColumnVisible(self._showDetailsColumnAction.isChecked())
         self.restoreState()
     
@@ -272,6 +270,62 @@ class XarrayDataTreeView(QTreeView):
                 return
         self.model().removePaths(paths)
     
+    def renameDimensions(self, path: str = None) -> None:
+        model: XarrayDataTreeModel = self.model()
+        if model is None:
+            return
+        dt: xr.DataTree = model.datatree()
+        if dt is None:
+            return
+        node: xr.DataTree | xr.DataArray = dt[path]
+        if isinstance(node, xr.DataArray):
+            path = model.parentPath(path)
+            node: xr.DataTree = dt[path]
+        
+        dims = []
+        subnode: xr.DataTree
+        for subnode in node.subtree:
+            for dim in subnode.dims:
+                if dim not in dims:
+                    dims.append(dim)
+        if not dims:
+            QMessageBox.warning(self, 'Rename Dimensions', f'No dimensions found in subtree at {path}.')
+            return
+        
+        dim_editors: dict[str, QLineEdit] = {dim: QLineEdit(dim) for dim in dims}
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Rename Dimensions')
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        form = QFormLayout(dlg)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        for dim, editor in dim_editors.items():
+            form.addRow(f'{dim} ->', editor)
+
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        form.addRow(btns)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        
+        self.storeState()
+        self.model().beginResetModel()
+        # print(node)
+        subnode: xr.DataTree
+        for subnode in node.subtree:
+            old_dims = list(subnode.dims)
+            new_dims = [dim_editors[dim].text() if dim in dim_editors else dim for dim in old_dims]
+            dim_map = {old: new for old, new in zip(old_dims, new_dims) if old != new}
+            if dim_map:
+                subnode.dataset = subnode.to_dataset().rename(dim_map)
+        # print(node)
+        self.model().endResetModel()
+        self.restoreState()
+    
     @Slot(QPoint)
     def onCustomContextMenuRequested(self, point: QPoint) -> None:
         index: QModelIndex = self.indexAt(point)
@@ -286,60 +340,54 @@ class XarrayDataTreeView(QTreeView):
         
         menu = QMenu(self)
 
+        n_selected_items = len(self.selectedPaths())
+
         # context menu for item that was clicked on
-        if index.isValid() and len(self._itemContextMenuFunctions) > 0:
-            dt: xr.DataTree = model.datatree()
-            path: str = model.pathFromIndex(index)
-            label = self.truncateLabel(path)
-            submenus: dict[str, QMenu] = {}
-            for key, func, item_type in self._itemContextMenuFunctions:
-                if item_type is not None:
-                    obj = dt[path]
-                    if not isinstance(obj, item_type):
-                        continue
-                
-                submenu_name = ''
-                if '/' in key:
-                    submenu_name, key = key.split('/')
-                if '{item}' in submenu_name:
-                    submenu_name = submenu_name.replace('{item}', label)
-                if '{item}' in key:
-                    key = key.replace('{item}', label)
-                item_menu = menu
-                if submenu_name:
-                    if submenu_name not in submenus:
-                        submenus[submenu_name] = menu.addMenu(submenu_name)
-                    item_menu = submenus[submenu_name]
-                
-                if key == '---' and func is None:
-                    item_menu.addSeparator()
-                elif func:
-                    item_menu.addAction(key, lambda path=path, func=func: func(path))
-                else:
-                    action = item_menu.addAction(key)
-                    action.setEnabled(False)
+        path: str = model.pathFromIndex(index)
+        dt: xr.DataTree = model.datatree()
+        obj: xr.DataTree | xr.DataArray = dt[path]
+        menu.addAction(path).setEnabled(False)  # just a label, not clickable
         
-        menu.addAction('Expand All', self.expandAll)
-        menu.addAction('Collapse All', self.collapseAll)
-        if model.columnCount() > 1:
-            menu.addAction('Resize Columns to Contents', self.resizeAllColumnsToContents)
-            menu.addAction('Show All', self.showAll)
+        menu.addAction('Info', lambda path=path: self.popupInfo(path))
+        menu.addAction('Attrs', lambda path=path: self.editAttrs(path))
+        menu.addAction('Rename Dimensions', lambda path=path: self.renameDimensions(path)).setEnabled(isinstance(obj, xr.DataTree))
         
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
             menu.addSeparator()
             menu.addAction('Select All', self.selectAll)
             menu.addAction('Select None', self.clearSelection)
         
-        if len(self.selectedPaths()) > 1:
-            menu.addSeparator()
-            menu.addAction('Remove Selected', self.removeSelectedPaths)
+        menu.addSeparator()
+        menu.addAction('Copy').setEnabled(n_selected_items > 0)#, lambda path=path: self.copySelection())
+        menu.addAction('Paste').setEnabled(False)#, lambda path=path: self.pasteCopiedItems())
+        
+        # canRemove = index.isValid()
+        # if canRemove:
+        #     dt: xr.DataTree = model.datatree()
+        #     obj = dt[path]
+        #     if isinstance(obj, xr.DataArray):
+        #         parentPath = model.parentPath(path)
+        #         parent_node: xr.DataTree = dt[parentPath]
+        #         canRemove = obj.name not in parent_node._inherited_coords_set()
+        
+        menu.addSeparator()
+        # menu.addAction('Remove', lambda path=path: self.removePath(path)).setEnabled(canRemove)
+        menu.addAction('Remove', self.removeSelectedPaths).setEnabled(n_selected_items > 0)
+        
+        menu.addSeparator()
+        menu.addAction('Expand All', self.expandAll)
+        menu.addAction('Collapse All', self.collapseAll)
+        if model.columnCount() > 1:
+            menu.addAction('Resize Columns to Contents', self.resizeAllColumnsToContents)
+            menu.addAction('Show All', self.showAll)
 
         menu.addSeparator()
         menu.addAction(self._showDataVarsAction)
         menu.addAction(self._showCoordsAction)
+        menu.addAction(self._showInheritedCoordsAction)
         menu.addAction(self._showDetailsColumnAction)
         menu.addSeparator()
-        menu.addAction('Refresh', self.refresh)
+        menu.addAction('Refresh UI', self.refresh)
         
         return menu
     
@@ -483,34 +531,42 @@ class XarrayDataTreeView(QTreeView):
             # Store the current state of the dragged paths and all their descendent paths in the MIME data.
             # We only want to do this for the model where the drag was initiated (i.e., mime_data.model).
             # We'll use this stored state in the dropEvent to restore the view of the dropped items.
-            state = getattr(self, self.STATE_KEY, {})
+            state: dict[str, dict] = getattr(self, self.STATE_KEY, {})
             dragged_paths: list[str] = mime_data.paths
             for dragged_path in dragged_paths:
                 for path in state:
-                    if dragged_path.startswith(path) and path not in mime_data.view_state:
-                        mime_data.view_state[path] = state[path]
+                    if path.startswith(dragged_path) and path not in mime_data.src_view_state:
+                        mime_data.src_view_state[path] = state[path]
+            # import json
+            # print('src_view_state')
+            # print(json.dumps(mime_data.src_view_state, indent=2))
         QTreeView.dragEnterEvent(self, event)
     
     def dropEvent(self, event: QDropEvent) -> None:
         mime_data = event.mimeData()
         QTreeView.dropEvent(self, event)
         if isinstance(mime_data, XarrayDataTreeMimeData):
-            # update state of dragged items as specified in the MIME data
-            mime_data.view_state
-            mime_data.drop_path_map
-            # TODO...
+            # update state of dragged items and all their descendents as specified in the MIME data
+            # import json
+            # print('dst_view_state')
+            # print(json.dumps(mime_data.dst_view_state, indent=2))
+            state = getattr(self, self.STATE_KEY, {})
+            for path, path_state in mime_data.dst_view_state.items():
+                state[path] = path_state
+            setattr(self, self.STATE_KEY, state)
         self.restoreState()
 
 
 def test_live():
     dt = xr.DataTree()
     dt['child1'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child1/twice air'] = dt['child1/air'] * 2
-    dt['child2'] = xr.DataTree()
-    dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
-    dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
-    dt['child3/grandchild2'] = xr.tutorial.load_dataset('rasm')
-    dt['child4'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    # dt['child1/twice air'] = dt['child1/air'] * 2
+    # dt['child2'] = xr.DataTree()
+    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
+    # dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
+    # dt['child3/grandchild2'] = xr.tutorial.load_dataset('rasm')
+    dt['child1/child2'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    dt['child3'] = xr.tutorial.load_dataset('air_temperature_gradient')
     print(dt)
 
     app = QApplication()

@@ -2,11 +2,8 @@
 
 TODO:
 - optional merging of data arrays when moving rows
-- renaming coords also renames dimensions of same name?
-- rename dimensions (propagate throughout branch or tree). Optionally rename coords of same name?
 - global rename of variables throughout the entire branch or tree
 - implement moving/copying rows between different models
-- handle unneeded inherited coords after moving rows
 - remove debugging print statements
 """
 
@@ -17,6 +14,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
+from xarray_graph.xarray_utils import *
 
 
 class XarrayDataTreeModel(QAbstractItemModel):
@@ -36,6 +34,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
 
         self._isVariablesVisible: bool = True
         self._isCoordinatesVisible: bool = True
+        self._isInheritedCoordinatesVisible: bool = False
         self._isDetailsColumnVisible: bool = True
 
         # drag-and-drop support for moving tree items within the tree or copying them to other tree models
@@ -78,6 +77,14 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setCoordsVisible(self, visible: bool) -> None:
         self.beginResetModel()
         self._isCoordinatesVisible = visible
+        self.endResetModel()
+    
+    def isInheritedCoordsVisible(self) -> bool:
+        return self._isInheritedCoordinatesVisible
+    
+    def setInheritedCoordsVisible(self, visible: bool) -> None:
+        self.beginResetModel()
+        self._isInheritedCoordinatesVisible = visible
         self.endResetModel()
     
     def isDetailsColumnVisible(self) -> bool:
@@ -138,7 +145,22 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if self.isDataVarsVisible():
             names += list(node.data_vars)
         if self.isCoordsVisible():
-            names += list(node.coords)
+            all_coords = list(node.coords) # includes inherited coords
+            index_coords = list(node.indexes) # includes inherited coords
+            inherited_coords = node._inherited_coords_set()
+            # start with index coords
+            dims = get_ordered_dims([node])
+            for dim in dims:
+                if dim not in index_coords:
+                    continue
+                if self.isInheritedCoordsVisible() or (dim not in inherited_coords):
+                    names.append(dim)
+            # then add non-index coords
+            for coord in all_coords:
+                if coord in index_coords:
+                    continue
+                if self.isInheritedCoordsVisible() or (coord not in inherited_coords):
+                    names.append(coord)
         names += list(node.children)
         return names
     
@@ -222,14 +244,14 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     if obj.name in parent_node.data_vars:
                         rep = str(parent_node.dataset)
                         i = rep.find('Data variables:')
-                        i = rep.find(obj.name, i)  # find var
+                        i = rep.find(f' {obj.name} ', i)  # find var
                         i = rep.find('(', i)  # skip var name
                         j = rep.find('\n', i)
                         return rep[i:j] if j > 0 else rep[i:]
                     elif obj.name in parent_node.coords:
                         rep = str(parent_node.dataset)
                         i = rep.find('Coordinates:')
-                        i = rep.find(obj.name, i)  # find coord
+                        i = rep.find(f' {obj.name} ', i)  # find coord
                         i = rep.find('(', i)  # skip coord name
                         j = rep.find('\n', i)
                         return rep[i:j] if j > 0 else rep[i:]
@@ -775,12 +797,23 @@ class XarrayDataTreeModel(QAbstractItemModel):
         # dst_parent_node: xr.DataTree = dst_datatree[dst_parent_path]
         # TODO... if we do this here, then maybe it's not needed in moveRows?
 
-        # store the src -> dst paths in the MIME data
-        # we'll use these in the view dropEvent to restore the view for moved paths
-        # TODO...
+        # store the view state of the dragged items under their destination paths
+        for path, state in data.src_view_state.items():
+            for src_path in src_paths:
+                if path.startswith(src_path):
+                    src_parent_path: str = src_model.parentPath(src_path)
+                    if src_parent_path == '/':
+                        path = dst_parent_path.rstrip('/') + path
+                    else:
+                        path = path.replace(src_parent_path, dst_parent_path.rstrip('/'), 1)
+                    data.dst_view_state[path] = state
+                    break
 
         self.transferPaths(src_model, src_paths, dst_model, dst_parent_path, row)
-        return True
+
+        # !? If we return True, the model will attempt to remove rows.
+        # As we already completely handled the move, this will corrupt our model, so return False.
+        return False
     
     def popupWarningDialog(self, text: str) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
@@ -823,12 +856,8 @@ class XarrayDataTreeMimeData(QMimeData):
         # Mapping from path to state dict.
         # To be defined in the view's dragEnter() event callback.
         # Used to restore the view of the dragged items in the dropped view's dropEvent() callback.
-        self.view_state: dict[str, dict] = {}
-
-        # Mapping from source to destination paths.
-        # To be defined in dropMimeData().
-        # Used to restore the view of the dragged items in the dropped view's dropEvent() callback.
-        self.drop_path_map: dict[str, str] = {}
+        self.src_view_state: dict[str, dict] = {}
+        self.dst_view_state: dict[str, dict] = {}
 
         # Ensure that the MIME type self.MIME_TYPE is set.
         # The actual value of the data here is not important, as we won't use it.

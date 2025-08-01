@@ -146,8 +146,7 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> None:
 def get_ordered_dims(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> list[str]:
     """ Get the ordered dimensions from the DataArrays in any DataTrees or Datasets.
     
-    New dimensions in subsequent objects will be append to the list of returned dimensions.
-    This function is necessary because Xarray Dataset's do not have a defined dimension order (completely stupid in my opinion), whereas DataArray's do (as it should be).
+    This is useful to try and keep Dataset dims ordered the same as their underlying DataArrays. New dimensions in subsequent objects will be append to the list of returned dimensions. This function is necessary because Xarray Dataset's do not have a defined dimension order, whereas DataArray's do. This is because Datasets can contain multiple DataArrays with different dimensions.
     """
     dims: list[str] = []
     for obj in objects:
@@ -155,6 +154,8 @@ def get_ordered_dims(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> 
             arrays = obj.data_vars.values()
         elif isinstance(obj, xr.DataArray):
             arrays = [obj]
+        else:
+            continue
         
         array: xr.DataArray
         for array in arrays:
@@ -173,15 +174,15 @@ def find_branch_root(node: xr.DataTree) -> xr.DataTree:
     """
     while node.parent is not None:
         parent: xr.DataTree = node.parent
-        # if not parent.has_data:
-        #     break
-        # # if the parent node has data, it must be aligned according to Xarray's DataTree rules
-        # node = parent
-        try:
-            xr.align(node.dataset, parent.dataset, join='exact')
-            node = parent
-        except:
-            return node
+        if not parent.has_data:
+            break
+        # if the parent node has data, it must be aligned according to Xarray's DataTree rules
+        node = parent
+        # try:
+        #     xr.align(node.dataset, parent.dataset, join='exact')
+        #     node = parent
+        # except:
+        #     return node
     return node
 
 
@@ -199,14 +200,23 @@ def find_subtree_branch_roots(dt: xr.DataTree) -> list[xr.DataTree]:
     
     # find the branch root for each leaf node
     branch_roots: list[xr.DataTree] = []
-    node: xr.DataTree
-    for node in dt.leaves:
+    leaf_node: xr.DataTree
+    for leaf_node in dt.leaves:
         # if not node.has_data:
         #     continue
-        branch_root: xr.DataTree = find_branch_root(node)
+        branch_root: xr.DataTree = find_branch_root(leaf_node)
         if branch_root not in branch_roots:
             branch_roots.append(branch_root)
     return branch_roots
+
+
+def get_copy_of_inherited_coords(node: xr.DataTree) -> dict[str, xr.DataArray]:
+    """ Get a deep copy of all inherited coordinates.
+    """
+    if not node.parent:
+        return {}
+
+    return {name: node.parent.coords[name].copy(deep=True) for name in node._inherited_coords_set()}
 
 
 def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: pint.UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
