@@ -1,8 +1,8 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
+- !!! copy inherited coords when reparented if needed?
 - optional merging of data arrays when moving rows
-- global rename of variables throughout the entire branch or tree
 - implement moving/copying rows between different models
 - remove debugging print statements
 """

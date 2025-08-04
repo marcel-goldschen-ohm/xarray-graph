@@ -3,8 +3,7 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- copy/paste support
-- copy inherited coords when reparented if needed?
+- global rename of variables throughout the entire branch or tree?
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
+from xarray_graph.xarray_utils import *
 from xarray_graph import XarrayDataTreeModel, XarrayDataTreeMimeData
 from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
@@ -326,6 +326,92 @@ class XarrayDataTreeView(QTreeView):
         self.model().endResetModel()
         self.restoreState()
     
+    def copySelection(self) -> None:
+        """ Copy selected items.
+        """
+        model: XarrayDataTreeModel = self.model()
+        if model is None:
+            return
+        dt: xr.DataTree = model.datatree()
+        if dt is None:
+            return
+        
+        paths: list[str] = self.selectedPaths()
+        root_paths: list[str] = []
+        for path in paths:
+            ok = True
+            for check_path in paths:
+                if check_path == path:
+                    continue
+                if path.startswith(check_path):
+                    # path is a descendant of check_path
+                    ok = False
+                    break
+            if ok:
+                root_paths.append(path)
+        
+        self._copied_nodes: list[xr.DataTree] = []
+        self._copied_vars: list[xr.DataArray] = []
+        self._copied_coords: list[xr.DataArray] = []
+        for path in root_paths:
+            obj: xr.DataTree | xr.DataArray = dt[path]
+            copied_obj = obj.copy(deep=True)
+            if isinstance(obj, xr.DataTree) and obj.parent is not None:
+                # copy inherited coords
+                inherited_coords_copy = {name: obj.parent.coords[name].copy(deep=True) for name in obj._inherited_coords_set()}
+                if inherited_coords_copy:
+                    copied_obj.dataset = copied_obj.to_dataset().assign_coords(inherited_coords_copy)
+                self._copied_nodes.append(copied_obj)
+            elif isinstance(obj, xr.DataArray):
+                parent_path: str = model.parentPath(path)
+                parent_node: xr.DataTree = dt[parent_path]
+                if obj.name in parent_node.data_vars:
+                    self._copied_vars.append(copied_obj)
+                elif obj.name in parent_node.coords:
+                    self._copied_coords.append(copied_obj)
+    
+    def pasteCopiedItems(self, parent_path: str = None) -> None:
+        if parent_path is None:
+            selected_paths = self.selectedPaths()
+            if selected_paths:
+                parent_path = selected_paths[0]
+            else:
+                parent_path = '/'
+
+        copied_nodes: list[xr.DataTree] = getattr(self, '_copied_nodes', [])
+        copied_vars: list[xr.DataTree] = getattr(self, '_copied_vars', [])
+        copied_coords: list[xr.DataTree] = getattr(self, '_copied_coords', [])
+        
+        dt: xr.DataTree = self.datatree()
+        parent: xr.DataTree | xr.DataArray = dt[parent_path]
+        if isinstance(parent, xr.DataArray):
+            parent_path = self.model().parentPath(parent_path)
+            parent = dt[parent_path]
+        parent_keys = list(parent.data_vars) + list(parent.coords) + list(parent.children)
+        
+        self.storeState()
+        self.model().beginResetModel()
+        for node in copied_nodes:
+            node.name = XarrayDataTreeModel.uniqueName(node.name or '?', parent_keys)
+            parent_keys += node.name
+        if copied_nodes:
+            children = {name: child for name, child in parent.children.items()}
+            for node in copied_nodes:
+                children[node.name] = node
+            parent.children = children
+        vars = {}
+        for var in copied_vars:
+            var.name = XarrayDataTreeModel.uniqueName(var.name or '?', parent_keys)
+            vars[var.name] = var
+            parent_keys += var.name
+        if vars:
+            parent.dataset = parent.to_dataset().assign(vars)
+        coords = {coord.name: coord for coord in copied_coords}
+        if coords:
+            parent.dataset = parent.to_dataset().assign_coords(coords)
+        self.model().endResetModel()
+        self.restoreState()
+    
     @Slot(QPoint)
     def onCustomContextMenuRequested(self, point: QPoint) -> None:
         index: QModelIndex = self.indexAt(point)
@@ -342,11 +428,16 @@ class XarrayDataTreeView(QTreeView):
 
         n_selected_items = len(self.selectedPaths())
 
+        copied_nodes: list[xr.DataTree] = getattr(self, '_copied_nodes', [])
+        copied_vars: list[xr.DataTree] = getattr(self, '_copied_vars', [])
+        copied_coords: list[xr.DataTree] = getattr(self, '_copied_coords', [])
+        n_copied_items = len(copied_nodes) + len(copied_vars) + len(copied_coords)
+
         # context menu for item that was clicked on
         path: str = model.pathFromIndex(index)
         dt: xr.DataTree = model.datatree()
         obj: xr.DataTree | xr.DataArray = dt[path]
-        menu.addAction(path).setEnabled(False)  # just a label, not clickable
+        menu.addAction(f'{path}:').setEnabled(False)  # just a label, not clickable
         
         menu.addAction('Info', lambda path=path: self.popupInfo(path))
         menu.addAction('Attrs', lambda path=path: self.editAttrs(path))
@@ -358,8 +449,8 @@ class XarrayDataTreeView(QTreeView):
             menu.addAction('Select None', self.clearSelection)
         
         menu.addSeparator()
-        menu.addAction('Copy').setEnabled(n_selected_items > 0)#, lambda path=path: self.copySelection())
-        menu.addAction('Paste').setEnabled(False)#, lambda path=path: self.pasteCopiedItems())
+        menu.addAction('Copy', self.copySelection).setEnabled(n_selected_items > 0)
+        menu.addAction('Paste', lambda path=path: self.pasteCopiedItems(path)).setEnabled(n_copied_items > 0)
         
         # canRemove = index.isValid()
         # if canRemove:
@@ -482,21 +573,30 @@ class XarrayDataTreeView(QTreeView):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         
-        attrs = kvmodel.root().value
+        root: KeyValueTreeItem = kvmodel.rootItem()
+        attrs: dict = root.value()
         obj.attrs = attrs
         
         self.finishedEditingAttrs.emit()
     
     def eventFilter(self, obj: QObject, event: QEvent) -> None:
         if event.type() == QEvent.Type.Wheel:
-            # modifiers: Qt.KeyboardModifier = event.modifiers()
-            # if Qt.KeyboardModifier.ControlModifier in modifiers \
-            # or Qt.KeyboardModifier.AltModifier in modifiers \
-            # or Qt.KeyboardModifier.MetaModifier in modifiers:
-            #     self.mouseWheelEvent(event)
-            #     return True
-            self.mouseWheelEvent(event)
-            return True
+            modifiers: Qt.KeyboardModifier = event.modifiers()
+            if Qt.KeyboardModifier.ControlModifier in modifiers \
+            or Qt.KeyboardModifier.AltModifier in modifiers \
+            or Qt.KeyboardModifier.MetaModifier in modifiers:
+                self.mouseWheelEvent(event)
+                return True
+        # elif event.type() == QEvent.Type.KeyPress:
+        #     event: QKeyEvent = event
+        #     modifiers: Qt.KeyboardModifier = event.modifiers()
+        #     if Qt.KeyboardModifier.ControlModifier in modifiers:
+        #         if event.key() == Qt.Key.Key_C:
+        #             self.copySelection()
+        #             return True
+        #         elif event.key() == Qt.Key.Key_V:
+        #             self.pasteCopiedItems()
+        #             return True
         # elif event.type() == QEvent.Type.FocusIn:
         #     print('FocusIn')
         #     # self.showDropIndicator(True)
@@ -512,6 +612,21 @@ class XarrayDataTreeView(QTreeView):
             self.expandToDepth(depth + 1)
         elif delta < 0:
             self.expandToDepth(depth - 1)
+    
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_C:
+            modifiers: Qt.KeyboardModifier = event.modifiers()
+            if Qt.KeyboardModifier.ControlModifier in modifiers:
+                # copy
+                self.copySelection()
+                return
+        elif event.key() == Qt.Key.Key_V:
+            modifiers: Qt.KeyboardModifier = event.modifiers()
+            if Qt.KeyboardModifier.ControlModifier in modifiers:
+                # paste
+                self.pasteCopiedItems()
+                return
+        return super().keyPressEvent(event)
     
     def setDragAndDropEnabled(self, enabled: bool) -> None:
         if enabled:
@@ -560,13 +675,13 @@ class XarrayDataTreeView(QTreeView):
 def test_live():
     dt = xr.DataTree()
     dt['child1'] = xr.tutorial.load_dataset('air_temperature')
-    # dt['child1/twice air'] = dt['child1/air'] * 2
-    # dt['child2'] = xr.DataTree()
-    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
-    # dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
-    # dt['child3/grandchild2'] = xr.tutorial.load_dataset('rasm')
+    dt['child1/twice air'] = dt['child1/air'] * 2
+    dt['child2'] = xr.DataTree()
+    dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
+    dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
+    dt['child3/grandchild2'] = xr.tutorial.load_dataset('rasm')
     dt['child1/child2'] = xr.tutorial.load_dataset('air_temperature_gradient')
-    dt['child3'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    dt['child4'] = xr.tutorial.load_dataset('air_temperature_gradient')
     print(dt)
 
     app = QApplication()
