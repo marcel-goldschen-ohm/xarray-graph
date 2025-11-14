@@ -59,7 +59,7 @@ import pyqt_ext.pyqtgraph_ext as pgx
 
 # from xarray_graph.xarray_utils import *
 from xarray_graph import XarrayDataTreeModel, XarrayDataTreeView, XarrayDataTreeViewer
-from xarray_graph.tree import *
+from xarray_graph import AnnotationTreeItem, AnnotationTreeModel, AnnotationTreeView
 from xarray_graph.io import *
 
 
@@ -2563,7 +2563,7 @@ class XarrayGraph(QMainWindow):
 
         self.setWindowTitle(self.__class__.__name__)
 
-        self._init_console()
+        # self._init_console()
         self._init_actions()
         self._init_menubar()
         self._init_top_toolbar()
@@ -2999,7 +2999,7 @@ class XarrayGraph(QMainWindow):
     def _init_datatree_viewer(self) -> None:
         """ Initialize datatree viewer. """
 
-        self._datatree_viewer = XarrayDataTreeViewer()
+        self._datatree_viewer = XarrayDataTreeViewer(orientation=Qt.Orientation.Vertical)
         self._datatree_view = self._datatree_viewer.view()
         self._datatree_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._datatree_view.setAlternatingRowColors(False)
@@ -3011,6 +3011,9 @@ class XarrayGraph(QMainWindow):
         self._datatree_view.expandAll()
         self._datatree_view.selectionWasChanged.connect(self._on_datatree_selection_changed)
         self._datatree_viewer.setSizes([400, 400])
+
+        self._console = self._datatree_viewer._console
+        self._datatree_viewer._tabs.removeTab(self._datatree_viewer._tabs.indexOf(self._console))
 
         self._ROItree_view = AnnotationTreeView()
         self._ROItree_model = AnnotationTreeModel()
