@@ -15,14 +15,13 @@ Requires a PyQt package. Should work with PySide6 (the official Python Qt bindin
 ```shell
 pip install "PySide6>=6.2.2,!=6.9.1"
 ```
-Install latest release version:
+Install latest release version: :bangbang: <font color="red">Currently broken!</font>
 ```shell
 pip install xarray-graph
 ```
 Or install latest development version:
 ```shell
-pip install pyqt-ext@git+https://github.com/marcel-goldschen-ohm/pyqt-ext
-pip install xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
+pip install --upgrade xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
 ```
 
 ## Run
@@ -38,9 +37,3 @@ This is all done in my free time. If you find it useful, why not buy me a cup of
 
 ## Documentation
 :construction:
-
-## Dev notes
-For PDM lockfile:
-```
-pdm lock --strategy cross_platform
-```
