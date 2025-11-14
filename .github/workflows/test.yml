@@ -1,0 +1,50 @@
+name: test
+
+on:
+  push:
+    tags: [ "**" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Install project and run tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+    
+    - name: Install uv and set the Python version
+      uses: astral-sh/setup-uv@v6
+      with:
+        version: "0.9.8" # uv version
+        python-version: ${{ matrix.python-version }}
+
+    #- name: Install Hatch and uv-dynamic-versioning
+    #  # for dynamic version resolution from git tag
+    #  # we also need to explicitly create a venv here
+    #  run: |
+    #    uv venv
+    #    uv pip install hatch uv-dynamic-versioning
+    
+    - name: Install the project
+      run: uv sync --locked --all-extras --dev --inexact
+    
+    - name: Lint check
+      run: |
+        uv pip install flake8
+        uv run flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        uv run flake8 examples/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        uv run flake8 tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+    
+    - name: Run tests
+      run: |
+        uv pip install pytest
+        uv run pytest tests

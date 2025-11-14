@@ -1,15 +1,14 @@
-name: publish-to-pypi
+name: build
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   deploy:
-    name: Upload release to PyPI
+    name: Build package
     permissions:
       # This permission is needed for private repositories.
       contents: read
@@ -39,6 +38,3 @@ jobs:
     
     - name: Build package
       run: uv build
-    
-    - name: Publish package to PyPI
-      run: uv publish
