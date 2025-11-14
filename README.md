@@ -15,11 +15,11 @@ Requires a PyQt package. Should work with PySide6 (the official Python Qt bindin
 ```shell
 pip install "PySide6>=6.2.2,!=6.9.1"
 ```
-Install latest release version: :bangbang: <font color="red">Currently broken!</font>
+<!-- Install latest release version: :bangbang: <font color="red">Currently broken!</font>
 ```shell
 pip install xarray-graph
 ```
-Or install latest development version:
+Or i-->Install latest development version:
 ```shell
 pip install --upgrade xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
 ```
