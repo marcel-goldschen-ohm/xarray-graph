@@ -27,7 +27,7 @@ dependencies = [
     "pyqt-ext >=2025.11.12",
     "qtconsole",
     "cmap",
-    #"requests",
+    "requests",
 ]
 
 [project.urls]
