@@ -3,10 +3,42 @@
 import numpy as np
 import xarray as xr
 import pint
+from collections.abc import Iterator
 
 
 ORDERED_DATA_VARS_KEY = '_XG_ordered_data_vars_'
 INHERITED_DATA_VARS_KEY = '_XG_inherited_data_vars_'
+
+
+def subtree_depth_first(dt: xr.DataTree) -> Iterator[xr.DataTree]:
+    """ Iterate over subtree nodes in depth-first order.
+
+    This is similar to dt.subtree, but ensures depth-first ordering.
+    """
+    node: xr.DataTree = dt
+    while node is not None:
+        yield node
+        # next node in depth-first order
+        if node.children:
+            node = list(node.children.values())[0]
+        else:
+            # go up until we can go right
+            while node is not None:
+                parent: xr.DataTree = node.parent
+                if parent is None:
+                    node = None
+                    break
+                siblings = list(parent.children.values())
+                index = -1
+                for i, sibling in enumerate(siblings):
+                    if sibling is node:
+                        index = i
+                        break
+                if 0 < index + 1 < len(siblings):
+                    node = siblings[index + 1]
+                    break
+                else:
+                    node = parent
 
 
 def prepare_datatree_for_serialization(dt: xr.DataTree) -> None:

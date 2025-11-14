@@ -1,4 +1,4 @@
-""" Tree viewer with a XarrayDataTreeView and Info/Attrs tabs for selected items.
+""" Tree viewer with a XarrayDataTreeView and side widgets for interacting with the tree including an IPython console.
 
 TODO:
 - store/restore attrs view states
@@ -6,16 +6,17 @@ TODO:
 
 from __future__ import annotations
 import xarray as xr
+import textwrap
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from xarray_graph import XarrayDataTreeModel, XarrayDataTreeView
+from xarray_graph import XarrayDataTreeModel, XarrayDataTreeView, IPythonConsole, XarrayDataTreeDebugView
 from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
 
 class XarrayDataTreeViewer(QSplitter):
 
-    def __init__(self, datatree: xr.DataTree = None, orientation: Qt.Orientation = Qt.Orientation.Vertical, parent: QObject = None) -> None:
+    def __init__(self, datatree: xr.DataTree = None, orientation: Qt.Orientation = Qt.Orientation.Horizontal, parent: QObject = None, debug: bool = False) -> None:
         QSplitter.__init__(self, orientation, parent)
 
         if datatree is None:
@@ -33,15 +34,48 @@ class XarrayDataTreeViewer(QSplitter):
         self._attrs_view.setAlternatingRowColors(True)
         # self._attrs_view.setModel(KeyValueTreeModel(None))
 
+        self._console = IPythonConsole()
+        self._console.add_variable('dt', datatree)
+        self._console.add_variable('ui', self) # for debugging
+
+        if debug:
+            self._debug_view = XarrayDataTreeDebugView(datatree=datatree)
+            model.dataChanged.connect(lambda index0, index1: self._debug_view.updateView())
+            self.view().wasRefreshed.connect(self._debug_view.updateView)
+
+            self._update_debug_view_button = QPushButton("Update Debug View")
+            self._update_debug_view_button.clicked.connect(self._debug_view.updateView)
+
+            debug_widget = QWidget()
+            debug_vbox = QVBoxLayout(debug_widget)
+            debug_vbox.setContentsMargins(0, 0, 0, 0)
+            debug_vbox.setSpacing(5)
+            debug_vbox.addWidget(self._update_debug_view_button)
+            debug_vbox.addWidget(self._debug_view)
+
         self._tabs = QTabWidget()
         self._tabs.addTab(self._info_view, "Info")
         self._tabs.addTab(self._attrs_view, "Attrs")
+        self._tabs.addTab(self._console, "Console")
+        if debug:
+            self._tabs.addTab(debug_widget, "Debug")
+            self._tabs.setCurrentWidget(debug_widget)
 
         self.addWidget(self._datatree_view)
         self.addWidget(self._tabs)
 
         self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
         self._datatree_view.finishedEditingAttrs.connect(self.onSelectionChanged)
+
+        msg = """
+        ----------------------------------------------------
+        Variables: dt -> The Xarray DataTree
+        Modules loaded at startup: numpy as np, xarray as xr
+        ----------------------------------------------------
+        """
+        msg = textwrap.dedent(msg).strip()
+        # need to delay a bit to let the console show
+        QTimer.singleShot(100, lambda: self._console.print_message(msg))
     
     def view(self) -> XarrayDataTreeView:
         return self._datatree_view
@@ -51,6 +85,9 @@ class XarrayDataTreeViewer(QSplitter):
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
         self.view().model().setDatatree(datatree)
+        self._console.add_variable('dt', datatree)
+        if hasattr(self, '_debug_view'):
+            self._debug_view.setDatatree(datatree)
     
     def onSelectionChanged(self) -> None:
         dt: xr.DataTree = self.datatree()
@@ -104,7 +141,8 @@ def test_live():
     print(dt)
 
     app = QApplication()
-    viewer = XarrayDataTreeViewer(dt, Qt.Orientation.Vertical)
+    viewer = XarrayDataTreeViewer(dt, Qt.Orientation.Horizontal, debug=True)
+    viewer.resize(1200, 800)
     viewer.show()
     app.exec()
     print(dt)

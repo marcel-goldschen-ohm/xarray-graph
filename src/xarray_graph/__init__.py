@@ -1,3 +1,8 @@
+
+from xarray_graph.IPythonConsole import IPythonConsole
+
+from xarray_graph.XarrayDataTreeDebugView import XarrayDataTreeDebugView
+
 from xarray_graph.AnnotationTreeItem import AnnotationTreeItem
 from xarray_graph.AnnotationTreeModel import AnnotationTreeModel
 from xarray_graph.AnnotationTreeView import AnnotationTreeView

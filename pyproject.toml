@@ -1,28 +1,7 @@
-[build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
-
-
 [project]
 name = "xarray-graph"
+version = "v2025.11.12"
 description = "PyQt UI for navigating and graphing (x,y) slices of a Xarray DataTree."
-dynamic = ["version"]
-requires-python = ">=3.10"
-dependencies = [
-    "requests",
-    "numpy>=1.26.2",
-    "scipy>=1.11.4",
-    "xarray>=2025.3.1",
-    "pint",
-    "h5netcdf",
-    "zarr",
-    "lmfit>=1.2.2",
-    "QtPy>=2.4.1",
-    "QtAwesome>=1.4.0",
-    "pyqtgraph>=0.13.3",
-    "pyqt-ext>=2025.6.19.4",
-    "qtconsole>=5.5.2",
-]
 authors = [
     {name = "Marcel Goldschen-Ohm", email = "goldschen-ohm@utexas.edu"},
 ]
@@ -34,21 +13,31 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
 ]
-
+requires-python = ">=3.10"
+dependencies = [
+    "xarray >=2025.3.1",
+    "h5netcdf",
+    "zarr",
+    "scipy",
+    "pint",
+    "lmfit",
+    "QtPy",
+    "QtAwesome",
+    "pyqtgraph",
+    "pyqt-ext >=2025.11.12",
+    "qtconsole",
+    "cmap",
+    #"requests",
+]
 
 [project.urls]
 homepage = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 repository = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 issues = "https://github.com/marcel-goldschen-ohm/xarray-graph/issues"
 
-
 [project.scripts]
 xarray-graph = "xarray_graph.__main__:main"
 
-
-[tool.pdm]
-distribution = true
-
-
-[tool.pdm.version]
-source = "scm"
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"

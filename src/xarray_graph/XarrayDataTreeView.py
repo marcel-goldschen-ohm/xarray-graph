@@ -8,6 +8,7 @@ TODO:
 
 from __future__ import annotations
 from typing import Callable
+from copy import deepcopy
 import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -22,6 +23,7 @@ class XarrayDataTreeView(QTreeView):
 
     selectionWasChanged = Signal()
     finishedEditingAttrs = Signal()
+    wasRefreshed = Signal()
 
     STATE_KEY = '_state_'
 
@@ -62,7 +64,7 @@ class XarrayDataTreeView(QTreeView):
             text = 'Show Coordinates',
             icon = qta.icon('ph.list-numbers-thin'),
             checkable = True,
-            checked = True,
+            checked = False,
             toolTip = 'Show coords in the tree view. Uncheck to hide them.',
             triggered = self._updateModelFromViewOptions
         )
@@ -71,7 +73,7 @@ class XarrayDataTreeView(QTreeView):
             text = 'Show Inherited Coordinates',
             icon = qta.icon('ph.list-numbers-thin'),
             checkable = True,
-            checked = False,
+            checked = True,
             toolTip = 'Show inherited coords in the tree view. Uncheck to hide them.',
             triggered = self._updateModelFromViewOptions
         )
@@ -80,7 +82,7 @@ class XarrayDataTreeView(QTreeView):
         self._showDetailsColumnAction = QAction(
             text = 'Show Details Column',
             checkable = True,
-            checked = True,
+            checked = False,
             toolTip = 'Show details column in the tree view. Uncheck to hide column.',
             triggered = self._updateModelFromViewOptions
         )
@@ -89,6 +91,7 @@ class XarrayDataTreeView(QTreeView):
         self.storeState()
         self.model().reset()
         self.restoreState()
+        self.wasRefreshed.emit()
     
     def model(self) -> XarrayDataTreeModel:
         model: XarrayDataTreeModel = super().model()
@@ -358,9 +361,10 @@ class XarrayDataTreeView(QTreeView):
             copied_obj = obj.copy(deep=True)
             if isinstance(obj, xr.DataTree) and obj.parent is not None:
                 # copy inherited coords
-                inherited_coords_copy = {name: obj.parent.coords[name].copy(deep=True) for name in obj._inherited_coords_set()}
-                if inherited_coords_copy:
-                    copied_obj.dataset = copied_obj.to_dataset().assign_coords(inherited_coords_copy)
+                copied_obj.orphan()
+                for name in obj._inherited_coords_set():
+                    coord = obj.coords[name]
+                    copied_obj.coords[name] = xr.DataArray(data=coord.data.copy(), dims=coord.dims, attrs=deepcopy(coord.attrs))
                 self._copied_nodes.append(copied_obj)
             elif isinstance(obj, xr.DataArray):
                 parent_path: str = model.parentPath(path)
@@ -368,6 +372,9 @@ class XarrayDataTreeView(QTreeView):
                 if obj.name in parent_node.data_vars:
                     self._copied_vars.append(copied_obj)
                 elif obj.name in parent_node.coords:
+                    if obj.name in parent_node._inherited_coords_set():
+                        # copy inherited coord
+                        copied_obj = xr.DataArray(data=copied_obj.data.copy(), name=copied_obj.name, dims=copied_obj.dims, attrs=deepcopy(copied_obj.attrs))
                     self._copied_coords.append(copied_obj)
     
     def pasteCopiedItems(self, parent_path: str = None) -> None:
@@ -478,7 +485,7 @@ class XarrayDataTreeView(QTreeView):
         menu.addAction(self._showInheritedCoordsAction)
         menu.addAction(self._showDetailsColumnAction)
         menu.addSeparator()
-        menu.addAction('Refresh UI', self.refresh)
+        menu.addAction('Refresh', self.refresh)
         
         return menu
     
