@@ -15,7 +15,7 @@ Requires a PyQt package. Should work with PySide6 (the official Python Qt bindin
 ```shell
 pip install "PySide6>=6.2.2,!=6.9.1"
 ```
-<!-- Install latest release version: :bangbang: <font color="red">Currently broken!</font>
+<!-- Install latest release version:
 ```shell
 pip install xarray-graph
 ```
