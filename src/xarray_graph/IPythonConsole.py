@@ -1,13 +1,13 @@
-""" PyQt embedded IPython console for interacting with an Xarray DataTree.
+""" Embedded IPython console widget.
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.inprocess import QtInProcessKernelManager
 
 
 class IPythonConsole(RichJupyterWidget):
-    """ PyQt embedded IPython console for interacting with an Xarray DataTree.
+    """ Embedded IPython console widget.
     
     To update another UI element when code is executed in the console,
     connect to the `executed` signal:
@@ -21,13 +21,9 @@ class IPythonConsole(RichJupyterWidget):
         self.kernel_manager.start_kernel(show_banner=False)
         self.kernel_client = self.kernel_manager.client()
         self.kernel_client.start_channels()
-
-        self.execute('import numpy as np', hidden=True)
-        self.execute('import xarray as xr', hidden=True)
-        # self._set_input_buffer('') # seems silly to have to call this?
     
     # def __del__(self) -> None:
-    #     """ Shutdown the embedded console.
+    #     """ Shutdown the console.
     #     """
     #     self.kernel_client.stop_channels()
     #     self.kernel_manager.shutdown_kernel()
@@ -37,30 +33,41 @@ class IPythonConsole(RichJupyterWidget):
         """
         self.kernel_manager.kernel.shell.push({name: value})
     
-    def print_message(self, message: str) -> None:
+    def print_message(self, message: str, dedent: bool = True) -> None:
+        """ Print message to the console.
+        """
+        if dedent:
+            import textwrap
+            message = textwrap.dedent(message).strip()
         self._append_plain_text(message, before_prompt=True)
     
     
 def test_live():
     from qtpy.QtWidgets import QApplication
     from qtpy.QtCore import QTimer
-    import xarray as xr
-    import textwrap
+    import numpy as np
 
     app = QApplication()
     console = IPythonConsole()
 
-    dt = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
-    console.add_variable('dt', dt)
+    console.execute('import numpy as np', hidden=True)
+    # console._set_input_buffer('') # seems silly to have to call this?
+
+    data = np.random.rand(4, 3)
+    console.add_variable('data', data)
+    console.add_variable('self', console)
+
+    console.executed.connect(lambda: print("Code executed in console."))
 
     msg = """
     ----------------------------------------------------
-    dt -> The Xarray DataTree
-    Modules loaded at startup: numpy as np, xarray as xr
+    Variables:
+      self -> This console
+      data -> Data array
+    Modules loaded at startup: numpy as np
     ----------------------------------------------------
     """
-    msg = textwrap.dedent(msg).strip()
-    # need to delay a bit to let the console show
+    # need to delay a bit to let the console show first
     QTimer.singleShot(100, lambda: console.print_message(msg))
     
     console.show()

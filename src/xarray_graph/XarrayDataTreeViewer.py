@@ -23,7 +23,8 @@ class XarrayDataTreeViewer(QSplitter):
             datatree = xr.DataTree()
 
         self._datatree_view = XarrayDataTreeView()
-        model = XarrayDataTreeModel(datatree)
+        model = XarrayDataTreeModel()
+        model.setDatatree(datatree)
         model.setDetailsColumnVisible(False)
         self._datatree_view.setModel(model)
 
@@ -133,16 +134,31 @@ class XarrayDataTreeViewer(QSplitter):
 
 def test_live():
     dt = xr.DataTree()
-    dt['child1'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child2'] = xr.DataTree()
-    dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
-    dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
-    dt['child3/grandchild2'] = xr.DataTree()
+    # dt['child1'] = xr.tutorial.load_dataset('air_temperature')
+    # dt['child2'] = xr.DataTree()
+    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
+    # dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
+    # dt['child3/grandchild2'] = xr.DataTree()
+    dt['a'] = xr.tutorial.load_dataset('air_temperature')
+    dt['a/b'] = xr.tutorial.load_dataset('air_temperature')
+    dt['a/b/c'] = xr.tutorial.load_dataset('air_temperature')
     print(dt)
+
+    from xarray_graph import xarray_utils
+    # xarray_utils.rename_dims_in_branch(dt['a/b'], {'time': 't'})
+    # node = dt['a']
+    # node.dataset = node.to_dataset().rename_dims({'time': 't'})
+    # for node in node.subtree:
+    #     for name, data_var in node.data_vars.items():
+    #         if 'time' in data_var.dims:
+    #             new_data_var = data_var.swap_dims({'time': 't'})
+    #             node.dataset = node.to_dataset().assign({name: new_data_var})
 
     app = QApplication()
     viewer = XarrayDataTreeViewer(dt, Qt.Orientation.Horizontal, debug=True)
     viewer.resize(1200, 800)
+    viewer.view().model().setCoordsVisible(True)
+    viewer.view().expandAll()
     viewer.show()
     app.exec()
     print(dt)

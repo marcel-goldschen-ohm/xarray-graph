@@ -1,4 +1,6 @@
 
+from xarray_graph import xarray_utils
+
 from xarray_graph.IPythonConsole import IPythonConsole
 
 from xarray_graph.XarrayDataTreeDebugView import XarrayDataTreeDebugView

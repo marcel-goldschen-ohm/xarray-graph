@@ -7,7 +7,7 @@ import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from xarray_graph.xarray_utils import subtree_depth_first
+from xarray_graph import xarray_utils
 import cmap
 
 
@@ -37,7 +37,7 @@ class XarrayDataTreeDebugView(QTextEdit):
         dt: xr.DataTree = self.datatree()
 
         ids = []
-        for node in subtree_depth_first(dt):
+        for node in xarray_utils.subtree_depth_first_iter(dt):
             for data_var in node.data_vars.values():
                 ids.append(id(data_var.data))
             for coord in node.coords.values():
@@ -57,7 +57,7 @@ class XarrayDataTreeDebugView(QTextEdit):
         grid = '\u229E'
         folder = '\u25A1'
         self.clear()
-        for node in subtree_depth_first(dt):
+        for node in xarray_utils.subtree_depth_first_iter(dt):
             prefix = ''
             ancestors = list(node.parents)
             for i, parent in enumerate(ancestors):
