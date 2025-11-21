@@ -1,10 +1,8 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
-- movePaths/copyPaths
-    - check for attempt to move or copy a path to itself
-    - reorder dst variables after move/copy
-    - test conflicts
+- moveRows
+- transferItems
 """
 
 from __future__ import annotations
@@ -335,7 +333,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             new_name: str = value.strip()
             if not new_name or '/' in new_name:
                 msg = f'"{new_name}" is not a valid DataTree key. Must be a non-empty string without any path separators "/".'
-                self.popupWarningDialog(msg)
+                self._popupWarningDialog(msg)
                 return False
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             old_name = item.data.name
@@ -346,7 +344,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             parent_keys: list[str] = list(parent_node.keys())
             if new_name in parent_keys:
                 msg = f'"{new_name}" already exists in parent DataTree.'
-                self.popupWarningDialog(msg)
+                self._popupWarningDialog(msg)
                 return False
             if item.is_node:
                 parent_node.children = {name if name != old_name else new_name: child for name, child in parent_node.children.items()}
@@ -529,9 +527,84 @@ class XarrayDataTreeModel(QAbstractItemModel):
             self.removeRows(row, count, parent_index)
     
     def moveRows(self, src_parent_index: QModelIndex, src_row: int, count: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
-        return False # TODO
+        print('moveRows...')
+        if count <= 0:
+            return False
+        num_src_rows: int = self.rowCount(src_parent_index)
+        if src_row < 0:
+            # negative indexing
+            src_row += num_src_rows
+        if (src_row < 0) or (src_row + count > num_src_rows):
+            return False
+        num_dst_rows: int = self.rowCount(dst_parent_index)
+        if dst_row < 0:
+            # negative indexing
+            dst_row += num_dst_rows
+        if (dst_row < 0) or (dst_row > num_dst_rows):
+            return False
+        
+        print(src_row, count, dst_row)
+        
+        src_parent_item: XarrayDataTreeItem = self.itemFromIndex(src_parent_index)
+        src_items: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
+        src_node_items: list[XarrayDataTreeItem] = [item for item in src_items if item.is_node]
+        src_data_var_items: list[XarrayDataTreeItem] = [item for item in src_items if item.is_data_var]
+        src_coord_items: list[XarrayDataTreeItem] = [item for item in src_items if item.is_coord]
+
+        dst_parent_item: XarrayDataTreeItem = self.itemFromIndex(dst_parent_index)
+        dst_items: list[XarrayDataTreeItem] = dst_parent_item.children.copy()
+        dst_node_items: list[XarrayDataTreeItem] = [item for item in dst_items if item.is_node]
+        dst_data_var_items: list[XarrayDataTreeItem] = [item for item in dst_items if item.is_data_var]
+        dst_coord_items: list[XarrayDataTreeItem] = [item for item in dst_items if item.is_coord]
+
+        src_parent_node: xr.DataTree = src_parent_item.data
+        dst_parent_node: xr.DataTree = dst_parent_item.data
+
+        # TODO: handle move conflicts
+
+        # move nodes
+        if src_node_items:
+            src_row_: int = src_node_items[0].row
+            count_: int = len(src_node_items)
+            dst_node_names = list(dst_parent_node.children)
+            if not dst_node_items or dst_row > dst_node_items[-1].row:
+                # append nodes
+                dst_row_: int = len(dst_parent_item.children)
+                dst_node_row: int = len(dst_node_items)
+                dst_pre_nodes = {}
+                dst_post_nodes = dst_parent_node.children
+            elif dst_row <= dst_node_items[0].row:
+                # prepend nodes
+                dst_row_: int = dst_node_items[0].row
+                dst_node_row: int = 0
+                dst_pre_nodes = dst_parent_node.children
+                dst_post_nodes = {}
+            else:
+                dst_row_: int = dst_row
+                dst_node_row: int = dst_row - dst_node_items[0].row
+                dst_pre_nodes = {name: dst_parent_node.children[name] for name in dst_node_names[:dst_node_row]}
+                dst_post_nodes = {name: dst_parent_node.children[name] for name in dst_node_names[dst_node_row:]}
+            self.beginMoveRows(src_parent_index, src_row_, src_row_ + count_ - 1, dst_parent_index, dst_row_)
+            for item in src_node_items:
+                item.data = item.data.orphan()
+                item.parent = dst_parent_item
+            dst_parent_node.children = dst_pre_nodes | {item.name: item.data for item in src_node_items} | dst_post_nodes
+            dst_parent_item.children = dst_parent_item.children[:dst_row_] + src_node_items + dst_parent_item.children[dst_row_:]
+            del src_parent_item.children[src_row_: src_row_ + count_]
+            self.endMoveRows()
+
+        # move data_vars
+        if src_data_var_items:
+            pass # TODO
+
+        # move coords
+        if src_coord_items:
+            pass # TODO
+        
+        return True
     
     def moveItems(self, src_items: list[XarrayDataTreeItem], dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
+        print('moveItems...')
         if not src_items or not dst_parent_item:
             return
         
@@ -571,6 +644,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
     
     def transferItems(self, src_items: list[XarrayDataTreeItem], dst_model: XarrayDataTreeModel, dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
+        print('transferItems...')
         if dst_model is self:
             self.moveItems(src_items, dst_parent_item, dst_row)
             return
@@ -946,14 +1020,14 @@ class XarrayDataTreeModel(QAbstractItemModel):
         dst_model: XarrayDataTreeModel = self
         dst_parent_item: XarrayDataTreeItem = self.itemFromIndex(parent_index)
 
-        self.transferItems(src_items, dst_model, dst_parent_item, row)
+        src_model.transferItems(src_items, dst_model, dst_parent_item, row)
 
         # !? If we return True, the model will attempt to remove rows.
         # As we already completely handled the move, this will corrupt our model, so return False.
         print('... dropMimeData')
         return False
     
-    def popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
+    def _popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
         QMessageBox.warning(focused_widget, 'Warning', text)
         if system_warn:

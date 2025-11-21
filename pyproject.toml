@@ -36,7 +36,8 @@ repository = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 issues = "https://github.com/marcel-goldschen-ohm/xarray-graph/issues"
 
 [project.scripts]
-xarray-graph = "xarray_graph.__main__:main"
+xarray-graph = "xarray_graph.__main__:graph_app"
+xarray-tree = "xarray_graph.__main__:tree_app"
 
 [build-system]
 requires = ["uv_build"]

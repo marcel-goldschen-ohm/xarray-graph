@@ -638,7 +638,7 @@ class XarrayDataTreeView(QTreeView):
     def dropEvent(self, event: QDropEvent) -> None:
         print('dropEvent...')
         # mime_data = event.mimeData()
-        # QTreeView.dropEvent(self, event)
+        QTreeView.dropEvent(self, event)
         # if isinstance(mime_data, XarrayDataTreeMimeData):
         #     # update state of dragged items and all their descendents as specified in the MIME data
         #     # import json

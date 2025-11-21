@@ -1,11 +1,13 @@
-import requests
-import io
 import xarray as xr
 from qtpy.QtWidgets import QApplication, QMessageBox
 from xarray_graph.XarrayGraph import XarrayGraph
 
 
-def main():
+def tree_app():
+    pass
+
+
+def graph_app():
     app = QApplication()
     xg = XarrayGraph()
     xg.setWindowTitle('xarray-graph')
@@ -29,6 +31,8 @@ def main():
 
 
 def load_example() -> xr.DataTree:
+    import requests, io
+
     url = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc'
     req = requests.get(url, stream=True)
     if req.status_code != 200:
@@ -39,4 +43,5 @@ def load_example() -> xr.DataTree:
 
 
 if __name__ == '__main__':
-    main()
+    # tree_app()
+    graph_app()
