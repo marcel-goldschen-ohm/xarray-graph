@@ -30,6 +30,12 @@ class TreeItem():
         return self.parent.children.index(self)
     
     @property
+    def level(self) -> int:
+        if self.is_node:
+            return self.data.level
+        return self.parent.level + 1
+    
+    @property
     def is_root(self) -> bool:
         return self.parent is None
     
@@ -62,6 +68,18 @@ class TreeItem():
             i: int = siblings.index(self)
             if i-1 >= 0:
                 return siblings[i-1]
+    
+    def has_ancestor(self, item: TreeItem) -> bool:
+        for ancestor in self.parents():
+            if ancestor is item:
+                return True
+        return False
+    
+    def parents(self) -> Iterator[TreeItem]:
+        item: TreeItem = self.parent
+        while item is not None:
+            yield item
+            item = item.parent
     
     def subtree_depth_first(self) -> Iterator[TreeItem]:
         item: TreeItem = self

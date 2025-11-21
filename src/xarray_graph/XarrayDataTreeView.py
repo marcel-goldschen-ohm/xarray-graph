@@ -656,6 +656,7 @@ def test_live():
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
+    dt['air_temperature/inhertis'] = xr.tutorial.load_dataset('air_temperature')
     dt['child2'] = xr.DataTree()
     dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
     dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
@@ -667,7 +668,7 @@ def test_live():
     app = QApplication()
     model = XarrayDataTreeModel()
     model.setDataVarsVisible(True)
-    model.setCoordsVisible(False)
+    model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
     model.setDetailsColumnVisible(False)
     model.setDatatree(dt)
