@@ -3,6 +3,7 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
+- why is drag-drop so sluggish!?
 - what's going on with inherited coords!?
 - test dragEnterEvent() and dropEvent() and mimeData
 - edit attrs in key-value tree ui
@@ -18,7 +19,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import xarray_utils
-from xarray_graph import XarrayDataTreeModel, XarrayDataTreeMimeData
+from xarray_graph import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
 # from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
 
@@ -41,6 +42,8 @@ class XarrayDataTreeView(QTreeView):
         self.setSizePolicy(sizePolicy)
         self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         # self.setAlternatingRowColors(True)
+        self.setUniformRowHeights(True)
+        self.setSortingEnabled(False)
 
         # selection
         # self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -144,12 +147,13 @@ class XarrayDataTreeView(QTreeView):
     def setDatatree(self, datatree: xr.DataTree) -> None:
         self.storeState()
         if self.model() is None:
-            self.setModel(XarrayDataTreeModel(datatree), updateViewOptionsFromModel=False)
+            self.setModel(XarrayDataTreeModel(datatree=datatree), updateViewOptionsFromModel=False)
         else:
             self.model().setDatatree(datatree)
         self.restoreState()
     
     def storeState(self) -> None:
+        return
         model: XarrayDataTreeModel = self.model()
         dt: xr.DataTree = model.datatree()
         
@@ -160,7 +164,7 @@ class XarrayDataTreeView(QTreeView):
             if node is dt:
                 continue
             paths: list[str] = [node.path]
-            for name in model.visibleRowNames(node):
+            for name in model._rowNames(node):
                 path: str = f'{node.path}/{name}'
                 if isinstance(dt[path], xr.DataTree):
                     # already handled in outer loop over nodes
@@ -177,6 +181,7 @@ class XarrayDataTreeView(QTreeView):
         setattr(self, self.STATE_KEY, state)
 
     def restoreState(self) -> None:
+        return
         model: XarrayDataTreeModel = self.model()
         dt: xr.DataTree = model.datatree()
         state = getattr(self, self.STATE_KEY, {})
@@ -190,7 +195,7 @@ class XarrayDataTreeView(QTreeView):
             if node is dt:
                 continue
             paths: list[str] = [node.path]
-            for name in model.visibleRowNames(node):
+            for name in model._rowNames(node):
                 path: str = f'{node.path}/{name}'
                 if isinstance(dt[path], xr.DataTree):
                     # already handled in outer loop over nodes
@@ -216,46 +221,29 @@ class XarrayDataTreeView(QTreeView):
         QTreeView.selectionChanged(self, selected, deselected)
         self.selectionWasChanged.emit()
 
-    def selectedPaths(self) -> list[str]:
+    def selectedItems(self) -> list[XarrayDataTreeItem]:
         model: XarrayDataTreeModel = self.model()
-        if model is None:
-            return []
         indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
-        paths: list[str] = []
-        for index in indexes:
-            path: str = model.pathFromIndex(index)
-            if path not in paths:
-                paths.append(path)
-        return paths
+        items: list[XarrayDataTreeItem] = [model.itemFromIndex(index) for index in indexes]
+        return items
     
-    def setSelectedPaths(self, paths: list[str]):
+    def setSelectedItems(self, items: list[XarrayDataTreeItem]):
         model: XarrayDataTreeModel = self.model()
-        if model is None:
-            return
         self.selectionModel().clearSelection()
         selection: QItemSelection = QItemSelection()
         flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
-        for path in paths:
-            index: QModelIndex = model.indexFromPath(path)
+        item: XarrayDataTreeItem
+        for item in items:
+            index: QModelIndex = model.indexFromItem(item)
             if not index.isValid():
                 continue
             selection.merge(QItemSelection(index, index), flags)
         if selection.count():
             self.selectionModel().select(selection, flags)
     
-    def removePath(self, path: str, ask: bool = True) -> None:
-        if ask:
-            answer = QMessageBox.question(self, 'Remove', f'Remove {path}?', 
-                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
-                defaultButton=QMessageBox.StandardButton.No
-            )
-            if answer!= QMessageBox.StandardButton.Yes:
-                return
-        self.model().removePaths([path])
-    
-    def removeSelectedPaths(self, ask: bool = True) -> None:
-        paths: list[str] = self.selectedPaths()
-        if not paths:
+    def removeSelectedItems(self, ask: bool = True) -> None:
+        items: list[XarrayDataTreeItem] = self.selectedItems()
+        if not items:
             return
         if ask:
             answer = QMessageBox.question(self, 'Remove', f'Remove selected?', 
@@ -264,7 +252,19 @@ class XarrayDataTreeView(QTreeView):
             )
             if answer!= QMessageBox.StandardButton.Yes:
                 return
-        self.model().removePaths(paths)
+        model: XarrayDataTreeModel = self.model()
+        model.removeItems(items)
+    
+    def removeItem(self, item: XarrayDataTreeItem, ask: bool = True) -> None:
+        if ask:
+            answer = QMessageBox.question(self, 'Remove', f'Remove {item.path}?', 
+                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                defaultButton=QMessageBox.StandardButton.No
+            )
+            if answer!= QMessageBox.StandardButton.Yes:
+                return
+        model: XarrayDataTreeModel = self.model()
+        model.removeItems([item])
     
     @Slot(QPoint)
     def onCustomContextMenuRequested(self, point: QPoint) -> None:
@@ -274,16 +274,13 @@ class XarrayDataTreeView(QTreeView):
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: XarrayDataTreeModel = self.model()
-        dt: xr.DataTree = model.datatree()
-
         menu = QMenu(self)
 
         # item that was clicked on
-        path: str = model.pathFromIndex(index)
-        obj: xr.DataTree | xr.DataArray = dt[path]
-        menu.addAction(f'{path}:').setEnabled(False)  # just a label, not clickable
-        menu.addAction('Info', lambda path=path: self.popupInfo(path))
-        menu.addAction('Attrs', lambda path=path: self.editAttrs(path))
+        item: XarrayDataTreeItem = model.itemFromIndex(index)
+        menu.addAction(f'{item.path}:').setEnabled(False)  # just a label, not clickable
+        menu.addAction('Info', lambda item=item: self._popupInfo(item))
+        menu.addAction('Attrs', lambda item=item: self._editAttrs(item))
         
         # selection
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
@@ -296,11 +293,11 @@ class XarrayDataTreeView(QTreeView):
         has_copy = False # TODO
         menu.addSeparator()
         menu.addAction('Copy', self.copySelection).setEnabled(has_selection)
-        menu.addAction('Paste', lambda path=path: self.pasteCopy(path)).setEnabled(has_copy)
+        menu.addAction('Paste', lambda item=item: self.pasteCopy(item)).setEnabled(has_copy)
         
         # remove item(s)
         menu.addSeparator()
-        menu.addAction('Remove', self.removeSelectedPaths).setEnabled(has_selection)
+        menu.addAction('Remove', self.removeSelectedItems).setEnabled(has_selection)
 
         # TODO: rename things
         menu.addSeparator()
@@ -328,24 +325,21 @@ class XarrayDataTreeView(QTreeView):
         
         return menu
     
-    def popupInfo(self, path: str) -> None:
-        model: XarrayDataTreeModel = self.model()
-        dt: xr.DataTree | None = model.datatree()
-        obj = dt[path]
-        text = str(obj)
+    def _popupInfo(self, item: XarrayDataTreeItem) -> None:
+        info = str(item.data)
         
         textEdit = QTextEdit()
-        textEdit.setPlainText(text)
+        textEdit.setPlainText(info)
         textEdit.setReadOnly(True)
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(path)
+        dlg.setWindowTitle(item.path)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(textEdit)
         dlg.exec()
     
-    def editAttrs(self, path: str) -> None:
+    def _editAttrs(self, item: XarrayDataTreeItem) -> None:
         model: XarrayDataTreeModel = self.model()
         dt: xr.DataTree = model.datatree()
         obj: xr.DataTree | xr.DataArray = dt[path]
@@ -428,7 +422,7 @@ class XarrayDataTreeView(QTreeView):
         #                 copied_obj = xr.DataArray(data=copied_obj.data.copy(), name=copied_obj.name, dims=copied_obj.dims, attrs=deepcopy(copied_obj.attrs))
         #             self._copied_coords.append(copied_obj)
     
-    def pasteCopy(self, parent_path: str = None) -> None:
+    def pasteCopy(self, parent_item: XarrayDataTreeItem = None, row: int = -1) -> None:
         if parent_path is None:
             selected_paths = self.selectedPaths()
             if selected_paths:
@@ -474,11 +468,11 @@ class XarrayDataTreeView(QTreeView):
     def expandAll(self) -> None:
         QTreeView.expandAll(self)
         # store current expanded depth
-        self._expanded_depth_ = self.model().depth()
+        self._expanded_depth = self.model().depth()
     
     def collapseAll(self) -> None:
         QTreeView.collapseAll(self)
-        self._expanded_depth_ = 0
+        self._expanded_depth = 0
     
     def expandToDepth(self, depth: int) -> None:
         depth = max(0, min(depth, self.model().depth()))
@@ -486,7 +480,7 @@ class XarrayDataTreeView(QTreeView):
             self.collapseAll()
             return
         QTreeView.expandToDepth(self, depth - 1)
-        self._expanded_depth_ = depth
+        self._expanded_depth = depth
     
     def resizeAllColumnsToContents(self) -> None:
         for col in range(self.model().columnCount()):
@@ -590,7 +584,7 @@ class XarrayDataTreeView(QTreeView):
     
     def mouseWheelEvent(self, event: QWheelEvent) -> None:
         delta: int = event.angleDelta().y()
-        depth = getattr(self, '_expanded_depth_', 0)
+        depth = getattr(self, '_expanded_depth', 0)
         if delta > 0:
             self.expandToDepth(depth + 1)
         elif delta < 0:
@@ -622,36 +616,40 @@ class XarrayDataTreeView(QTreeView):
         self.setDropIndicatorShown(enabled)
     
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        self.storeState()
-        mime_data = event.mimeData()
-        if isinstance(mime_data, XarrayDataTreeMimeData) and mime_data.model is self.model():
-            # Store the current state of the dragged paths and all their descendent paths in the MIME data.
-            # We only want to do this for the model where the drag was initiated (i.e., mime_data.model).
-            # We'll use this stored state in the dropEvent to restore the view of the dropped items.
-            state: dict[str, dict] = getattr(self, self.STATE_KEY, {})
-            dragged_paths: list[str] = mime_data.paths
-            for dragged_path in dragged_paths:
-                for path in state:
-                    if path.startswith(dragged_path) and path not in mime_data.src_view_state:
-                        mime_data.src_view_state[path] = state[path]
-            # import json
-            # print('src_view_state')
-            # print(json.dumps(mime_data.src_view_state, indent=2))
+        print('dragEnterEvent...')
+        # self.storeState()
+        # mime_data = event.mimeData()
+        # if isinstance(mime_data, XarrayDataTreeMimeData) and mime_data.model is self.model():
+        #     # Store the current state of the dragged paths and all their descendent paths in the MIME data.
+        #     # We only want to do this for the model where the drag was initiated (i.e., mime_data.model).
+        #     # We'll use this stored state in the dropEvent to restore the view of the dropped items.
+        #     state: dict[str, dict] = getattr(self, self.STATE_KEY, {})
+        #     dragged_paths: list[str] = mime_data.paths
+        #     for dragged_path in dragged_paths:
+        #         for path in state:
+        #             if path.startswith(dragged_path) and path not in mime_data.src_view_state:
+        #                 mime_data.src_view_state[path] = state[path]
+        #     # import json
+        #     # print('src_view_state')
+        #     # print(json.dumps(mime_data.src_view_state, indent=2))
         QTreeView.dragEnterEvent(self, event)
+        print('... dragEnterEvent')
     
     def dropEvent(self, event: QDropEvent) -> None:
-        mime_data = event.mimeData()
-        QTreeView.dropEvent(self, event)
-        if isinstance(mime_data, XarrayDataTreeMimeData):
-            # update state of dragged items and all their descendents as specified in the MIME data
-            # import json
-            # print('dst_view_state')
-            # print(json.dumps(mime_data.dst_view_state, indent=2))
-            state = getattr(self, self.STATE_KEY, {})
-            for path, path_state in mime_data.dst_view_state.items():
-                state[path] = path_state
-            setattr(self, self.STATE_KEY, state)
-        self.restoreState()
+        print('dropEvent...')
+        # mime_data = event.mimeData()
+        # QTreeView.dropEvent(self, event)
+        # if isinstance(mime_data, XarrayDataTreeMimeData):
+        #     # update state of dragged items and all their descendents as specified in the MIME data
+        #     # import json
+        #     # print('dst_view_state')
+        #     # print(json.dumps(mime_data.dst_view_state, indent=2))
+        #     state = getattr(self, self.STATE_KEY, {})
+        #     for path, path_state in mime_data.dst_view_state.items():
+        #         state[path] = path_state
+        #     setattr(self, self.STATE_KEY, state)
+        # self.restoreState()
+        print('... dropEvent')
 
 
 def test_live():
@@ -664,14 +662,14 @@ def test_live():
     dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['child1/air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
-    print(dt)
+    # print(dt)
 
     app = QApplication()
     model = XarrayDataTreeModel()
     model.setDataVarsVisible(True)
-    model.setCoordsVisible(True)
+    model.setCoordsVisible(False)
     model.setInheritedCoordsVisible(True)
-    model.setDetailsColumnVisible(True)
+    model.setDetailsColumnVisible(False)
     model.setDatatree(dt)
     view = XarrayDataTreeView()
     view.setModel(model)
@@ -679,7 +677,7 @@ def test_live():
     view.resize(800, 800)
     view.showAll()
     app.exec()
-    print(dt)
+    # print(dt)
 
 
 if __name__ == '__main__':
