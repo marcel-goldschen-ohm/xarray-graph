@@ -678,6 +678,14 @@ class XarrayDataTreeView(QTreeView):
         #     state[path] = path_state
         # setattr(self, self.STATE_KEY, state)
         # self.restoreState()
+    
+    # def dropMimeData(self, index: QModelIndex, data: QMimeData, action: Qt.DropAction) -> bool:
+    #     print('dropMimeData...')
+    #     return False
+    
+    # def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: QModelIndex) -> bool:
+    #     print('canDropMimeData...')
+    #     return True
 
 
 def test_live():
