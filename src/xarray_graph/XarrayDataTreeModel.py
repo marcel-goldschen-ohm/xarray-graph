@@ -551,19 +551,77 @@ class XarrayDataTreeModel(QAbstractItemModel):
             return False
         
         src_parent_item: XarrayDataTreeItem = self.itemFromIndex(src_parent_index)
-        src_items: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
+        src_items: dict[str, XarrayDataTreeItem] = {item.name: item for item in src_parent_item.children[src_row: src_row + count]}
+
+        dst_parent_item: XarrayDataTreeItem = self.itemFromIndex(dst_parent_index)
+        dst_items: dict[str, XarrayDataTreeItem] = {item.name: item for item in dst_parent_item.children}
+
+        src_parent_node: xr.DataTree = src_parent_item.data
+        dst_parent_node: xr.DataTree = dst_parent_item.data
+
+        # TODO: handle alignment conflicts
+
+        # TODO: handle name conflicts
+        src_keys: list[str] = list(src_items)
+        dst_keys: list[str] = list(dst_parent_node.keys())
+        dst_keys_to_be_overwritten: list[str] = []
+        dst_key_src_items_to_be_merged: dict[str, list[XarrayDataTreeItem]] = []
+        src_items_to_be_renamed: dict[str, XarrayDataTreeItem] = {}
+        src_items_to_be_skipped: list[XarrayDataTreeItem] = []
+        name_conflict_action = 'ask'
+        abort = False
+        for src_key, src_item in src_items.items():
+            if src_key not in dst_keys:
+                dst_keys.append(src_key)
+                continue
+            if name_conflict_action == 'ask':
+                focused_widget: QWidget = QApplication.focusWidget()
+                msg = f'"{src_key}" already exists in destination DataTree.'
+                dlg = NameConflictDialog(msg, focused_widget)
+                # dlg._merge_button.setEnabled(False)
+                if dlg.exec() == QDialog.DialogCode.Rejected:
+                    abort = True
+                    break
+                this_name_conflict_action = dlg._action_button_group.checkedButton().text().lower()
+                apply_to_all_name_conflicts = dlg._apply_to_all_checkbox.isChecked()
+                if apply_to_all_name_conflicts:
+                    name_conflict_action = this_name_conflict_action
+            else:
+                this_name_conflict_action = name_conflict_action.lower()
+            
+            if this_name_conflict_action == 'overwrite':
+                dst_keys_to_be_overwritten.append(src_key)
+            elif this_name_conflict_action == 'merge':
+                if src_key in dst_key_src_items_to_be_merged:
+                    dst_key_src_items_to_be_merged[src_key].append(src_item)
+                else:
+                    dst_key_src_items_to_be_merged[src_key] = [src_item]
+            elif this_name_conflict_action == 'keep both':
+                key = xarray_utils.unique_name(src_key, dst_keys)
+                src_items_to_be_renamed[key] = src_item
+                dst_keys.append(key)
+            elif this_name_conflict_action == 'skip':
+                src_items_to_be_skipped.append(src_item)
+        if abort:
+            return False
+        if dst_keys_to_be_overwritten:
+            pass # TODO
+        if dst_key_src_items_to_be_merged:
+            pass # TODO
+        if src_items_to_be_renamed:
+            pass # TODO
+        if src_items_to_be_skipped:
+            pass # TODO
+
+        # below here is broken due to above changes, will fix later
+
         src_node_items: list[XarrayDataTreeItem] = [item for item in src_items if item.is_node]
         src_data_var_items: list[XarrayDataTreeItem] = [item for item in src_items if item.is_data_var]
         src_coord_items: list[XarrayDataTreeItem] = [item for item in src_items if item.is_coord]
 
-        dst_parent_item: XarrayDataTreeItem = self.itemFromIndex(dst_parent_index)
-        dst_items: list[XarrayDataTreeItem] = dst_parent_item.children.copy()
         dst_node_items: list[XarrayDataTreeItem] = [item for item in dst_items if item.is_node]
         dst_data_var_items: list[XarrayDataTreeItem] = [item for item in dst_items if item.is_data_var]
         dst_coord_items: list[XarrayDataTreeItem] = [item for item in dst_items if item.is_coord]
-
-        src_parent_node: xr.DataTree = src_parent_item.data
-        dst_parent_node: xr.DataTree = dst_parent_item.data
         
         print()
         print(f'    src_parent_item={src_parent_item.name}, src_items={[item.name for item in src_items]}')
@@ -577,48 +635,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
         print(f'    dst_data_var_items={[item.name for item in dst_data_var_items]}')
         print(f'    dst_coord_items={[item.name for item in dst_coord_items]}')
         print()
-
-        # TODO: handle name conflicts
-        # name_conflict_action = 'ask'
-        # # src_key_renames = {}
-        # src_keys: list[str] = [item.name for item in src_items]
-        # dst_keys: list[str] = list(dst_parent_node.keys())
-        # print('src_keys =', src_keys)
-        # print('dst_keys =', dst_keys)
-        # if dst_keys:
-        #     abort = False
-        #     for src_item in src_items:
-        #         if src_item.name in dst_keys:
-        #             if name_conflict_action == 'ask':
-        #                 focused_widget: QWidget = QApplication.focusWidget()
-        #                 msg = f'"{src_item.name}" already exists in destination DataTree.'
-        #                 dlg = NameConflictDialog(msg, focused_widget)
-        #                 dlg._merge_button.setEnabled(False) # TODO: implement merge below
-        #                 if dlg.exec() == QDialog.DialogCode.Rejected:
-        #                     abort = True
-        #                     break
-        #                 this_name_conflict_action = dlg._action_button_group.checkedButton().text().lower()
-        #                 apply_to_all_name_conflicts = dlg._apply_to_all_checkbox.isChecked()
-        #                 if apply_to_all_name_conflicts:
-        #                     name_conflict_action = this_name_conflict_action
-        #             else:
-        #                 this_name_conflict_action = name_conflict_action.lower()
-                    
-        #             if this_name_conflict_action == 'overwrite':
-        #                 # 1. check if new item can be moved
-        #                 # 2. if so, remove old item at dst to be overwritten, else throw error
-        #                 pass # TODO
-        #             elif this_name_conflict_action == 'merge':
-        #                 # 1. check if new item can be merged and throw error if it can't
-        #                 pass # TODO
-        #             elif this_name_conflict_action == 'keep both':
-        #                 key = xarray_utils.unique_name(src_item.name, dst_keys)
-        #                 # TODO: update src item name
-        #                 dst_keys.append(key)
-        #             elif this_name_conflict_action == 'skip':
-        #                 pass # TODO: ditch this item from move
-        #     if abort:
-        #         return False
 
         # move nodes
         if src_node_items:
