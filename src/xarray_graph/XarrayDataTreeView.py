@@ -3,8 +3,7 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- why is drag-drop so sluggish!?
-- what's going on with inherited coords!?
+- store/restore state
 - test dragEnterEvent() and dropEvent() and mimeData
 - edit attrs in key-value tree ui
 - open 1d or 2d array in table?
@@ -633,36 +632,65 @@ class XarrayDataTreeView(QTreeView):
         #     # print('src_view_state')
         #     # print(json.dumps(mime_data.src_view_state, indent=2))
         QTreeView.dragEnterEvent(self, event)
-        print('... dragEnterEvent')
     
     def dropEvent(self, event: QDropEvent) -> None:
         print('dropEvent...')
-        # mime_data = event.mimeData()
+        data: XarrayDataTreeMimeData = event.mimeData()
+        if not isinstance(data, XarrayDataTreeMimeData):
+            event.ignore()
+            return
+
+        src_model: XarrayDataTreeModel = data.src_model
+        src_items: list[XarrayDataTreeItem] = data.src_items
+        dst_model: XarrayDataTreeModel = self.model()
+        if not src_model or not src_items or not dst_model:
+            event.ignore()
+            return
+        
+        # set dst_row and dst_parent_index based on drop position
+        dst_index: QModelIndex = self.indexAt(event.pos())
+        dst_row = dst_index.row()
+        drop_pos = self.dropIndicatorPosition()
+        if drop_pos == QAbstractItemView.DropIndicatorPosition.OnViewport:
+            dst_parent_index = QModelIndex()
+            dst_row = dst_model.rowCount(dst_parent_index)
+        elif drop_pos == QAbstractItemView.DropIndicatorPosition.OnItem:
+            dst_parent_index = dst_index
+            dst_row = dst_model.rowCount(dst_parent_index)
+        elif drop_pos == QAbstractItemView.DropIndicatorPosition.AboveItem:
+            dst_parent_index: QModelIndex = dst_model.parent(dst_index)
+        elif drop_pos == QAbstractItemView.DropIndicatorPosition.BelowItem:
+            dst_parent_index: QModelIndex = dst_model.parent(dst_index)
+            dst_row += 1
+        dst_parent_item: XarrayDataTreeItem = dst_model.itemFromIndex(dst_parent_index)
+        
+        # store drop locaiton in mime data
+        data.dst_model = dst_model
+        data.dst_parent_item = dst_parent_item
+        data.dst_row = dst_row
+
+        # handle drop event
         QTreeView.dropEvent(self, event)
-        # if isinstance(mime_data, XarrayDataTreeMimeData):
-        #     # update state of dragged items and all their descendents as specified in the MIME data
-        #     # import json
-        #     # print('dst_view_state')
-        #     # print(json.dumps(mime_data.dst_view_state, indent=2))
-        #     state = getattr(self, self.STATE_KEY, {})
-        #     for path, path_state in mime_data.dst_view_state.items():
-        #         state[path] = path_state
-        #     setattr(self, self.STATE_KEY, state)
+
+        # TODO: update view state of dragged items and all their descendents as specified in the mime data
+        # state = getattr(self, self.STATE_KEY, {})
+        # for path, path_state in mime_data.dst_view_state.items():
+        #     state[path] = path_state
+        # setattr(self, self.STATE_KEY, state)
         # self.restoreState()
-        print('... dropEvent')
 
 
 def test_live():
     dt = xr.DataTree()
-    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
-    dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
-    dt['air_temperature/inhertis'] = xr.tutorial.load_dataset('air_temperature')
+    # dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    # dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
+    # dt['air_temperature/inhertis'] = xr.tutorial.load_dataset('air_temperature')
     dt['child2'] = xr.DataTree()
     dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
     dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
-    dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['child1/air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
-    dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    # dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
+    # dt['child1/air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    # dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     # print(dt)
 
     app = QApplication()

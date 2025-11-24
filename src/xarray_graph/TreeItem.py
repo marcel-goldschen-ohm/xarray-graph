@@ -14,9 +14,14 @@ class TreeItem():
     Only implements parent/child linkage, you'll need to add any data in a derived class.
     """
 
-    def __init__(self, parent: TreeItem = None):
+    def __init__(self, parent: TreeItem = None, sibling_index: int = -1):
         self.parent: TreeItem = parent
         self.children: list[TreeItem] = []
+        if parent:
+            if sibling_index == -1:
+                parent.children.append(self)
+            else:
+                parent.children.insert(sibling_index, self)
     
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
