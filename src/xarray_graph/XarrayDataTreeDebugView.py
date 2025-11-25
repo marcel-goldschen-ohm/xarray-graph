@@ -117,13 +117,26 @@ class XarrayDataTreeDebugView(QTextEdit):
 
 def test_live():
     dt = xr.DataTree()
-    dt['child1'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child1/child2'] = xr.DataTree()
-    dt['child3/grandchild1'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child3/grandchild1/greatgrandchild1'] = dt['child3/grandchild1'].dataset
-    dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
-    dt['child3/grandchild2'] = xr.DataTree()
+    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature/empty'] = xr.DataTree()
+    # dt['rasm'] = xr.tutorial.load_dataset('rasm')
+    # dt['child3/grandchild1/greatgrandchild1'] = dt['child3/grandchild1'].dataset
+    # dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
+    # dt['child3/grandchild2'] = xr.DataTree()
+    print('dt before', '-'*82)
     print(dt)
+
+    a = dt['air_temperature/empty']
+    b = xr.DataTree(dataset=xr.tutorial.load_dataset('air_temperature'))
+    a = a.assign({'new': b})
+    print('dt after', '-'*82)
+    print(dt)
+    print('a after', '-'*82)
+    print(a)
+
+    # result = xr.align(dt['air_temperature/empty'].dataset, dt['air_temperature'].dataset, join='exact')
+    # print(result)
+    return
 
     app = QApplication()
     viewer = XarrayDataTreeDebugView(datatree=dt)

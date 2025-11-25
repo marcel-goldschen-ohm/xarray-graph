@@ -74,6 +74,19 @@ class TreeItem():
             if i-1 >= 0:
                 return siblings[i-1]
     
+    def orphan(self) -> None:
+        if self.parent:
+            self.parent.children.remove(self)
+            self.parent = None
+    
+    def append_child(self, item: TreeItem) -> None:
+        self.children.append(item)
+        item.parent = self
+    
+    def insert_child(self, index: int, item: TreeItem) -> None:
+        self.children.insert(index, item)
+        item.parent = self
+    
     def has_ancestor(self, item: TreeItem) -> bool:
         for ancestor in self.parents():
             if ancestor is item:
