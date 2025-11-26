@@ -1,11 +1,17 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
+- setData
+    - rename coord
 - moveRows
     - data_vars
     - coords
     - handle reordering only
     - merge items?
+    - for any moved coords, remove inherited coords in descendents of src_parent
+    - for any moved data_vars, copy any inherited coords from src_parent that don't already exist in dst_parent to dst_parent node
+    - for any moved nodes, copy any inherited coords that don't already exist in dst_parent
+- insertItems
 - transferItems
 """
 
@@ -72,6 +78,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
     """ PyQt tree model interface for a Xarray DataTree.
     """
 
+    item_order = ['coords', 'data_vars', 'children']
+
     def __init__(self, *args, **kwargs):
         datatree: xr.DataTree = kwargs.pop('datatree', xr.DataTree())
         super().__init__(*args, **kwargs)
@@ -124,19 +132,23 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def _updateItemSubtree(self, item: XarrayDataTreeItem) -> None:
         if not item.is_node:
             return
-        item.children = []
-        if self.isDataVarsVisible():
-            data_var: xr.DataArray
-            for data_var in item.data.data_vars.values():
-                child_item = XarrayDataTreeItem(data_var, item)
-        if self.isCoordsVisible():
-            coord: xr.DataArray
-            for coord in self._orderedCoords(item.data):
-                child_item = XarrayDataTreeItem(coord, item)
-        node: xr.DataTree
-        for node in item.data.children.values():
-            child_item = XarrayDataTreeItem(node, item)
-            self._updateItemSubtree(child_item)
+        item.children = [] # will repopulate below
+        for item_type in self.item_order:
+            if item_type == 'data_vars':
+                if self.isDataVarsVisible():
+                    data_var: xr.DataArray
+                    for data_var in item.data.data_vars.values():
+                        child_item = XarrayDataTreeItem(data_var, item)
+            elif item_type == 'coords':
+                if self.isCoordsVisible():
+                    coord: xr.DataArray
+                    for coord in self._orderedCoords(item.data):
+                        child_item = XarrayDataTreeItem(coord, item)
+            elif item_type == 'children':
+                node: xr.DataTree
+                for node in item.data.children.values():
+                    child_item = XarrayDataTreeItem(node, item)
+                    self._updateItemSubtree(child_item)
     
     def _orderedCoords(self, node: xr.DataTree) -> Iterator[xr.DataArray]:
         if not self.isInheritedCoordsVisible():
@@ -159,11 +171,15 @@ class XarrayDataTreeModel(QAbstractItemModel):
     
     def _visibleRowNames(self, node: xr.DataTree) -> list[str]:
         names: list[str] = []
-        if self.isDataVarsVisible():
-            names += list(node.data_vars)
-        if self.isCoordsVisible():
-            names += [coord.name for coord in self._orderedCoords(node)]
-        names += list(node.children)
+        for item_type in self.item_order:
+            if item_type == 'data_vars':
+                if self.isDataVarsVisible():
+                    names += list(node.data_vars)
+            elif item_type == 'coords':
+                if self.isCoordsVisible():
+                    names += [coord.name for coord in self._orderedCoords(node)]
+            elif item_type == 'children':
+                names += list(node.children)
         return names
     
     def isDataVarsVisible(self) -> bool:
@@ -327,8 +343,16 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     return self._coord_icon
         elif role == Qt.ItemDataRole.TextColorRole:
             item: XarrayDataTreeItem = self.itemFromIndex(index)
-            if item.is_inherited_coord:
+            if item.is_node:
+                return
+            elif item.is_data_var:
+                return
+            elif item.is_coord:
+                return
+            elif item.is_inherited_coord:
                 return self._inherited_coords_color
+            else:
+                return QColor.red
 
     def setData(self, index: QModelIndex, value, role: int) -> bool:
         """ This amounts to just renaming DataTree nodes, data_vars, and coords.
@@ -344,7 +368,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             new_name: str = value.strip()
             if not new_name or '/' in new_name:
                 msg = f'"{new_name}" is not a valid DataTree key. Must be a non-empty string without any path separators "/".'
-                self._popupWarningDialog(msg)
+                QMessageBox.warning(parent=QApplication.focusWidget(), title='Invalid Name', text=msg)
                 return False
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             old_name = item.data.name
@@ -355,7 +379,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             parent_keys: list[str] = list(parent_node.keys())
             if new_name in parent_keys:
                 msg = f'"{new_name}" already exists in parent DataTree.'
-                self._popupWarningDialog(msg)
+                QMessageBox.warning(parent=QApplication.focusWidget(), title='Existing Name', text=msg)
                 return False
             if item.is_node:
                 parent_node.children = {name if name != old_name else new_name: child for name, child in parent_node.children.items()}
@@ -368,7 +392,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 self.dataChanged.emit(index, index)
                 return True
             elif item.is_coord:
-                pass # TODO
+                pass # TODO: rename coord and also dimension if coord is an index coord
         return False
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int):
@@ -523,6 +547,9 @@ class XarrayDataTreeModel(QAbstractItemModel):
             parent_index: QModelIndex = self.indexFromItem(block[0].parent)
             self.removeRows(row, count, parent_index)
     
+    def insertItems(self, items: list[XarrayDataTreeItem], parent_item: XarrayDataTreeItem, row: int = -1) -> None:
+        pass # TODO
+    
     def moveRows(self, src_parent_index: QModelIndex, src_row: int, count: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
         print(f'moveRows(src_row={src_row}, count={count}, dst_row={dst_row})...')
         if count <= 0:
@@ -635,9 +662,21 @@ class XarrayDataTreeModel(QAbstractItemModel):
         dst_coord_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_coord}
         dst_node_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_node}
 
-        # Move nodes first, then coords, then data_vars to ensure that dst_row remains valid after each move. This reflects the reverse order of item types in the item tree.
+        # Move item types in reverse order of their appearance in the item tree to ensure that dst_row remains valid after each move.
+        src_item_maps: list[dict[str, XarrayDataTreeItem]] = []
+        dst_item_maps: list[dict[str, XarrayDataTreeItem]] = []
+        for item_type in self.item_order:
+            if item_type == 'data_vars':
+                src_item_maps.append(src_data_var_items_map)
+                dst_item_maps.append(dst_data_var_items_map)
+            elif item_type == 'coords':
+                src_item_maps.append(src_coord_items_map)
+                dst_item_maps.append(dst_coord_items_map)
+            elif item_type == 'children':
+                src_item_maps.append(src_node_items_map)
+                dst_item_maps.append(dst_node_items_map)
         src_item_map: dict[str, XarrayDataTreeItem]
-        for src_item_map in [src_node_items_map, src_coord_items_map, src_data_var_items_map]:
+        for src_item_map in reversed(src_item_maps):
             if not src_item_map:
                 continue
             # Rechunk items into contiguous blocks. This could be needed if, for example, an item was skipped.
@@ -676,11 +715,17 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 
                 if not dst_like_items:
                     if src_items[0].is_node:
-                        dst_row_: int = len(dst_data_var_items_map) + len(dst_coord_items_map)
+                        i: int = self.item_order.index('children')
                     elif src_items[0].is_data_var:
-                        dst_row_: int = 0
+                        i: int = self.item_order.index('data_vars')
                     elif src_items[0].is_coord:
-                        dst_row_: int = len(dst_data_var_items_map)
+                        i: int = self.item_order.index('coords')
+                    if i == 0:
+                        dst_row_: int = 0
+                    else:
+                        dst_row_: int = 0
+                        for j in range(i):
+                            dst_row_ += len(dst_item_maps[j])
                     final_dst_like_names = src_names
                 elif dst_row > dst_like_items[-1].row:
                     # append items
@@ -756,6 +801,14 @@ class XarrayDataTreeModel(QAbstractItemModel):
             count: int = len(block)
             self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
     
+    def transferItems(self, src_items: list[XarrayDataTreeItem], dst_model: XarrayDataTreeModel, dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
+        print(f'transferItems(src_items={[item.name for item in src_items]}, dst_parent_item={dst_parent_item.name}, dst_row={dst_row})...')
+        if dst_model is self:
+            self.moveItems(src_items, dst_parent_item, dst_row)
+            return
+        
+        # TODO: transfer items to dst_model
+    
     @staticmethod
     def _itemBlocks(items: list[XarrayDataTreeItem]) -> list[list[XarrayDataTreeItem]]:
         """ Group items into blocks by parent and contiguous rows.
@@ -786,14 +839,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
         
         # return blocks in reverse depth-first order to ensure row indices remain valid when removing or moving blocks sequentially
         return list(reversed(blocks))
-    
-    def transferItems(self, src_items: list[XarrayDataTreeItem], dst_model: XarrayDataTreeModel, dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
-        print(f'transferItems(src_items={[item.name for item in src_items]}, dst_parent_item={dst_parent_item.name}, dst_row={dst_row})...')
-        if dst_model is self:
-            self.moveItems(src_items, dst_parent_item, dst_row)
-            return
-        
-        # TODO: transfer items to dst_model
     
     def supportedDropActions(self) -> Qt.DropActions:
         return self._supportedDropActions

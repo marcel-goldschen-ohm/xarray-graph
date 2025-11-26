@@ -31,6 +31,8 @@ class XarrayDataTreeView(QTreeView):
     # for store/restore view state
     STATE_KEY = '_state'
 
+    window_decoration_offset: QPoint = None
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
@@ -332,17 +334,21 @@ class XarrayDataTreeView(QTreeView):
         textEdit.setReadOnly(True)
 
         dlg = QDialog(self)
+        dlg.resize(max(self.width(), 800), self.height())
+        # if self.window_decoration_offset is None:
+        #     self._get_window_decoration_offset()
+        # dlg.move(self.mapToGlobal(self.window_decoration_offset))
+        dlg.move(self.mapToGlobal(QPoint(0, 0)))
         dlg.setWindowTitle(item.path)
+        
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(textEdit)
+
         dlg.exec()
     
     def _editAttrs(self, item: XarrayDataTreeItem) -> None:
-        model: XarrayDataTreeModel = self.model()
-        dt: xr.DataTree = model.datatree()
-        obj: xr.DataTree | xr.DataArray = dt[path]
-        attrs = obj.attrs.copy()
+        attrs: dict = item.data.attrs.copy()
         
         # TODO
         # root = KeyValueTreeItem(attrs)
@@ -375,6 +381,15 @@ class XarrayDataTreeView(QTreeView):
         # obj.attrs = attrs
         
         # self.finishedEditingAttrs.emit()
+    
+    @staticmethod
+    def _get_window_decoration_offset():
+        window = QWidget()
+        window.show()
+        frame: QRect = window.frameGeometry()
+        geo: QRect = window.geometry()
+        window.close()
+        XarrayDataTreeView.window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
     
     def copySelection(self) -> None:
         """ Copy selected items.
@@ -690,15 +705,15 @@ class XarrayDataTreeView(QTreeView):
 
 def test_live():
     dt = xr.DataTree()
-    # dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
-    # dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
-    # dt['air_temperature/inhertis'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
+    dt['air_temperature/inhertis'] = xr.tutorial.load_dataset('air_temperature')
     dt['child2'] = xr.DataTree()
     dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
     dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
-    # dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
+    dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
     # dt['child1/air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
-    # dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     # print(dt)
 
     app = QApplication()
