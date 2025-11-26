@@ -2,6 +2,10 @@
 
 TODO:
 - moveRows
+    - data_vars
+    - coords
+    - handle reordering only
+    - merge items?
 - transferItems
 """
 
@@ -536,13 +540,15 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if (dst_row < 0) or (dst_row > num_dst_rows):
             return False
         
-        dt: xr.DataTree = self.datatree()
-        
         src_parent_item: XarrayDataTreeItem = self.itemFromIndex(src_parent_index)
         dst_parent_item: XarrayDataTreeItem = self.itemFromIndex(dst_parent_index)
 
         src_parent_node: xr.DataTree = src_parent_item.data
         dst_parent_node: xr.DataTree = dst_parent_item.data
+
+        if src_parent_node is dst_parent_node:
+            # TODO: reorder child items
+            return True
 
         src_parent_dataset: xr.Dataset = src_parent_node.to_dataset(inherit=True)
         dst_parent_dataset: xr.Dataset = dst_parent_node.to_dataset(inherit=True)
@@ -693,15 +699,20 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 # move block
                 self.beginMoveRows(src_parent_index, src_first_row, src_last_row, dst_parent_index, dst_row)
                 if src_items[0].is_node:
+                    # move nodes...
                     src_nodes_map: dict[str, xr.DataTree] = {item.name: item.data for item in src_items}
                     # remove src nodes from datatree
                     for node in src_nodes_map.values():
                         node.orphan()
-                    # insert src nodes at dst in datatree
-                    dst_parent_node = dst_parent_node.assign(src_nodes_map)
+                    # insert src nodes in dst_parent_node (note that this orphans dst_parent_node)
+                    dst_parent_node_path: str = dst_parent_node.path
+                    dst_parent_node = dst_parent_node.assign(src_nodes_map) # this orphans dst_parent_node
                     dst_parent_node.children = {name: dst_parent_node.children[name] for name in final_dst_like_names} # ordered
-                    dt[dst_parent_node.path] = dst_parent_node # reatach to dt
-                    dst_parent_node = dt[dst_parent_node.path]
+                    # reattach dst_parent_node to datatree (not needed if dst_parent is the datatree root)
+                    if dst_parent_node_path != '/':
+                        dt: xr.DataTree = self.datatree()
+                        dt[dst_parent_node_path] = dst_parent_node
+                        dst_parent_node = dt[dst_parent_node_path]
                     # relink item tree to new dst_parent_node
                     dst_parent_item.data = dst_parent_node
                     # remove src items from src parent and insert dst in item tree
@@ -710,100 +721,13 @@ class XarrayDataTreeModel(QAbstractItemModel):
                         src_item.orphan()
                         dst_parent_item.insert_child(dst_row_ + i, src_item)
                 elif src_items[0].is_data_var:
+                    # move data_vars...
                     pass # TODO
                 if src_items[0].is_coord:
+                    # move coords...
                     pass # TODO
                 self.endMoveRows()
 
-        return True
-
-        # if src_data_var_items or src_coord_items:
-        #     src_dataset = xr.Dataset(
-        #         data_vars={name: item.data for name, item in src_data_var_items.items()},
-        #         coords={name: item.data for name, item in src_coord_items.items()},
-        #     )
-        # else:
-        #     src_dataset = None
-        
-        # print()
-        # print(f'    src_parent_item={src_parent_item.name}, src_items={[item.name for item in src_items_map]}')
-        # print(f'    dst_parent_item={dst_parent_item.name}, dst_row={dst_row}')
-        # print()
-        # print(f'    src_node_items={[item.name for item in src_node_items_map]}')
-        # print(f'    src_data_var_items={[item.name for item in src_data_var_items_map]}')
-        # print(f'    src_coord_items={[item.name for item in src_coord_items_map]}')
-        # print()
-        # print(f'    dst_node_items={[item.name for item in dst_node_items_map]}')
-        # print(f'    dst_data_var_items={[item.name for item in dst_data_var_items_map]}')
-        # print(f'    dst_coord_items={[item.name for item in dst_coord_items_map]}')
-        # print()
-
-        # move nodes
-        if src_node_items_map:
-            src_row_: int = src_node_items_map[0].row
-            count_: int = len(src_node_items_map)
-            # print(f'    src_row_={src_row_}, count_={count_}')
-            src_nodes_map: dict[str, xr.DataTree] = {item.name: item.data for item in src_node_items_map}
-            # print('\nsrc nodes', '-'*82)
-            # print(src_nodes)
-            src_names: list[str] = list(src_nodes_map)
-            dst_like_names: list[str] = list(dst_parent_node.children)
-            if not dst_node_items_map or dst_row > dst_node_items_map[-1].row:
-                # append nodes
-                dst_row_: int = len(dst_parent_item.children)
-                final_dst_like_names = dst_like_names + src_names
-            elif dst_row <= dst_node_items_map[0].row:
-                # prepend nodes
-                dst_row_: int = dst_node_items_map[0].row
-                final_dst_like_names = src_names + dst_like_names
-            else:
-                # insert nodes
-                i: int = dst_row - dst_node_items_map[0].row
-                final_dst_like_names = dst_like_names[:i] + src_names + dst_like_names[i:]
-            # print(f'    dst_row_={dst_row_}')
-            
-            self.beginMoveRows(src_parent_index, src_row_, src_row_ + count_ - 1, dst_parent_index, dst_row_)
-            # remove src nodes from datatree
-            for node in src_nodes_map.values():
-                node.orphan()
-            # print('\ndatatree w/o src nodes', '-'*82)
-            # print(self.datatree())
-            # print('\norphaned src nodes', '-'*82)
-            # print(src_nodes)
-            
-            # insert src nodes at dst in datatree
-            dst_parent_node = dst_parent_node.assign(src_nodes_map)
-            # print('\ndst_parent_node w/ src nodes', '-'*82)
-            # print(dst_parent_node)
-
-            # reorder dst nodes
-            # print('--- current node order:', list(dst_parent_node.children))
-            # print('--- desired node order:', final_dst_node_names)
-            dst_like_names = list(dst_parent_node.children)
-            if dst_like_names != final_dst_like_names:
-                dst_parent_node.children = {src_key: dst_parent_node.children[src_key] for src_key in final_dst_like_names}
-            # print('\ndst_parent_node w/ ordered nodes', '-'*82)
-            # print(dst_parent_node)
-
-            # update parent items to refer to new parent nodes
-            src_parent_item.data = src_parent_node
-            dst_parent_item.data = dst_parent_node
-            
-            # remove src items from item tree
-            for item in src_node_items_map:
-                item.parent.children.remove(item)
-                item.parent = None
-            # print('\nItem tree w/o src nodes', '-'*82)
-            # print(self._root_item)
-            
-            # insert src items at dst in item tree
-            for i, src_key in enumerate(src_names):
-                dst_item = XarrayDataTreeItem(dst_parent_node[src_key], dst_parent_item, dst_row_ + i)
-                self._updateItemSubtree(dst_item)
-            # print('\nNew item tree', '-'*82)
-            # print(self._root_item)
-            self.endMoveRows()
-        
         return True
     
     def moveItems(self, src_items: list[XarrayDataTreeItem], dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
@@ -861,7 +785,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 blocks.append([item])
         
         # return blocks in reverse depth-first order to ensure row indices remain valid when removing or moving blocks sequentially
-        return reversed(blocks)
+        return list(reversed(blocks))
     
     def transferItems(self, src_items: list[XarrayDataTreeItem], dst_model: XarrayDataTreeModel, dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
         print(f'transferItems(src_items={[item.name for item in src_items]}, dst_parent_item={dst_parent_item.name}, dst_row={dst_row})...')
