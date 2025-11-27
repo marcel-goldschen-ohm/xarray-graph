@@ -343,16 +343,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     return self._coord_icon
         elif role == Qt.ItemDataRole.TextColorRole:
             item: XarrayDataTreeItem = self.itemFromIndex(index)
-            if item.is_node:
-                return
-            elif item.is_data_var:
-                return
-            elif item.is_coord:
-                return
-            elif item.is_inherited_coord:
+            if item.is_inherited_coord:
                 return self._inherited_coords_color
-            else:
-                return QColor.red
 
     def setData(self, index: QModelIndex, value, role: int) -> bool:
         """ This amounts to just renaming DataTree nodes, data_vars, and coords.
