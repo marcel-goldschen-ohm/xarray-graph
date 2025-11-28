@@ -3,7 +3,7 @@ from xarray_graph import xarray_utils
 
 from xarray_graph.IPythonConsole import IPythonConsole
 
-from xarray_graph.TreeItem import TreeItem
+from xarray_graph.AbstractTreeItem import AbstractTreeItem
 
 from xarray_graph.AnnotationTreeItem import AnnotationTreeItem
 from xarray_graph.AnnotationTreeModel import AnnotationTreeModel

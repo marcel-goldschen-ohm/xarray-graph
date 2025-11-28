@@ -4,21 +4,19 @@ Uses XarrayDataTreeModel for the model interface.
 
 TODO:
 - store/restore state
-- test dragEnterEvent() and dropEvent() and mimeData
+- store/restore state of dragged items in dragEnterEvent() and dropEvent()
 - edit attrs in key-value tree ui
-- open 1d or 2d array in table?
+- open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
 - global rename of variables throughout the entire branch or tree?
 """
 
 from __future__ import annotations
-# from typing import Callable
 import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils
-from xarray_graph import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
+from xarray_graph import xarray_utils, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
 # from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
 
@@ -42,12 +40,10 @@ class XarrayDataTreeView(QTreeView):
         sizePolicy.setVerticalPolicy(QSizePolicy.Policy.Expanding)
         self.setSizePolicy(sizePolicy)
         self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
-        # self.setAlternatingRowColors(True)
         self.setUniformRowHeights(True)
         self.setSortingEnabled(False)
 
         # selection
-        # self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
@@ -90,6 +86,7 @@ class XarrayDataTreeView(QTreeView):
         # optional details column
         self._showDetailsColumnAction = QAction(
             text = 'Show Details Column',
+            icon = qta.icon('ph.info'),
             checkable = True,
             checked = False,
             toolTip = 'Show details column in the tree view. Uncheck to hide column.',
@@ -281,6 +278,9 @@ class XarrayDataTreeView(QTreeView):
         item: XarrayDataTreeItem = model.itemFromIndex(index)
         menu.addAction(f'{item.path}:').setEnabled(False)  # just a label, not clickable
         menu.addAction('Info', lambda item=item: self._popupInfo(item))
+        if item.is_data_var or item.is_coord:
+            # TODO
+            menu.addAction('Data').setEnabled(False) #, lambda item=item: self._viewData(item))
         menu.addAction('Attrs', lambda item=item: self._editAttrs(item))
         
         # selection
