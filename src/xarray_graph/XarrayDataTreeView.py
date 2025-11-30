@@ -754,17 +754,30 @@ def test_live():
     # print(dt)
 
     app = QApplication()
+
     model = XarrayDataTreeModel()
     model.setDataVarsVisible(True)
-    model.setCoordsVisible(True)
+    model.setCoordsVisible(False)
     model.setInheritedCoordsVisible(True)
-    model.setDetailsColumnVisible(False)
+    model.setDetailsColumnVisible(True)
     model.setDatatree(dt)
+
+    parent_item = model._root_item.children[0]
+    half_air = dt['air_temperature/air'] / 2
+    data_var_item = XarrayDataTreeItem(half_air)
+    model.insertItems({'half air': data_var_item}, parent_item)
+
+    parent_item = model._root_item.children[0]
+    twice_lat = dt['air_temperature/lat'] * 2
+    coord_item = XarrayDataTreeItem(twice_lat)
+    model.insertItems({'twice lat': coord_item}, parent_item, item_types_map={'twice lat': 'coord'})
+
     view = XarrayDataTreeView()
     view.setModel(model)
     view.show()
     view.resize(800, 800)
     view.showAll()
+
     app.exec()
     # print(dt)
 
