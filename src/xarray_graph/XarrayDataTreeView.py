@@ -264,6 +264,34 @@ class XarrayDataTreeView(QTreeView):
         model: XarrayDataTreeModel = self.model()
         model.removeItems([item])
     
+    def appendNewNode(self, parent_item: XarrayDataTreeItem, name: str = None) -> None:
+        if not parent_item.is_node:
+            return
+        if name is None:
+            parent: QWidget = self
+            title: str = 'New DataTree Group'
+            label: str = 'Group Name'
+            name, ok = QInputDialog.getText(parent, title, label)
+            if not ok:
+                return
+        if '/' in name:
+            parent: QWidget = self
+            title: str = 'Invalid Name'
+            text = f'"{name}" is an invalid DataTree path key which cannot contain path seaprators "/".'
+            QMessageBox.warning(parent, title, text)
+            return
+        parent_node: xr.DataTree = parent_item.data
+        if name in list(parent_node.keys()):
+            parent: QWidget = self
+            title: str = 'Existing Name'
+            text = f'"{name}" already exists in parent DataTree.'
+            QMessageBox.warning(self, title, text)
+            return
+        new_node = xr.DataTree()
+        new_item = XarrayDataTreeItem(new_node)
+        row = len(parent_item.children)
+        self.model().insertItems({name: new_item}, parent_item, row)
+    
     @Slot(QPoint)
     def onCustomContextMenuRequested(self, point: QPoint) -> None:
         index: QModelIndex = self.indexAt(point)
@@ -289,16 +317,22 @@ class XarrayDataTreeView(QTreeView):
             menu.addAction('Select All', self.selectAll)
             menu.addAction('Select None', self.clearSelection)
         
-        # TODO: copy/paste
+        # TODO: cut/copy/paste
         has_selection = self.selectionModel().hasSelection()
         has_copy = False # TODO
         menu.addSeparator()
+        menu.addAction('Cut', self.cutSelection).setEnabled(has_selection)
         menu.addAction('Copy', self.copySelection).setEnabled(has_selection)
         menu.addAction('Paste', lambda item=item: self.pasteCopy(item)).setEnabled(has_copy)
         
         # remove item(s)
         menu.addSeparator()
         menu.addAction('Remove', self.removeSelectedItems).setEnabled(has_selection)
+        
+        # insert new node
+        if item.is_node:
+            menu.addSeparator()
+            menu.addAction('Add New Child DataTree', lambda parent_item=item: self.appendNewNode(parent_item))
 
         # TODO: rename things
         menu.addSeparator()
@@ -390,6 +424,9 @@ class XarrayDataTreeView(QTreeView):
         geo: QRect = window.geometry()
         window.close()
         XarrayDataTreeView.window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
+    
+    def cutSelection(self) -> None:
+        pass # TODO
     
     def copySelection(self) -> None:
         """ Copy selected items.
