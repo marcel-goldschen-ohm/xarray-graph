@@ -15,6 +15,8 @@ class AbstractTreeItem():
     Only implements parent/child tree linkage, you'll need to add and manage any data in a derived class.
     """
 
+    _path_separator: str = '/'
+
     def __init__(self, parent: AbstractTreeItem = None, sibling_index: int = -1):
         self.parent: AbstractTreeItem = parent
         self.children: list[AbstractTreeItem] = []
@@ -28,6 +30,19 @@ class AbstractTreeItem():
         """ Returns a multi-line string representation of this item's tree branch.
         """
         return self._tree_repr(repr)
+    
+    @property
+    def name(self) -> str:
+        """ This is primarily for testing/debugging. You should override this in a derived class.
+        """
+        return str(id(self))
+    
+    @property
+    def path(self) -> str:
+        if self.parent is None:
+            return self.name or self._path_separator
+        path_parts: list[str] = list(reversed([item.name for item in self.parents()])) + [self.name]
+        return self._path_separator.join(path_parts)
     
     @property
     def row(self) -> int:
@@ -204,12 +219,14 @@ class AbstractTreeItem():
                 return True
         return False
     
-    def _tree_repr(self, func: Callable[[AbstractTreeItem], str] = repr) -> str:
+    def _tree_repr(self, func: Callable[[AbstractTreeItem], str] = None) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
 
         Each item is described by the single line str returned by func(item).
         See __str__ for example.
         """
+        if func is None:
+            func = lambda item: item.name
         items: list[AbstractTreeItem] = list(self.subtree_depth_first())
         lines: list[str] = [func(item) for item in items]
         for i, item in enumerate(items):
@@ -241,40 +258,43 @@ def test_tree():
     root.insert_child(1, c)
     root.children[1].append_child(d)
 
-    root.name = 'root'
-    a.name = 'a'
-    b.name = 'b'
-    c.name = 'c'
-    d.name = 'd'
-    e.name = 'e'
-    f.name = 'f'
+    root._name = ''
+    a._name = 'a'
+    b._name = 'b'
+    c._name = 'c'
+    d._name = 'd'
+    e._name = 'e'
+    f._name = 'f'
 
-    print_name = lambda item: item.name
+    print_name = lambda item: item._name or '/'
     
+    print('\nInitial tree...')
+    print(root._tree_repr())
+
     print('\nInitial tree...')
     print(root._tree_repr(print_name))
 
     print('\nDepth-first iteration...')
     for item in root.subtree_depth_first():
-        print(item.name)
+        print(print_name(item), item.path)
 
     print('\nReverse depth-first iteration...')
     for item in root.subtree_reverse_depth_first():
-        print(item.name)
+        print(print_name(item))
 
     print('\nLeaf iteration...')
     for item in root.subtree_leaves():
-        print(item.name)
+        print(print_name(item))
 
     print('\nReverse leaf iteration...')
     for item in root.subtree_reverse_leaves():
-        print(item.name)
+        print(print_name(item))
 
-    print(f'\nRemove {e.name}...')
+    print(f'\nRemove {print_name(e)}...')
     e.orphan()
     print(root._tree_repr(print_name))
 
-    print(f'\nInsert {e.name}...')
+    print(f'\nInsert {print_name(e)}...')
     b.append_child(e)
     print(root._tree_repr(print_name))
 
