@@ -10,7 +10,7 @@ from xarray_graph.AnnotationTreeModel import AnnotationTreeModel
 from xarray_graph.AnnotationTreeView import AnnotationTreeView
 
 from xarray_graph.XarrayDataTreeDebugView import XarrayDataTreeDebugView
-from xarray_graph.XarrayDataTreeModel import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
+from xarray_graph.XarrayDataTreeModel import XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
 from xarray_graph.XarrayDataTreeView import XarrayDataTreeView
 from xarray_graph.XarrayDataTreeViewer import XarrayDataTreeViewer
 

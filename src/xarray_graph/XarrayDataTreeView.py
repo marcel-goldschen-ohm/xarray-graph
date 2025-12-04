@@ -16,7 +16,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
+from xarray_graph import xarray_utils, XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
 # from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
 
@@ -276,7 +276,7 @@ class XarrayDataTreeView(QTreeView):
         model.removeItems(items)
     
     def appendNewNode(self, parent_item: XarrayDataTreeItem, name: str = None) -> None:
-        if not parent_item.is_node:
+        if not parent_item.is_group:
             return
         if name is None:
             parent: QWidget = self
@@ -341,7 +341,7 @@ class XarrayDataTreeView(QTreeView):
         menu.addAction('Remove', self.removeSelectedItems).setEnabled(has_selection)
         
         # insert new node
-        if item.is_node:
+        if item.is_group:
             menu.addSeparator()
             menu.addAction('New Child Group', lambda parent_item=item: self.appendNewNode(parent_item))
 
@@ -753,6 +753,7 @@ class XarrayDataTreeView(QTreeView):
 
 def test_live():
     import numpy as np
+    from xarray_graph import XarrayDataTreeDebugView
 
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
@@ -763,9 +764,7 @@ def test_live():
     dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
     dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
     dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
-    # dt['child1/air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
-    # # print(dt)
 
     app = QApplication()
 
@@ -778,32 +777,33 @@ def test_live():
 
     parent_item = model._root_item.children[0]
     half_air = dt['air_temperature/air'] / 2
-    data_var_item = XarrayDataTreeItem(half_air)
-    model.insertItems({'half air': data_var_item}, parent_item)
+    data_var_item = XarrayDataTreeItem(half_air, XarrayDataTreeType.DATA_VAR)
+    model.insertItems({'half air': data_var_item}, 0, parent_item)
 
     parent_item = model._root_item.children[0]
-    twice_lat = (dt['air_temperature/lat'] * 2).swap_dims({'lat': 'twice lat'})
-    coord_item = XarrayDataTreeItem(twice_lat)
-    model.insertItems({'twice lat': coord_item}, parent_item, item_types_map={'twice lat': 'coord'})
+    twice_lat = xr.DataArray(data=dt['air_temperature/lat'].values * 2, dims=('twice lat',))
+    coord_item = XarrayDataTreeItem(twice_lat, XarrayDataTreeType.COORD)
+    model.insertItems({'twice lat': coord_item}, 0, parent_item)
 
     dt['air_temperature/inherits/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
     dt['air_temperature/inherits/again/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
     dt['air_temperature/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
     model.reset()
 
-    # dt['air_temperature/inherits/again/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-
-    # print(dt['air_temperature/inherits']._inherited_coords_set())
-    # print(list(dt['air_temperature/inherits'].coords))
-
-    # print(dt['air_temperature/inherits/again']._inherited_coords_set())
-    # print(list(dt['air_temperature/inherits/again'].coords))
-
     view = XarrayDataTreeView()
     view.setModel(model)
     view.show()
-    view.resize(800, 800)
+    view.resize(800, 1000)
     view.showAll()
+    view.move(100, 50)
+    view.raise_()
+
+    # debug_view = XarrayDataTreeDebugView()
+    # debug_view.setDatatree(dt)
+    # debug_view.show()
+    # debug_view.resize(800, 800)
+    # debug_view.move(900, 100)
+    # debug_view.raise_()
 
     app.exec()
     # print(dt)

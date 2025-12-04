@@ -12,10 +12,11 @@ from collections.abc import Iterator
 class AbstractTreeItem():
     """ Generic tree item wrapper for a QAbstractItemModel.
 
-    Only implements parent/child tree linkage, you'll need to add and manage any data in a derived class.
+    Only implements parent/child tree linkage. You'll need to add and manage any data (and override the `name` property) in a derived class.
     """
 
-    _path_separator: str = '/'
+    # path separator
+    _path_sep: str = '/'
 
     def __init__(self, parent: AbstractTreeItem = None, sibling_index: int = -1):
         self.parent: AbstractTreeItem = parent
@@ -29,20 +30,22 @@ class AbstractTreeItem():
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
         """
-        return self._tree_repr(repr)
+        return self._tree_repr(lambda item: item.name or self._path_sep)
     
     @property
     def name(self) -> str:
-        """ This is primarily for testing/debugging. You should override this in a derived class.
+        """ Tree path key.
+        
+        This implementation is for testing/debugging. You should override this in a derived class.
         """
         return str(id(self))
     
     @property
     def path(self) -> str:
         if self.parent is None:
-            return self.name or self._path_separator
+            return self.name or self._path_sep
         path_parts: list[str] = list(reversed([item.name for item in self.parents()])) + [self.name]
-        return self._path_separator.join(path_parts)
+        return self._path_sep.join(path_parts)
     
     @property
     def row(self) -> int:
@@ -66,6 +69,13 @@ class AbstractTreeItem():
     @property
     def is_leaf(self) -> bool:
         return not self.children
+    
+    @property
+    def root(self) -> AbstractTreeItem:
+        item: AbstractTreeItem = self
+        while item.parent is not None:
+            item = item.parent
+        return item
     
     @property
     def first_child(self) -> AbstractTreeItem | None:
@@ -226,7 +236,7 @@ class AbstractTreeItem():
         See __str__ for example.
         """
         if func is None:
-            func = lambda item: item.name
+            func = lambda item: item.name or self._path_sep
         items: list[AbstractTreeItem] = list(self.subtree_depth_first())
         lines: list[str] = [func(item) for item in items]
         for i, item in enumerate(items):
@@ -247,56 +257,57 @@ class AbstractTreeItem():
 
 
 def test_tree():
-    root = AbstractTreeItem()
-    a = AbstractTreeItem(parent=root)
-    b = AbstractTreeItem()
-    c = AbstractTreeItem()
-    d = AbstractTreeItem()
-    e = AbstractTreeItem(parent=b)
-    f = AbstractTreeItem(parent=e)
+    
+    class MyTreeItem(AbstractTreeItem):
+
+        def __init__(self, name: str = '', parent: AbstractTreeItem = None, sibling_index: int = -1):
+            super().__init__(parent, sibling_index)
+            self._name = name
+        
+        @property
+        def name(self) -> str:
+            return self._name
+
+    root = MyTreeItem('r')
+    a = MyTreeItem('a', parent=root)
+    b = MyTreeItem('b')
+    c = MyTreeItem('c')
+    d = MyTreeItem('d')
+    e = MyTreeItem('e', parent=b)
+    f = MyTreeItem('f', parent=e)
     root.append_child(b)
     root.insert_child(1, c)
     root.children[1].append_child(d)
-
-    root._name = ''
-    a._name = 'a'
-    b._name = 'b'
-    c._name = 'c'
-    d._name = 'd'
-    e._name = 'e'
-    f._name = 'f'
-
-    print_name = lambda item: item._name or '/'
     
     print('\nInitial tree...')
-    print(root._tree_repr())
+    print(root)
 
     print('\nInitial tree...')
-    print(root._tree_repr(print_name))
+    print(root._tree_repr(lambda item: str(id(item))))
 
     print('\nDepth-first iteration...')
     for item in root.subtree_depth_first():
-        print(print_name(item), item.path)
+        print(item.name or ' ', item.path)
 
     print('\nReverse depth-first iteration...')
     for item in root.subtree_reverse_depth_first():
-        print(print_name(item))
+        print(item.name or ' ', item.path)
 
     print('\nLeaf iteration...')
     for item in root.subtree_leaves():
-        print(print_name(item))
+        print(item.name or ' ', item.path)
 
     print('\nReverse leaf iteration...')
     for item in root.subtree_reverse_leaves():
-        print(print_name(item))
+        print(item.name or ' ', item.path)
 
-    print(f'\nRemove {print_name(e)}...')
+    print(f'\nRemove {e.name}...')
     e.orphan()
-    print(root._tree_repr(print_name))
+    print(root)
 
-    print(f'\nInsert {print_name(e)}...')
+    print(f'\nInsert {e.name}...')
     b.append_child(e)
-    print(root._tree_repr(print_name))
+    print(root)
 
 
 if __name__ == '__main__':

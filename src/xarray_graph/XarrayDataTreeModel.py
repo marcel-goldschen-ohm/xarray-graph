@@ -1,5 +1,10 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
+Data types for Xarray.DataTree objects are referenced by the strings:
+- 'group'
+- 'data_var'
+- 'coord'
+
 TODO:
 - setData
     - rename index coord -> rename dimension
@@ -15,6 +20,8 @@ TODO:
 
 from __future__ import annotations
 from collections.abc import Iterator
+from enum import Enum
+from copy import copy, deepcopy
 import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -23,15 +30,34 @@ import qtawesome as qta
 from xarray_graph import xarray_utils, AbstractTreeItem
 
 
+class XarrayDataTreeType(Enum):
+    GROUP = 1
+    DATA_VAR = 2
+    COORD = 3
+
+# for convenience in this file
+GROUP, DATA_VAR, COORD = list(XarrayDataTreeType)
+# GROUP = XarrayDataTreeType.GROUP
+# DATA_VAR = XarrayDataTreeType.DATA_VAR
+# COORD = XarrayDataTreeType.COORD
+
+
 class XarrayDataTreeItem(AbstractTreeItem):
-    """ Tree item wrapper for nodes and variables in XarrayDataTreeModel.
+    """ Tree item wrapper for groups and variables in XarrayDataTreeModel.
 
     This isn't strictly necessary, but it speeds object access and thus tree UI performance as compared to using paths to access the underlying datatree objects, and it also provides a consistent interface to all tree models using AbstractTreeItem to interface with their data.
     """
 
-    def __init__(self, data: xr.DataTree | xr.DataArray, parent: XarrayDataTreeItem = None, sibling_index: int = -1):
+    def __init__(self, data: xr.DataTree | xr.DataArray, data_type: XarrayDataTreeType = DATA_VAR, parent: XarrayDataTreeItem = None, sibling_index: int = -1):
+        # tree linkage
         super().__init__(parent, sibling_index)
+
+        # item data
         self.data: xr.DataTree | xr.DataArray = data
+
+        # Useful when working with orphaned items associated with DataArrays as otherwise wether those items refer to data_vars or coords is indeterminate (e.g., see `insertItems`).
+        # Note: It is up to you to ensure this remains valid in those few cases where you need it.
+        self._data_type: XarrayDataTreeType = GROUP if isinstance(data, xr.DataTree) else data_type
     
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
@@ -52,7 +78,16 @@ class XarrayDataTreeItem(AbstractTreeItem):
         return parent_node.path.rstrip('/') + f'/{self.data.name}'
     
     @property
-    def is_node(self) -> bool:
+    def data_type(self) -> XarrayDataTreeType:
+        if self.is_group:
+            return GROUP
+        elif self.is_data_var:
+            return DATA_VAR
+        elif self.is_coord:
+            return COORD
+    
+    @property
+    def is_group(self) -> bool:
         return isinstance(self.data, xr.DataTree)
     
     @property
@@ -61,11 +96,19 @@ class XarrayDataTreeItem(AbstractTreeItem):
     
     @property
     def is_data_var(self) -> bool:
-        return self.parent and isinstance(self.data, xr.DataArray) and self.data.name in self.parent.data.data_vars
+        if not isinstance(self.data, xr.DataArray):
+            return False
+        if self.parent:
+            return self.data.name in self.parent.data.data_vars
+        return self._data_type == DATA_VAR
     
     @property
     def is_coord(self) -> bool:
-        return self.parent and isinstance(self.data, xr.DataArray) and self.data.name in self.parent.data.coords
+        if not isinstance(self.data, xr.DataArray):
+            return False
+        if self.parent:
+            return self.data.name in self.parent.data.coords
+        return self._data_type == COORD
     
     @property
     def is_index_coord(self) -> bool:
@@ -80,7 +123,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
     """ PyQt tree model interface for a Xarray DataTree.
     """
 
-    _item_order: tuple[str] = ('coords', 'data_vars', 'children')
+    _data_type_order: tuple[XarrayDataTreeType] = (COORD, DATA_VAR, GROUP)
 
     def __init__(self, *args, **kwargs):
         datatree: xr.DataTree = kwargs.pop('datatree', xr.DataTree())
@@ -100,7 +143,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self._supportedDropActions: Qt.DropActions = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
 
         # icons
-        self._datatree_icon: QIcon = qta.icon('ph.folder-thin')
+        self._group_icon: QIcon = qta.icon('ph.folder-thin')
         self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
         self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
 
@@ -132,56 +175,58 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self.endResetModel()
     
     def _updateItemSubtree(self, item: XarrayDataTreeItem) -> None:
-        if not item.is_node:
+        if not item.is_group:
             return
         item.children = [] # will repopulate below
-        for item_type in self._item_order:
-            if item_type == 'data_vars':
+        dtype: XarrayDataTreeType
+        for dtype in self._data_type_order:
+            if dtype == GROUP:
+                group: xr.DataTree
+                for group in item.data.children.values():
+                    child_item = XarrayDataTreeItem(group, data_type=GROUP, parent=item)
+                    self._updateItemSubtree(child_item)
+            elif dtype == DATA_VAR:
                 if self.isDataVarsVisible():
                     data_var: xr.DataArray
                     for data_var in item.data.data_vars.values():
-                        child_item = XarrayDataTreeItem(data_var, item)
-            elif item_type == 'coords':
+                        child_item = XarrayDataTreeItem(data_var, data_type=DATA_VAR, parent=item)
+            elif dtype == COORD:
                 if self.isCoordsVisible():
                     coord: xr.DataArray
                     for coord in self._orderedCoords(item.data):
-                        child_item = XarrayDataTreeItem(coord, item)
-            elif item_type == 'children':
-                node: xr.DataTree
-                for node in item.data.children.values():
-                    child_item = XarrayDataTreeItem(node, item)
-                    self._updateItemSubtree(child_item)
+                        child_item = XarrayDataTreeItem(coord, data_type=COORD, parent=item)
     
-    def _orderedCoords(self, node: xr.DataTree) -> Iterator[xr.DataArray]:
+    def _orderedCoords(self, group: xr.DataTree) -> Iterator[xr.DataArray]:
         if not self.isInheritedCoordsVisible():
-            inherited_coord_names: set[str] = node._inherited_coords_set()
-        ordered_dims: tuple[str] = tuple(xarray_utils.get_ordered_dims([node]))
+            inherited_coord_names: set[str] = group._inherited_coords_set()
+        ordered_dims: tuple[str] = tuple(xarray_utils.get_ordered_dims([group]))
         traversed_coord_names: list[str] = []
         dim: str
         for dim in ordered_dims:
-            if dim not in node.indexes:
+            if dim not in group.indexes:
                 continue
             if self.isInheritedCoordsVisible() or (dim not in inherited_coord_names):
-                yield node.coords[dim]
+                yield group.coords[dim]
                 traversed_coord_names.append(dim)
         coord: xr.DataArray
-        for coord in node.coords.values():
+        for coord in group.coords.values():
             if coord.name in traversed_coord_names:
                 continue
             if self.isInheritedCoordsVisible() or (coord.name not in inherited_coord_names):
                 yield coord
     
-    def _visibleRowNames(self, node: xr.DataTree) -> list[str]:
+    def _visibleRowNames(self, group: xr.DataTree) -> list[str]:
         names: list[str] = []
-        for item_type in self._item_order:
-            if item_type == 'data_vars':
+        dtype: XarrayDataTreeType
+        for dtype in self._data_type_order:
+            if dtype == GROUP:
+                names += list(group.children)
+            elif dtype == DATA_VAR:
                 if self.isDataVarsVisible():
-                    names += list(node.data_vars)
-            elif item_type == 'coords':
+                    names += list(group.data_vars)
+            elif dtype == COORD:
                 if self.isCoordsVisible():
-                    names += [coord.name for coord in self._orderedCoords(node)]
-            elif item_type == 'children':
-                names += list(node.children)
+                    names += [coord.name for coord in self._orderedCoords(group)]
         return names
     
     def isDataVarsVisible(self) -> bool:
@@ -299,7 +344,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         
         if self.supportedDropActions() != Qt.DropAction.IgnoreAction:
-            if item.is_node:
+            if item.is_group:
                 # can drag and drop onto DataTree items
                 flags |= Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
             else:
@@ -317,7 +362,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 return item.data.name
             elif index.column() == 1:
                 # details column
-                if item.is_node:
+                if item.is_group:
                     sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.data.dataset.sizes.items()])
                     return f'({sizes_str})'
                 elif item.is_data_var:
@@ -337,8 +382,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
                 item: XarrayDataTreeItem = self.itemFromIndex(index)
-                if item.is_node:
-                    return self._datatree_icon
+                if item.is_group:
+                    return self._group_icon
                 elif item.is_data_var:
                     return self._data_var_icon
                 elif item.is_coord:
@@ -349,7 +394,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 return self._inherited_coords_color
 
     def setData(self, index: QModelIndex, value, role: int) -> bool:
-        """ This amounts to just renaming DataTree nodes, data_vars, and coords.
+        """ This amounts to just renaming items.
         """
         if not index.isValid():
             return False
@@ -361,32 +406,55 @@ class XarrayDataTreeModel(QAbstractItemModel):
             # rename object
             new_name: str = value.strip()
             if not new_name or '/' in new_name:
-                msg = f'"{new_name}" is not a valid DataTree key. Must be a non-empty string without any path separators "/".'
-                QMessageBox.warning(parent=QApplication.focusWidget(), title='Invalid Name', text=msg)
+                parent_widget: QWidget = QApplication.focusWidget()
+                title='Invalid Name'
+                text = f'"{new_name}" is not a valid DataTree key. Must be a non-empty string without any path separators "/".'
+                QMessageBox.warning(parent_widget, title, text)
                 return False
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             old_name = item.data.name
             if new_name == old_name:
                 # nothing to do
                 return False
-            parent_node: xr.DataTree = item.parent.data
-            parent_keys: list[str] = list(parent_node.keys())
+            parent_group: xr.DataTree = item.parent.data
+            parent_keys: list[str] = list(parent_group.keys())
             if new_name in parent_keys:
-                msg = f'"{new_name}" already exists in parent DataTree.'
-                QMessageBox.warning(parent=QApplication.focusWidget(), title='Existing Name', text=msg)
+                parent_widget: QWidget = QApplication.focusWidget()
+                title='Existing Name'
+                text = f'"{new_name}" already exists in parent DataTree.'
+                QMessageBox.warning(parent_widget, title, text)
                 return False
-            if item.is_node:
-                parent_node.children = {name if name != old_name else new_name: child for name, child in parent_node.children.items()}
-                self.dataChanged.emit(index, index)
-                return True
+            if item.is_group:
+                # rename group
+                try:
+                    parent_group.children = {name if name != old_name else new_name: child for name, child in parent_group.children.items()}
+                    self.dataChanged.emit(index, index)
+                    return True
+                except:
+                    return False
             elif item.is_data_var:
-                ds: xr.Dataset = parent_node.to_dataset()
-                ds.data_vars = {name if name != old_name else new_name: data_var for name, data_var in ds.data_vars.items}
-                parent_node.dataset = ds
-                self.dataChanged.emit(index, index)
-                return True
+                # rename data_var
+                try:
+                    parent_dataset: xr.Dataset = parent_group.to_dataset()
+                    renamed_data_vars = {name if name != old_name else new_name: data_var for name, data_var in parent_dataset.data_vars.items()}
+                    new_parent_dataset: xr.Dataset = parent_dataset.assign(renamed_data_vars)
+                    parent_group.dataset = new_parent_dataset
+                    self.dataChanged.emit(index, index)
+                    return True
+                except:
+                    return False
             elif item.is_coord:
-                pass # TODO: rename coord and also dimension if coord is an index coord
+                # rename coord
+                try:
+                    parent_dataset: xr.Dataset = parent_group.to_dataset()
+                    renamed_coords = {name if name != old_name else new_name: coord for name, coord in parent_dataset.coords.items()}
+                    new_parent_dataset: xr.Dataset = parent_dataset.assign_coords(renamed_coords)
+                    parent_group.dataset = new_parent_dataset
+                    self.dataChanged.emit(index, index)
+                    # TODO: rename coord and also dimension if coord is an index coord
+                    return True
+                except:
+                    return False
         return False
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int):
@@ -473,7 +541,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
         
         parent_item: XarrayDataTreeItem = self.itemFromIndex(parent_index)
         items: list[XarrayDataTreeItem] = parent_item.children[row: row + count]
-        node_items: list[XarrayDataTreeItem] = [item for item in items if item.is_node]
+        group_items: list[XarrayDataTreeItem] = [item for item in items if item.is_group]
         data_var_items: list[XarrayDataTreeItem] = [item for item in items if item.is_data_var]
         coord_items: list[XarrayDataTreeItem] = [item for item in items if item.is_coord and not item.is_inherited_coord]
         var_items: list[XarrayDataTreeItem] = data_var_items + coord_items
@@ -486,29 +554,30 @@ class XarrayDataTreeModel(QAbstractItemModel):
             coord_names: list[str] = [item.name for item in coord_items]
             item: XarrayDataTreeItem
             for item in parent_item.subtree_reverse_depth_first():
-                if item is parent_item or not item.is_node:
+                if item is parent_item or not item.is_group:
                     continue
-                node: xr.DataTree = item.data
-                inherited_coord_names: set[str] = node._inherited_coords_set()
+                group: xr.DataTree = item.data
+                inherited_coord_names: set[str] = group._inherited_coords_set()
                 inherited_coord_names_to_remove: list[str] = [name for name in inherited_coord_names if name in coord_names]
                 if inherited_coord_names_to_remove:
                     inherited_coord_items_to_remove: list[XarrayDataTreeItem] = [child for child in item.children if child.is_inherited_coord and child.name in inherited_coord_names_to_remove]
                     if inherited_coord_items_to_remove:
                         self.removeItems(inherited_coord_items_to_remove)
         
-        # remove specified items
+        # remove items
         self.beginRemoveRows(parent_index, row, row + count - 1)
         
         # update datatree
-        if node_items:
-            node_names = [item.name for item in node_items]
-            parent_node.children = {name: node for name, node in parent_node.children.items() if name not in node_names}
+        item: XarrayDataTreeItem
+        for item in group_items:
+            group: xr.DataTree = item.data
+            group.orphan()
         if var_items:
-            var_names = [item.name for item in var_items]
+            var_names: list[str] = [item.name for item in var_items]
             parent_node.dataset = parent_node.to_dataset().drop_vars(var_names)
         
         # update itemtree
-        # note that this will still remove any inherited coord items in the item block
+        # note: this will still remove any inherited coord items in the item block
         for child in parent_item.children[row: row + count]:
             child.parent = None
         del parent_item.children[row: row + count]
@@ -539,22 +608,92 @@ class XarrayDataTreeModel(QAbstractItemModel):
             return
         
         # group items into blocks by parent and contiguous rows
-        item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items)
+        # note: we don't have to separate items by data type
+        item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items, split_data_types=False)
         
         # remove each item block
-        # blocks are in reverse depth-first order to ensure row indices remain valid after removing each block
-        for block in item_blocks:
+        # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
+        for block in reversed(item_blocks):
             row: int = block[0].row
             count: int = len(block)
             parent_index: QModelIndex = self.indexFromItem(block[0].parent)
             self.removeRows(row, count, parent_index)
     
-    def insertRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()):
-        """ See `insertItems` instead.
+    def insertRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
+        """ Defaults to inserting new empty auto-named groups. For anything else, see `insertItems` instead.
         """
-        return False
+        num_rows: int = self.rowCount(parent_index)
+        if row < 0:
+            # negative indexing
+            row += num_rows
+        if (row < 0) or (row > num_rows):
+            return False
+        
+        parent_item: XarrayDataTreeItem = self.itemFromIndex(parent_index)
+        
+        # can only insert children in a group
+        if not parent_item.is_group:
+            parent_widget: QWidget = QApplication.focusWidget()
+            title = 'Invalid Insertion'
+            text = f'"Cannot insert items in non-group {parent_item.path}".'
+            QMessageBox.warning(parent_widget, title, text)
+            return False
+
+        parent_group: xr.DataTree = parent_item.data
+
+        # new group names
+        parent_group_keys: list[str] = list(parent_group.keys())
+        new_group_names: list[str] = []
+        for _ in range(count):
+            name: str = xarray_utils.unique_name('Group', parent_group_keys)
+            new_group_names.append(name)
+            parent_group_keys.append(name)
+
+        # insertion rows
+        first: int = self._insertionRow(parent_item, GROUP, row)
+        last: int = first + count - 1
+
+        # final ordered group names after insertion
+        pre_insertion_group_names: list[str] = [item.name for item in parent_item.children[:first] if item.data_type == GROUP]
+        post_insertion_group_names: list[str] = [item.name for item in parent_item.children[first:] if item.data_type == GROUP]
+        final_group_names: list[str] = pre_insertion_group_names + new_group_names + post_insertion_group_names
+        
+        # insert new empty groups
+        try:
+            # assign new groups to orphaned copy of parent_group (this does not affect the current datatree)
+            new_parent_group = parent_group.assign({name: xr.DataTree() for name in new_group_names})
+
+            # order the groups
+            new_parent_group.children = {name: new_parent_group.children[name] for name in final_group_names}
+            
+            # if all good, then update the datatree and itemtree
+            self.beginInsertRows(parent_index, first, last)
+
+            # update datatree
+            parent_group_path: str = parent_group.path
+            if parent_group_path != '/':
+                dt: xr.DataTree = self.datatree()
+                dt[parent_group_path] = new_parent_group
+            
+            # update parent_item
+            parent_item.data = new_parent_group
+
+            # add new child group items
+            for i, name in enumerate(new_group_names):
+                XarrayDataTreeItem(new_parent_group.children[name], data_type=GROUP, parent=parent_item, sibling_index=first + i)
+            
+            self.endInsertRows()
+        
+        except error:
+            # !!! This should never happen
+            from warnings import warn
+            text = f'"ERROR: Failed to insert new GROUP items in {parent_item.path}" with error: "{error}". This should never happen!'
+            warn(text)
+            return False
+        
+        return True
     
-    def insertItems(self, items_map: dict[str, XarrayDataTreeItem], parent_item: XarrayDataTreeItem, row: int = -1, item_types_map: dict[str, str] = None) -> None:
+    def insertItems(self, name_item_map: dict[str, XarrayDataTreeItem], row: int, parent_item: XarrayDataTreeItem) -> None:
         # print(f'insertItems(items_map={list(items_map)}, parent_item={parent_item.name}, row={row})')
         num_rows: int = len(parent_item.children)
         if row < 0:
@@ -563,214 +702,131 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if (row < 0) or (row > num_rows):
             return False
         
-        parent_index: QModelIndex = self.indexFromItem(parent_item)
-        
-        # can only insert items as children of a node item
-        if not parent_item.is_node:
+        # can only insert children in a group
+        if not parent_item.is_group:
             parent_widget: QWidget = QApplication.focusWidget()
             title = 'Invalid Insertion'
-            text = f'"Cannot insert child items in non-DataTree item {parent_item.path}".'
+            text = f'Cannot insert items in non-group "{parent_item.path}".'
             QMessageBox.warning(parent_widget, title, text)
             return False
+        
+        # handle conflicts
+        name_item_map = self._handleInsertionConflicts(name_item_map, parent_item, orphan_only=True)
+        if not name_item_map:
+            # no non-conflicting items remaining
+            return False
+        
+        # group items by data type and put groups in reverse tree order
+        name_item_maps: list[dict[str, XarrayDataTreeItem]] = []
+        dtype: XarrayDataTreeType
+        for dtype in reversed(self._data_type_order):
+            name_item_map_for_dtype: dict[str, XarrayDataTreeItem] = {name: item for name, item in name_item_map.items() if item.data_type == dtype}
+            if name_item_map_for_dtype:
+                name_item_maps.append(name_item_map_for_dtype)
+        
+        # insert item groups
+        parent_index: QModelIndex = self.indexFromItem(parent_item)
+        parent_group: xr.DataTree = parent_item.data
+        name_item_map: dict[str, XarrayDataTreeItem] # this will now refer to each group as opposed to the input map
+        for name_item_map in name_item_maps:
+            first_item: XarrayDataTreeItem = next(iter(name_item_map.values()))
+            dtype: XarrayDataTreeType = first_item.data_type
 
-        parent_node: xr.DataTree = parent_item.data
-
-        # only allow insertion if items align with parent
-        # TODO: continue with insertion of other aligned items?
-        for item in items_map.values():
+            # perform insertion in a copy of the parent group or dataset
+            # if everything is ok, we'll apply it to the original datatree and itemtree
+            name_data_map: dict[str, xr.DataTree | xr.DataArray] = {name: item.data for name, item in name_item_map.items()}
             try:
-                data = item.data
-                if isinstance(data, xr.DataTree):
-                    data = data.dataset
-                # dataset views include inherited coords
-                xr.align(parent_node.dataset, data, join='exact')
-            except:
+                if dtype == GROUP:
+                    new_parent_group: xr.DataTree = parent_group.assign(name_data_map)
+            
+                elif dtype == DATA_VAR:
+                    new_parent_dataset: xr.Dataset = parent_group.to_dataset().assign(name_data_map)
+                
+                elif dtype == COORD:
+                    new_parent_dataset: xr.Dataset = parent_group.to_dataset().assign_coords(name_data_map)
+
+            except error:
                 parent_widget: QWidget = QApplication.focusWidget()
-                title = 'Non-Aligned Item'
-                text = f'Cannot insert "{item.name}" in non-aligned {parent_item.path}.'
+                title = 'Failed Insertion'
+                text = f'Failed to insert {dtype.name} items in "{parent_item.path}" with error: {error}'
                 QMessageBox.warning(parent_widget, title, text)
-                return False
-        
-        # only allow insertion if names are valid new keys
-        # TODO: continue with insertion of other items with valid names?
-        dst_keys: list[str] = list(parent_node.keys())
-        for name in list(items_map):
-            if name in dst_keys:
-                parent_widget: QWidget = QApplication.focusWidget()
-                title = 'Existing DataTree Path'
-                text = f'"{name}" already exists in destination DataTree.'
-                QMessageBox.warning(parent_widget, title, text)
-                return False
-            if '/' in name:
-                parent_widget: QWidget = QApplication.focusWidget()
-                title = 'Invalid DataTree Path'
-                text = f'"{name}" is not a valid DataTree key.'
-                QMessageBox.warning(parent_widget, title, text)
-                return False
-
-        # make sure variables are defined as either data_vars or coords
-        if item_types_map is None:
-            item_types_map: dict[str, str] = {}
-        for name, item in items_map.items():
-            if isinstance(item.data, xr.DataArray) and not item.parent:
-                if item_types_map.get(name, None) not in ['data_var', 'coord']:
-                    # default to data_var if unspecified
-                    item_types_map[name] = 'data_var'
-        
-        # insert data_vars, coords, and nodes separately as their true destination row may differ from row due to the enforced ordering of item types
-        data_var_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in items_map.items() if item.is_data_var or (not item.is_node and item_types_map.get(name, None) == 'data_var')}
-        coord_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in items_map.items() if item.is_coord or (not item.is_node and item_types_map.get(name, None) == 'coord')}
-        node_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in items_map.items() if item.is_node}
-
-        dst_items_map: dict[str, XarrayDataTreeItem] = {item.name: item for item in parent_item.children}
-        dst_data_var_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_data_var}
-        dst_coord_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_coord}
-        dst_node_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_node}
-
-        # print()
-        # print('data_vars:', list(data_var_items_map))
-        # print('coords:', list(coord_items_map))
-        # print('nodes:', list(node_items_map))
-        # print()
-        # print('dst data_vars:', list(dst_data_var_items_map))
-        # print('dst coords:', list(dst_coord_items_map))
-        # print('dst nodes:', list(dst_node_items_map))
-        # print()
-
-        # Insert item types in reverse order of their appearance in the item tree to ensure that row remains valid after each insertion.
-        ordered_item_maps: list[dict[str, XarrayDataTreeItem]] = []
-        dst_ordered_item_maps: list[dict[str, XarrayDataTreeItem]] = []
-        for item_type in self._item_order:
-            if item_type == 'data_vars':
-                ordered_item_maps.append(data_var_items_map)
-                dst_ordered_item_maps.append(dst_data_var_items_map)
-            elif item_type == 'coords':
-                ordered_item_maps.append(coord_items_map)
-                dst_ordered_item_maps.append(dst_coord_items_map)
-            elif item_type == 'children':
-                ordered_item_maps.append(node_items_map)
-                dst_ordered_item_maps.append(dst_node_items_map)
-        
-        item_map: dict[str, XarrayDataTreeItem]
-        dst_item_map: dict[str, XarrayDataTreeItem]
-        for map_order_index, item_map, dst_item_map in zip(reversed(range(3)), reversed(ordered_item_maps), reversed(dst_ordered_item_maps)):
-            if not item_map:
+                from warnings import warn
+                warn(text)
+                # still try to insert remaining item maps
                 continue
-            
-            # items to be inserted
-            item_type: str = self._item_order[map_order_index]
-            names: list[str] = list(item_map)
-            items: list[XarrayDataTreeItem] = list(item_map.values())
-                
-            # determine destination row location at which to insert items
-            dst_like_type_names: list[str] = list(dst_item_map)
-            dst_like_type_items: list[XarrayDataTreeItem] = list(dst_item_map.values())
-            if not dst_like_type_items:
-                first_row: int = 0
-                for j in range(map_order_index):
-                    first_row += len(dst_ordered_item_maps[j])
-                final_dst_like_type_names = names
-            elif row > dst_like_type_items[-1].row:
-                # append items
-                first_row: int = dst_like_type_items[-1].row + 1
-                final_dst_like_type_names = dst_like_type_names + names
-            elif row <= dst_like_type_items[0].row:
-                # prepend items
-                first_row: int = dst_like_type_items[0].row
-                final_dst_like_type_names = names + dst_like_type_names
-            else:
-                # insert items
-                first_row: int = row
-                i: int = row - dst_like_type_items[0].row
-                final_dst_like_type_names = dst_like_type_names[:i] + names + dst_like_type_names[i:]
-            
+
+            # if we got here, should be all good. let's update the datatree and itemtree
+
+            # remove items that are being overwritten
+            # we just remove the items without touching the underlying datatree data as that will be updated during insertion below
+            items_being_overwritten: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.name in name_item_map]
+            for item in items_being_overwritten:
+                print('overwriting', item.name)
+                self.beginRemoveRows(parent_index, item.row, item.row)
+                item.orphan()
+                self.endRemoveRows()
+
+            # insertion rows
+            first: int = self._insertionRow(parent_item, dtype, row)
+            last: int = first + len(name_item_map) - 1
+
+            # final ordered dtype names after insertion
+            pre_insertion_dtype_names: list[str] = [item.name for item in parent_item.children[:first] if item.data_type == dtype]
+            post_insertion_dtype_names: list[str] = [item.name for item in parent_item.children[first:] if item.data_type == dtype]
+            final_dtype_names: list[str] = pre_insertion_dtype_names + list(name_item_map) + post_insertion_dtype_names
+
             # insert items
-            last_row: int = first_row + len(items) - 1
-            self.beginInsertRows(parent_index, first_row, last_row)
+            self.beginInsertRows(parent_index, first, last)
             
-            if item_type == 'children':
+            if dtype == GROUP:
+                # order the groups
+                new_parent_group.children = {name: new_parent_group.children[name] for name in final_dtype_names}
                 
                 # update datatree
-                nodes_map: dict[str, xr.DataTree] = {name: item.data for name, item in zip(names, items)}
-                parent_node_path: str = parent_node.path
-                parent_node = parent_node.assign(nodes_map) # this orphans parent_node
-                parent_node.children = {name: parent_node.children[name] for name in final_dst_like_type_names} # ordered
-                # reattach parent_node to datatree (not needed if parent_node is root)
-                if parent_node_path != '/':
+                if not parent_group.is_root:
                     dt: xr.DataTree = self.datatree()
-                    dt[parent_node_path] = parent_node
-                
-                # relink itemtree to new parent_node
-                parent_item.data = parent_node
-                
+                    dt[parent_group.path] = new_parent_group
+                    
                 # update itemtree
-                for i, name in enumerate(names):
-                    item: XarrayDataTreeItem = item_map[name]
-                    item.data = parent_node.children[name]
-                    parent_item.insert_child(first_row + i, item)
+                parent_item.data = new_parent_group
+                for i, (name, item) in enumerate(name_item_map.items()):
+                    item.data = new_parent_group.children[name]
+                    parent_item.insert_child(first + i, item)
             
-            elif item_type == 'data_vars':
+                # reset parent_group reference
+                parent_group = new_parent_group
+        
+            elif dtype == DATA_VAR:
+                # order the data_vars
+                new_parent_dataset = new_parent_dataset.assign({name: new_parent_dataset.data_vars[name] for name in final_dtype_names})
                 
                 # update datatree
-                data_vars_map: dict[str, xr.DataTree] = {name: item.data for name, item in zip(names, items)}
-                final_ordered_data_vars_map: dict[str, xr.DataTree] = {}
-                for name in final_dst_like_type_names:
-                    if name in parent_node.data_vars:
-                        final_ordered_data_vars_map[name] = parent_node.data_vars[name]
-                    elif name in data_vars_map:
-                        final_ordered_data_vars_map[name] = data_vars_map[name]
-                parent_node.dataset = parent_node.to_dataset().assign(final_ordered_data_vars_map)
+                parent_group.dataset = new_parent_dataset
                 
                 # update itemtree
-                if self.isDataVarsVisible():
-                    for i, name in enumerate(names):
-                        item: XarrayDataTreeItem = item_map[name]
-                        item.data = parent_node.data_vars[name]
-                        parent_item.insert_child(first_row + i, item)
+                for i, (name, item) in enumerate(name_item_map.items()):
+                    item.data = parent_group.data_vars[name]
+                    parent_item.insert_child(first + i, item)
             
-            elif item_type == 'coords':
+            elif dtype == COORD:
+                # order the coords
+                new_parent_dataset = new_parent_dataset.assign({name: new_parent_dataset.coords[name] for name in final_dtype_names})
                 
                 # update datatree
-                coords_map: dict[str, xr.DataTree] = {name: item.data for name, item in zip(names, items)}
-                final_ordered_coords_map: dict[str, xr.DataTree] = {}
-                for name in final_dst_like_type_names:
-                    if name in parent_node.coords:
-                        final_ordered_coords_map[name] = parent_node.coords[name]
-                    elif name in coords_map:
-                        final_ordered_coords_map[name] = coords_map[name]
-                parent_node.dataset = parent_node.to_dataset().assign_coords(final_ordered_coords_map)
+                parent_group.dataset = new_parent_dataset
                 
                 # update itemtree
-                if self.isCoordsVisible():
-                    for i, name in enumerate(names):
-                        item: XarrayDataTreeItem = item_map[name]
-                        item.data = parent_node.coords[name]
-                        parent_item.insert_child(first_row + i, item)
+                for i, (name, item) in enumerate(name_item_map.items()):
+                    item.data = parent_group.coords[name]
+                    parent_item.insert_child(first + i, item)
             
             self.endInsertRows()
 
             # for any newly inserted index coords, insert inherited coord items in descendents of parent_item
-            if item_type == 'coords':
-                if self.isCoordsVisible() and self.isInheritedCoordsVisible():
-                    inserted_coord_items: list[XarrayDataTreeItem] = parent_item.children[first_row:last_row+1]
-                    inserted_index_coord_items: list[XarrayDataTreeItem] = [item for item in inserted_coord_items if item.is_index_coord and not item.is_inherited_coord]
-                    if inserted_index_coord_items:
-                        inserted_index_coord_names: list[str] = [item.name for item in inserted_index_coord_items]
-                        item_types_map: dict[str, str] = {name: 'coord' for name in inserted_index_coord_names}
-                        item: XarrayDataTreeItem
-                        for item in parent_item.subtree_depth_first():
-                            if item is parent_item or not item.is_node:
-                                continue
-                            node: xr.DataTree = item.data
-                            row_names: list[str] = self._visibleRowNames(node)
-                            inserted_index_coord_names.sort(key=lambda name: row_names.index(name))
-                            index: QModelIndex = self.indexFromItem(item)
-                            for name in inserted_index_coord_names:
-                                inherited_coord_item = XarrayDataTreeItem(node.coords[name])
-                                row: int = row_names.index(name)
-                                self.beginInsertRows(index, row, row)
-                                item.insert_child(row, inherited_coord_item)
-                                self.endInsertRows()
+            if (dtype == COORD) and self.isCoordsVisible() and self.isInheritedCoordsVisible():
+                self._updateSubtreeInheritedCoordItems(parent_item)
+        
+        # end for name_item_map in name_item_maps:
     
     def moveRows(self, src_parent_index: QModelIndex, src_row: int, count: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
         print(f'moveRows(src_row={src_row}, count={count}, dst_row={dst_row})...')
@@ -796,360 +852,160 @@ class XarrayDataTreeModel(QAbstractItemModel):
             if src_row <= dst_row <= src_row + count:
                 # nothing moved
                 return False
+        
+        # can only move items to a group
+        if not dst_parent_item.is_group:
+            parent_widget: QWidget = QApplication.focusWidget()
+            title = 'Invalid Insertion'
+            text = f'Cannot move items to non-group "{dst_parent_item.path}".'
+            QMessageBox.warning(parent_widget, title, text)
+            return False
+        
+        # items to move
+        name_item_map: dict[str, XarrayDataTreeItem] = {item.name: item for item in src_parent_item.children[src_row: src_row + count]}
+        
+        # handle conflicts
+        name_item_map = self._handleInsertionConflicts(name_item_map, dst_parent_item)
+        if not name_item_map:
+            # no non-conflicting items remaining
+            return False
+        
+        # regroup items into blocks (in case conflict split this block)
+        name_item_maps: list[dict[str, XarrayDataTreeItem]] = self._itemMapBlocks(name_item_map)
 
-        src_parent_node: xr.DataTree = src_parent_item.data
-        dst_parent_node: xr.DataTree = dst_parent_item.data
+        # insert item blocks
+        src_parent_group: xr.DataTree = src_parent_item.data
+        dst_parent_group: xr.DataTree = dst_parent_item.data
+        name_item_map: dict[str, XarrayDataTreeItem] # this will now refer to each block
+        for name_item_map in name_item_maps:
+            first_item: XarrayDataTreeItem = next(iter(name_item_map.values()))
+            dtype: XarrayDataTreeType = first_item.data_type
 
-        # only allow move if src and dst parent nodes align
-        if src_parent_node is not dst_parent_node:
+            # perform move in a copy of the parent groups or datasets
+            # if everything is ok, we'll apply it to the original datatree and itemtree
+            name_data_map: dict[str, xr.DataTree | xr.DataArray] = {name: item.data for name, item in name_item_map.items()}
+            original_names: list[str] = [item.name for item in name_item_map.values()]
             try:
-                # dataset views include inherited coords
-                xr.align(src_parent_node.dataset, dst_parent_node.dataset, join='exact')
-            except:
+                if dtype == GROUP:
+                    new_dst_parent_group: xr.DataTree = dst_parent_group.assign(name_data_map)
+                    new_src_parent_group: xr.DataTree = src_parent_group.drop_nodes(original_names)
+            
+                elif dtype == DATA_VAR:
+                    new_dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset().assign(name_data_map)
+                    new_src_parent_dataset: xr.Dataset = src_parent_group.to_dataset().drop_vars(original_names)
+                
+                elif dtype == COORD:
+                    new_dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset().assign_coords(name_data_map)
+                    new_src_parent_dataset: xr.Dataset = src_parent_group.to_dataset().drop_vars(original_names)
+
+            except error:
                 parent_widget: QWidget = QApplication.focusWidget()
-                title = 'Non-Aligned DataTrees'
-                text = f'Cannot move items from "{src_parent_item.path}" to non-aligned "{dst_parent_item.path}".'
+                title = 'Failed Insertion'
+                text = f'Failed to move {dtype.name} items from "{src_parent_item.path}" to "{dst_parent_item.path}" with error: {error}'
                 QMessageBox.warning(parent_widget, title, text)
-                return False
-        
-        src_items_map: dict[str, XarrayDataTreeItem] = {item.name: item for item in src_parent_item.children[src_row: src_row + count]}
-        dst_items_map: dict[str, XarrayDataTreeItem] = {item.name: item for item in dst_parent_item.children}
-
-        print()
-        print('src items:', list(src_items_map))
-        print('dst items:', list(dst_items_map))
-        print('dst row:', dst_row)
-        print()
-
-        # only allow move if src nodes and dst parent node align
-        # TODO: skip non-aligned nodes and move the remaining nodes?
-        src_item: XarrayDataTreeItem
-        for src_item in src_items_map.values():
-            if src_item.is_node:
-                src_node: xr.DataTree = src_item.data
-                try:
-                    xr.align(src_node.dataset, dst_parent_node.dataset, join='exact')
-                except:
-                    parent_widget: QWidget = QApplication.focusWidget()
-                    title = 'Non-Aligned DataTrees'
-                    text = f'Cannot move "{src_item.path}" to non-aligned "{dst_parent_item.path}".'
-                    QMessageBox.warning(parent_widget, title, text)
-                    return False
-            
-        # handle name conflicts
-        if src_parent_node is not dst_parent_node:
-            abort = False
-            name_conflict_action = getattr(self, '_name_conflict_action', 'ask')
-            src_keys = list(src_items_map)
-            dst_keys: list[str] = list(dst_parent_node.keys())
-            dst_keys_to_be_overwritten: list[str] = []
-            dst_keys_to_be_merged: list[str] = []
-            src_key_renames = {}
-            src_keys_to_be_skipped: list[str] = []
-            for src_key in src_keys:
-                if src_key not in dst_keys:
-                    dst_keys.append(src_key)
-                    continue
-                
-                if name_conflict_action == 'ask':
-                    parent_widget: QWidget = QApplication.focusWidget()
-                    text = f'"{src_key}" already exists at {dst_parent_node.path}.'
-                    dlg = NameConflictDialog(text, parent=parent_widget)
-                    dlg._merge_button.setEnabled(False) # TODO
-                    if dlg.exec() == QDialog.DialogCode.Rejected:
-                        abort = True
-                        break
-                    this_name_conflict_action = dlg._action_button_group.checkedButton().text().lower()
-                    apply_to_all_name_conflicts = dlg._apply_to_all_checkbox.isChecked()
-                    if apply_to_all_name_conflicts:
-                        name_conflict_action = this_name_conflict_action
-                else:
-                    this_name_conflict_action = name_conflict_action.lower()
-                
-                if this_name_conflict_action == 'overwrite':
-                    dst_keys_to_be_overwritten.append(src_key)
-                elif this_name_conflict_action == 'merge':
-                    dst_keys_to_be_merged.append(src_key)
-                elif this_name_conflict_action == 'keep both':
-                    new_key = xarray_utils.unique_name(src_key, dst_keys)
-                    src_key_renames[src_key] = new_key
-                    dst_keys.append(new_key)
-                elif this_name_conflict_action == 'skip':
-                    src_keys_to_be_skipped.append(src_key)
-            
-            if abort:
-                return False
-            
-            for src_key in src_keys_to_be_skipped:
-                src_items_map.pop(src_key)
-            
-            if src_key_renames:
-                src_items_map = {src_key_renames.get(name, name): item for name, item in src_items_map.items()}
-
-            for dst_key in dst_keys_to_be_overwritten:
-                if dst_key in dst_items_map:
-                    # remove the destination item to be overwritten without touching the underlying datatree which will be overwritten when assigning src items during move
-                    dst_item: XarrayDataTreeItem = dst_items_map[dst_key]
-                    if dst_item.row < dst_row:
-                        dst_row -= 1
-                    dst_item.parent.children.remove(dst_item)
-                    dst_item.parent = None
-                    dst_items_map.pop(dst_key)
-
-            for dst_key in dst_keys_to_be_merged:
-                pass # TODO
-        
-        print('after conflict handling:')
-        print('src items:', list(src_items_map))
-        print('dst items:', list(dst_items_map))
-        print('dst row:', dst_row)
-        print()
-        
-        # move data_vars, coords, and nodes separately as their true destination row may differ from dst_row due to the enforced ordering of item types
-        src_data_var_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in src_items_map.items() if item.is_data_var}
-        src_coord_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in src_items_map.items() if item.is_coord}
-        src_node_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in src_items_map.items() if item.is_node}
-
-        dst_data_var_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_data_var}
-        dst_coord_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_coord}
-        dst_node_items_map: dict[str, XarrayDataTreeItem] = {name: item for name, item in dst_items_map.items() if item.is_node}
-        
-        print('src data_var items:', list(src_data_var_items_map))
-        print('src coord items:', list(src_coord_items_map))
-        print('src node items:', list(src_node_items_map))
-        print()
-        print('dst data_var items:', list(dst_data_var_items_map))
-        print('dst coord items:', list(dst_coord_items_map))
-        print('dst node items:', list(dst_node_items_map))
-        print()
-
-        # Move item types in reverse order of their appearance in the item tree to ensure that dst_row remains valid after each move.
-        src_ordered_item_maps: list[dict[str, XarrayDataTreeItem]] = []
-        dst_ordered_item_maps: list[dict[str, XarrayDataTreeItem]] = []
-        for item_type in self._item_order:
-            if item_type == 'data_vars':
-                src_ordered_item_maps.append(src_data_var_items_map)
-                dst_ordered_item_maps.append(dst_data_var_items_map)
-            elif item_type == 'coords':
-                src_ordered_item_maps.append(src_coord_items_map)
-                dst_ordered_item_maps.append(dst_coord_items_map)
-            elif item_type == 'children':
-                src_ordered_item_maps.append(src_node_items_map)
-                dst_ordered_item_maps.append(dst_node_items_map)
-        
-        src_item_map: dict[str, XarrayDataTreeItem]
-        dst_item_map: dict[str, XarrayDataTreeItem]
-        for map_order_index, src_item_map, dst_item_map in zip(reversed(range(3)), reversed(src_ordered_item_maps), reversed(dst_ordered_item_maps)):
-            if not src_item_map:
+                from warnings import warn
+                warn(text)
+                # still try to move remaining item blocks
                 continue
 
-            item_type: str = self._item_order[map_order_index]
-            print('moving items of type', item_type)
-            print()
+            # if we got here, should be all good. let's update the datatree and itemtree
 
-            # Rechunk items into contiguous blocks. This could be needed if, for example, an item was skipped.
-            names: list[str] = list(src_item_map)
-            items: list[XarrayDataTreeItem] = list(src_item_map.values())
-            item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items)
-            if len(item_blocks) == 1:
-                src_item_block_maps: list[dict[str, XarrayDataTreeItem]] = [src_item_map]
-            else:
-                src_item_block_maps: list[dict[str, XarrayDataTreeItem]] = []
-                for block in item_blocks:
-                    src_item_block_map: dict[str, XarrayDataTreeItem] = {}
-                    for item in block:
-                        i: int = items.index(item)
-                        name = names[i]
-                        src_item_block_map[name] = item
-                    src_item_block_maps.append(src_item_block_map)
+            # remove items that are being overwritten
+            # we just remove the items without touching the underlying datatree data as that will be updated during insertion below
+            items_being_overwritten: list[XarrayDataTreeItem] = [item for item in dst_parent_item.children if item.name in name_item_map]
+            for item in items_being_overwritten:
+                self.beginRemoveRows(dst_parent_index, item.row, item.row)
+                item.orphan()
+                self.endRemoveRows()
+
+            # move rows
+            src_first: int = first_item.row
+            src_last: int = src_first + len(name_item_map) - 1
+            dst_first: int = self._insertionRow(dst_parent_item, dtype, dst_row)
+
+            # final ordered dtype names after insertion
+            pre_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[:dst_first] if item.data_type == dtype]
+            post_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[dst_first:] if item.data_type == dtype]
+            final_dtype_names: list[str] = pre_insertion_dtype_names + list(name_item_map) + post_insertion_dtype_names
+
+            # move item block
+            self.beginMoveRows(src_parent_index, src_first, src_last, dst_parent_index, dst_first)
             
-            # move each block one at a time
-            for src_item_block_map in src_item_block_maps:
-                src_block_names: list[str] = list(src_item_block_map)
-                src_block_items: list[XarrayDataTreeItem] = list(src_item_block_map.values())
-                src_block_first_row: int = src_block_items[0].row
-                src_block_last_row: int = src_block_items[-1].row
-
-                print('src block items', src_block_names)
-                print('src block first/last rows', src_block_first_row, src_block_last_row)
-                print()
+            if dtype == GROUP:
+                # order the groups
+                new_dst_parent_group.children = {name: new_dst_parent_group.children[name] for name in final_dtype_names}
                 
-                # determine destination row location for this block
-                dst_like_type_names: list[str] = list(dst_item_map)
-                dst_like_type_items: list[XarrayDataTreeItem] = list(dst_item_map.values())
-                if not dst_like_type_items:
-                    dst_first_row: int = 0
-                    for j in range(map_order_index):
-                        dst_first_row += len(dst_ordered_item_maps[j])
-                    final_dst_like_type_names = src_block_names
-                elif dst_row > dst_like_type_items[-1].row:
-                    # append items
-                    dst_first_row: int = dst_like_type_items[-1].row + 1
-                    if src_parent_node is dst_parent_node:
-                        for name in src_block_names:
-                            dst_like_type_names.remove(name)
-                    final_dst_like_type_names = dst_like_type_names + src_block_names
-                elif dst_row <= dst_like_type_items[0].row:
-                    # prepend items
-                    dst_first_row: int = dst_like_type_items[0].row
-                    if src_parent_node is dst_parent_node:
-                        for name in src_block_names:
-                            dst_like_type_names.remove(name)
-                    final_dst_like_type_names = src_block_names + dst_like_type_names
-                else:
-                    # insert items
-                    dst_first_row: int = dst_row
-                    i: int = dst_row - dst_like_type_items[0].row
-                    pre_dst_like_names = dst_like_type_names[:i]
-                    post_dst_like_names = dst_like_type_names[i:]
-                    if src_parent_node is dst_parent_node:
-                        for name in src_block_names:
-                            if name in pre_dst_like_names:
-                                pre_dst_like_names.remove(name)
-                            elif name in post_dst_like_names:
-                                post_dst_like_names.remove(name)
-                    final_dst_like_type_names = pre_dst_like_names + src_block_names + post_dst_like_names
-
-                print('final_dst_like_type_names', final_dst_like_type_names)
-                print('block dst row', dst_first_row)
-                print()
-
-                if src_parent_item is dst_parent_item:
-                    if src_block_first_row <= dst_first_row <= src_block_last_row + 1:
-                        # nothing to move
-                        continue
+                # update datatree
+                src_parent_group.children = new_src_parent_group.children
+                dst_parent_group.children = new_dst_parent_group.children
+                # dt: xr.DataTree = self.datatree()
+                # print()
+                # print()
+                # print('before move', dt)
+                # print()
+                # print()
+                # print('new src', new_src_parent_group)
+                # print()
+                # print()
+                # print('new dst', new_dst_parent_group)
+                # print()
+                # print()
+                # if not src_parent_group.is_root:
+                #     dt[src_parent_group.path] = new_src_parent_group
+                # if not dst_parent_group.is_root:
+                #     dt[dst_parent_group.path] = new_dst_parent_group
+                # print('after move', dt)
+                # print()
+                # print()
+                    
+                # update itemtree
+                # src_parent_item.data = new_src_parent_group
+                # dst_parent_item.data = new_dst_parent_group
+                for i, (name, item) in enumerate(name_item_map.items()):
+                    item.orphan()
+                    item.data = dst_parent_group.children[name]
+                    dst_parent_item.insert_child(dst_first + i, item)
+            
+                # # reset src_parent_group and dst_parent_group references
+                # src_parent_group = new_src_parent_group
+                # dst_parent_group = new_dst_parent_group
         
-                # remove inherited coord items in descendents of src_parent_item
-                if item_type == 'coords':
-                    if self.isCoordsVisible() and self.isInheritedCoordsVisible():
-                        index_coord_names_to_be_moved = [name for name, item in zip(src_block_names, src_block_items) if item.is_index_coord and not item.is_inherited_coord]
-                        print('index_coord_names_to_be_moved', index_coord_names_to_be_moved)
-                        if index_coord_names_to_be_moved:
-                            for item in src_parent_item.subtree_reverse_depth_first():
-                                if item is src_parent_item or not item.is_node:
-                                    continue
-                                node: xr.DataTree = item.data
-                                inherited_coord_names = node._inherited_coords_set()
-                                inherited_coord_names_to_remove = [name for name in inherited_coord_names if name in index_coord_names_to_be_moved]
-                                print('inherited_coord_names_to_remove', inherited_coord_names_to_remove)
-                                if inherited_coord_names_to_remove:
-                                    coord_items_to_remove: list[XarrayDataTreeItem] = [child for child in item.children if child.is_inherited_coord and child.name in inherited_coord_names_to_remove]
-                                    print('coord_items_to_remove', coord_items_to_remove)
-                                    if coord_items_to_remove:
-                                        coord_item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(coord_items_to_remove)
-                                        print('coord_item_blocks', coord_item_blocks)
-                                        coord_item_block: list[XarrayDataTreeItem]
-                                        for coord_item_block in coord_item_blocks:
-                                            parent_index: QModelIndex = self.indexFromItem(item)
-                                            first_row = coord_item_block[0].row
-                                            last_row = coord_item_block[-1].row
-                                            self.beginRemoveRows(parent_index, first_row, last_row)
-                                            for coord_item in coord_item_block:
-                                                coord_item.orphan()
-                                            self.endRemoveRows()
+            elif dtype == DATA_VAR:
+                # order the data_vars
+                new_parent_dataset = new_parent_dataset.assign({name: new_parent_dataset.data_vars[name] for name in final_dtype_names})
                 
-                # move block
-                self.beginMoveRows(src_parent_index, src_block_first_row, src_block_last_row, dst_parent_index, dst_first_row)
+                # update datatree
+                src_parent_group.dataset = new_src_parent_dataset
+                dst_parent_group.dataset = new_dst_parent_dataset
                 
-                if item_type == 'children':
-
-                    src_nodes_map: dict[str, xr.DataTree] = {name: item.data for name, item in zip(src_block_names, src_block_items)}
-
-                    if src_parent_node is dst_parent_node:
-                        # reorder nodes
-                        del dst_parent_item.children[src_block_first_row:src_block_last_row + 1]
-                        dst_parent_item.children = dst_parent_item.children[:dst_first_row] + src_block_items + dst_parent_item.children[dst_first_row:]
-                        dst_parent_node.children = {name: dst_parent_node.children[name] for name in final_dst_like_type_names}
-                    else:
-                        # remove src nodes from datatree
-                        for node in src_nodes_map.values():
-                            node.orphan()
-                        # insert src nodes in dst_parent_node (note that this orphans dst_parent_node)
-                        dst_parent_node_path: str = dst_parent_node.path
-                        dst_parent_node = dst_parent_node.assign(src_nodes_map) # this orphans dst_parent_node
-                        dst_parent_node.children = {name: dst_parent_node.children[name] for name in final_dst_like_type_names} # ordered
-                        # reattach dst_parent_node to datatree (not needed if dst_parent is the datatree root)
-                        if dst_parent_node_path != '/':
-                            dt: xr.DataTree = self.datatree()
-                            dt[dst_parent_node_path] = dst_parent_node
-                            dst_parent_node = dt[dst_parent_node_path]
-                        
-                        # relink item tree to new dst_parent_node
-                        dst_parent_item.data = dst_parent_node
-                        
-                        # remove src items from src parent and insert dst in item tree
-                        for i, name in enumerate(src_block_names):
-                            src_item = src_item_block_map[name]
-                            src_item.data = dst_parent_node.children[name]
-                            src_item.orphan()
-                            dst_parent_item.insert_child(dst_first_row + i, src_item)
+                # update itemtree
+                for i, (name, item) in enumerate(name_item_map.items()):
+                    item.orphan()
+                    item.data = dst_parent_group.data_vars[name]
+                    dst_parent_item.insert_child(dst_first + i, item)
+            
+            elif dtype == COORD:
+                # order the coords
+                new_parent_dataset = new_parent_dataset.assign({name: new_parent_dataset.coords[name] for name in final_dtype_names})
                 
-                elif item_type == 'data_vars':
-
-                    # update datatree
-                    src_data_vars_map: dict[str, xr.DataArray] = {name: item.data for name, item in zip(src_block_names, src_block_items)}
-                    final_ordered_data_vars_map: dict[str, xr.DataTree] = {}
-                    for name in final_dst_like_type_names:
-                        if name in dst_parent_node.data_vars:
-                            final_ordered_data_vars_map[name] = dst_parent_node.data_vars[name]
-                        elif name in src_data_vars_map:
-                            final_ordered_data_vars_map[name] = src_data_vars_map[name]
-                    dst_parent_node.dataset = dst_parent_node.to_dataset().assign(final_ordered_data_vars_map)
-                    src_parent_node.dataset = src_parent_node.to_dataset().drop_vars(src_block_names)
-                    
-                    # update item tree
-                    for item in src_block_items:
-                        item.orphan()
-                    for i, name in enumerate(src_block_names):
-                        item: XarrayDataTreeItem = src_block_items[i]
-                        item.data = dst_parent_node.data_vars[name]
-                        dst_parent_item.insert_child(dst_first_row + i, item)
+                # update datatree
+                src_parent_group.dataset = new_src_parent_dataset
+                dst_parent_group.dataset = new_dst_parent_dataset
                 
-                elif item_type == 'coords':
+                # update itemtree
+                for i, (name, item) in enumerate(name_item_map.items()):
+                    item.orphan()
+                    item.data = dst_parent_group.coords[name]
+                    dst_parent_item.insert_child(dst_first + i, item)
+            
+            self.endMoveRows()
 
-                    # update datatree
-                    src_coords_map: dict[str, xr.DataArray] = {name: item.data for name, item in zip(src_block_names, src_block_items)}
-                    final_ordered_coords_map: dict[str, xr.DataTree] = {}
-                    for name in final_dst_like_type_names:
-                        if name in dst_parent_node.coords:
-                            final_ordered_coords_map[name] = dst_parent_node.coords[name]
-                        elif name in src_coords_map:
-                            final_ordered_coords_map[name] = src_coords_map[name]
-                    dst_parent_node.dataset = dst_parent_node.to_dataset().assign_coords(final_ordered_coords_map)
-                    src_parent_node.dataset = src_parent_node.to_dataset().drop_vars(src_block_names)
-                    
-                    # update item tree
-                    for item in src_block_items:
-                        item.orphan()
-                    for i, name in enumerate(src_block_names):
-                        item: XarrayDataTreeItem = src_block_items[i]
-                        item.data = dst_parent_node.coords[name]
-                        dst_parent_item.insert_child(dst_first_row + i, item)
-                    
-                self.endMoveRows()
-
-                # for any moved index coords, insert inherited coord items in descendents of dst_parent_item
-                if item_type == 'coords':
-                    if self.isCoordsVisible() and self.isInheritedCoordsVisible():
-                        moved_coord_items: list[XarrayDataTreeItem] = dst_parent_item.children[dst_first_row:dst_first_row+len(src_block_names)]
-                        moved_index_coord_items: list[XarrayDataTreeItem] = [item for item in moved_coord_items if item.is_index_coord and not item.is_inherited_coord]
-                        if moved_index_coord_items:
-                            moved_index_coord_names: list[str] = [item.name for item in moved_index_coord_items]
-                            item_types_map: dict[str, str] = {name: 'coord' for name in moved_index_coord_names}
-                            item: XarrayDataTreeItem
-                            for item in dst_parent_item.subtree_depth_first():
-                                if item is dst_parent_item or not item.is_node:
-                                    continue
-                                node: xr.DataTree = item.data
-                                row_names: list[str] = self._visibleRowNames(node)
-                                moved_index_coord_names.sort(key=lambda name: row_names.index(name))
-                                index: QModelIndex = self.indexFromItem(item)
-                                for name in moved_index_coord_names:
-                                    inherited_coord_item = XarrayDataTreeItem(node.coords[name])
-                                    row: int = row_names.index(name)
-                                    self.beginInsertRows(index, row, row)
-                                    item.insert_child(row, inherited_coord_item)
-                                    self.endInsertRows()
+            # for any moved coords, update inherited coord items in descendents of src and dst parent items
+            if (dtype == COORD) and self.isCoordsVisible() and self.isInheritedCoordsVisible():
+                self._updateSubtreeInheritedCoordItems(src_parent_item)
+                self._updateSubtreeInheritedCoordItems(dst_parent_item)
+        
+        # end for name_item_map in name_item_maps:
 
         return True
     
@@ -1166,13 +1022,12 @@ class XarrayDataTreeModel(QAbstractItemModel):
             self.moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row)
             return
         
-        # group items into blocks by parent and contiguous rows
-        # blocks are in reverse depth-first order to ensure row indices remain valid after moving each block
+        # group items into blocks by data type, parent, and contiguous rows
         src_item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(src_items)
         
         # move each item block
-        # blocks are in reverse depth-first order to ensure row indices remain valid after moving each block
-        for block in src_item_blocks:
+        # note: blocks are in depth-first order, so move in reverse order to ensure row indices remain valid after moving each block
+        for block in reversed(src_item_blocks):
             src_parent_index: QModelIndex = self.indexFromItem(block[0].parent)
             src_row: int = block[0].row
             count: int = len(block)
@@ -1186,25 +1041,60 @@ class XarrayDataTreeModel(QAbstractItemModel):
         
         # TODO: transfer items to dst_model
     
+    def _updateSubtreeInheritedCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
+        item: XarrayDataTreeItem
+        for item in parent_item.subtree_depth_first():
+            if not item.is_group:
+                continue
+            
+            index: QModelIndex = self.indexFromItem(item)
+            group: xr.DataTree = item.data
+            inherited_coord_names: set[str] = group._inherited_coords_set()
+            
+            # remove invalid inherited coord items (no need to touch datatree)
+            inherited_coord_items_to_remove: list[XarrayDataTreeItem] = [child for child in item.children if child.is_inherited_coord and child.name not in inherited_coord_names]
+            for item in inherited_coord_items_to_remove:
+                self.beginRemoveRows(index, item.row, item.row)
+                item.orphan()
+                self.endRemoveRows()
+            
+            # add missing inherited coord items (no need to touch datatree)
+            existing_inherited_coord_names: list[str] = [child.name for child in item.children if child.is_inherited_coord]
+            missing_inherited_coord_names: list[str] = [name for name in inherited_coord_names if name not in existing_inherited_coord_names]
+            if missing_inherited_coord_names:
+                row_names: list[str] = self._visibleRowNames(group)
+                for name in missing_inherited_coord_names:
+                    inherited_coord_item = XarrayDataTreeItem(group.coords[name])
+                    row: int = row_names.index(name)
+                    if row == -1:
+                        row = len(item.children)
+                    self.beginInsertRows(index, row, row)
+                    item.insert_child(row, inherited_coord_item)
+                    self.endInsertRows()
+    
     @staticmethod
-    def _itemBlocks(items: list[XarrayDataTreeItem]) -> list[list[XarrayDataTreeItem]]:
-        """ Group items into blocks by parent and contiguous rows.
+    def _itemBlocks(items: list[XarrayDataTreeItem], split_data_types: bool = True) -> list[list[XarrayDataTreeItem]]:
+        """ Group items by data type, parent, and contiguous rows.
 
         Each block can be input to removeRows() or moveRows().
+        Blocks are ordered depth-first. Typically you should remove/move blocks in reverse depth-first order to ensure insertion row indices remain valid after handling each block.
         """
         # so we don't modify the input list
         items = items.copy()
+
+        # # order by data type
+        # items.sort(key=lambda item: XarrayDataTreeModel._data_type_order.index(item.data_type))
 
         # order items depth-first so that it is easier to group them into blocks
         items.sort(key=lambda item: item.level)
         items.sort(key=lambda item: item.row)
 
-        # group items into blocks by parent and contiguous rows
+        # group items into blocks by [data type,] parent, and contiguous rows
         blocks: list[list[XarrayDataTreeItem]] = [[items[0]]]
         for item in items[1:]:
             added_to_block = False
             for block in blocks:
-                if item.parent is block[0].parent:
+                if (item.parent is block[0].parent) and (not split_data_types or item.data_type == block[0].data_type):
                     if item.row == block[-1].row + 1:
                         block.append(item)
                     else:
@@ -1213,9 +1103,139 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     break
             if not added_to_block:
                 blocks.append([item])
+        return blocks
+    
+    @staticmethod
+    def _itemMapBlocks(name_item_map: dict[str, XarrayDataTreeItem], split_data_types: bool = True) -> list[dict[str, XarrayDataTreeItem]]:
+        names: list[str] = list(name_item_map)
+        items: list[XarrayDataTreeItem] = list(name_item_map.values())
+        item_blocks: list[list[XarrayDataTreeItem]] = XarrayDataTreeModel._itemBlocks(items)
+        name_item_map_blocks: list[dict[str, XarrayDataTreeItem]] = []
+        for item_block in item_blocks:
+            name_item_map_block: dict[str, XarrayDataTreeItem] = {}
+            item: XarrayDataTreeItem
+            for item in item_block:
+                i = items.index(item)
+                name = names[i]
+                name_item_map_block[name] = item
+            name_item_map_blocks.append(name_item_map_block)
+        return name_item_map_blocks
+    
+    @staticmethod
+    def _insertionRow(parent_item: XarrayDataTreeItem, data_type: XarrayDataTreeType, row: int) -> int:
+
+        items_of_dtype: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.data_type == data_type]
+
+        if not items_of_dtype:
+            # insert after all items of other data types that come before data_type in the model
+            row = 0
+            for dtype in XarrayDataTreeModel._data_type_order:
+                if dtype == data_type:
+                    break
+                row += len([item for item in parent_item.children if item.data_type == dtype])
+            return row
+        elif row > items_of_dtype[-1].row:
+            # append after last item of data_type
+            return items_of_dtype[-1].row + 1
+        elif row <= items_of_dtype[0].row:
+            # prepend before first item of data_type
+            return items_of_dtype[0].row
+        else:
+            # insert at row which falls within items of data_type
+            return row
+    
+    @staticmethod
+    def _handleInsertionConflicts(name_item_map: dict[str, XarrayDataTreeItem], parent_item: XarrayDataTreeItem, orphan_only: bool = False) -> dict[str, XarrayDataTreeItem]:
+        if not parent_item.is_group:
+            # cannot insert items into non-group item
+            return {}
         
-        # return blocks in reverse depth-first order to ensure row indices remain valid when removing or moving blocks sequentially
-        return list(reversed(blocks))
+        # so we don't alter the input map
+        name_item_map = name_item_map.copy()
+
+        parent_group: xr.DataTree = parent_item.data
+        parent_keys: list[str] = list(parent_group.keys())
+
+        # conflicts[name] = conflict message
+        # we'll handle name conflicts separately from all other conflicts
+        conflicts: dict[str, str] = {}
+        name_conflicts: dict[str, str] = {}
+        
+        name: str
+        item: XarrayDataTreeItem
+        for name, item in name_item_map.items():
+            # only allow insertion of orphaned items
+            if orphan_only and item.parent is not None:
+                conflicts[name] = f'Cannot insert non-orphan "{item.path}".'
+                continue
+
+            # cannot insert item into one of its descendents
+            if parent_item.has_ancestor(item):
+                conflicts[name] = f'Cannot insert "{item.path}" into its own subtree at "{parent_item.path}".'
+                continue
+
+            # inserted objects must align with parent group
+            try:
+                if isinstance(item.data, xr.DataTree):
+                    data = item.data.dataset
+                elif isinstance(item.data, xr.DataArray):
+                    data = item.data
+                # dataset views include inherited coords
+                xr.align(parent_group.dataset, data, join='exact')
+            except:
+                conflicts[name] = f'"{item.path}" is not aligned with "{parent_item.path}".'
+                continue
+            
+            # inserted item names must be valid new keys in parent
+            if '/' in name:
+                conflicts[name] = f'"{name}" is not a valid DataTree name, which cannot contain "/".'
+                continue
+            if name in parent_keys:
+                name_conflicts[name] = f'"{name}" already exists in "{parent_item.path}".'
+                continue
+
+            parent_keys.append(name)
+        
+        # either abort or skip these conflicts
+        if conflicts:
+            parent_widget: QWidget = QApplication.focusWidget()
+            title = 'Conflict'
+            text = '\n'.join(list(conflicts.values()))
+            dlg = ConflictDialog(parent_widget, title, text)
+            if dlg.exec() == QDialog.DialogCode.Rejected:
+                # abort
+                return {}
+            for name in conflicts:
+                # skip conflicting items
+                del name_item_map[name]
+        
+        # either abort, skip, overwrite, merge, or rename these conflicts
+        if name_conflicts:
+            parent_widget: QWidget = QApplication.focusWidget()
+            title = 'Name Conflict'
+            text = '\n'.join(list(name_conflicts.values()))
+            dlg = NameConflictDialog(parent_widget, title, text)
+            dlg._merge_button.setEnabled(False) # TODO
+            if dlg.exec() == QDialog.DialogCode.Rejected:
+                # abort
+                return {}
+            action = dlg._action_button_group.checkedButton().text().lower()
+            if action == 'overwrite':
+                # nothing to do here (this is the default)
+                pass
+            elif action == 'merge':
+                # TODO
+                pass
+            elif action == 'keep both':
+                for existing_name in name_conflicts:
+                    new_name: str = xarray_utils.unique_name(existing_name, parent_keys)
+                    name_item_map = {new_name if name == existing_name else name: item for name, item in name_item_map.items()}
+                    parent_keys.append(new_name)
+            elif action == 'skip':
+                for name in name_conflicts:
+                    del name_item_map[name]
+        
+        return name_item_map
     
     def supportedDropActions(self) -> Qt.DropActions:
         return self._supportedDropActions
@@ -1269,6 +1289,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
         # As we already completely handled the drop action above, this will corrupt our model, so return False.
         return False
     
+    @staticmethod
     def _popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
         QMessageBox.warning(focused_widget, 'Warning', text)
@@ -1315,30 +1336,49 @@ class XarrayDataTreeMimeData(QMimeData):
         return mime_type == self.MIME_TYPE or super().hasFormat(mime_type)
 
 
-# class AbortOrSkipDialog(QDialog):
+class ConflictDialog(QDialog):
 
-#     def __init__(self, msg: str, parent: QWidget = None, **kwargs):
-#         if parent is None:
-#             parent = QApplication.focusWidget()
-#         if 'modal' not in kwargs:
-#             kwargs['modal'] = True
-#         super().__init__(parent, **kwargs)
-#         self.setWindowTitle('Name Conflict')
-#         vbox = QVBoxLayout(self)
-#         vbox.addWidget(QLabel(msg))
+    def __init__(self, parent: QWidget, title: str, text: str):
+        super().__init__(parent, modal=True)
+        
+        self.setWindowTitle(title)
+        vbox = QVBoxLayout(self)
+
+        self._text_field = QTextEdit(readOnly=True, plainText=text)
+        vbox.addWidget(self._text_field)
+        vbox.addSpacing(10)
+
+        # self._skip_button = QRadioButton('Skip')
+        # self._skip_all_button = QRadioButton('Skip All')
+        # self._action_button_group = QButtonGroup()
+        # self._action_button_group.addButton(self._skip_button)
+        # self._action_button_group.addButton(self._skip_all_button)
+        # self._skip_button.setChecked(True)
+        # vbox.addWidget(self._skip_button)
+        # vbox.addWidget(self._skip_all_button)
+        # vbox.addSpacing(10)
+
+        buttons = QDialogButtonBox()
+        self._continue_button: QPushButton = buttons.addButton('Skip & Continue', QDialogButtonBox.ButtonRole.AcceptRole)
+        self._cancel_button: QPushButton = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        self._continue_button.setAutoDefault(False)
+        self._cancel_button.setDefault(True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        vbox.addWidget(buttons)
 
 
 class NameConflictDialog(QDialog):
 
-    def __init__(self, msg: str, *args, **kwargs):
-        if (len(args) == 0 or not isinstance(args[0], QWidget)) and ('parent' not in kwargs):
-            kwargs['parent'] = QApplication.focusWidget()
-        if 'modal' not in kwargs:
-            kwargs['modal'] = True
-        super().__init__(*args, **kwargs)
-        self.setWindowTitle('Name Conflict')
+    def __init__(self, parent: QWidget, title: str, text: str):
+        super().__init__(parent, modal=True)
+        
+        self.setWindowTitle(title)
         vbox = QVBoxLayout(self)
-        vbox.addWidget(QLabel(msg))
+
+        self._text_field = QTextEdit(readOnly=True, plainText=text)
+        vbox.addWidget(self._text_field)
+        vbox.addSpacing(10)
 
         self._overwrite_button = QRadioButton('Overwrite')
         self._merge_button = QRadioButton('Merge')

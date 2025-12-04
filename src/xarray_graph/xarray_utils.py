@@ -286,8 +286,8 @@ def index_by_identity(lst, target_obj):
     return -1
 
 
-def unique_name(name: str, names: list[str], unique_counter_start: int = 2) -> str:
-    """ Return name_2, or name_3, etc. until a unique name is found that does not exist in names.
+def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> str:
+    """ Return name_1, or name_2, etc. until a unique name is found that does not exist in names.
     """
     if name not in names:
         return name
