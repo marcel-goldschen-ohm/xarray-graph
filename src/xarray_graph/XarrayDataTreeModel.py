@@ -1,11 +1,14 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
-- setData: rename index coord -> rename dimension
-- moveRows: merge items?
+- setData:
+    - fix rename variable bug
+    - rename index coord -> rename dimension
+- moveRows:
+    - properly order moved variables
+    - merge items?
 - transferItems
 - moved inherited coords currently become regular coords but share the same underlying data as before. should we copy the data?
-- auto order coords?
 """
 
 from __future__ import annotations
@@ -116,7 +119,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
     # for dev and debug - show ids of datatree objects in details column
     _show_debug_ids: bool = True
 
-    # optionally use color to denote shared data arrays - mostly for dev and debug, but could be useful otherwise
+    # optionally use color to denote shared data arrays - mostly for dev and debug, but might be useful otherwise
     _highlight_shared_data: bool = True
 
     def __init__(self, *args, **kwargs):
@@ -446,14 +449,13 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     self.dataChanged.emit(index, index)
                     return True
                 except:
-                    print('oh no')
                     return False
             elif item.is_data_var:
                 # rename data_var
                 try:
                     parent_dataset: xr.Dataset = parent_group.to_dataset()
                     renamed_data_vars = {name if name != old_name else new_name: data_var for name, data_var in parent_dataset.data_vars.items()}
-                    new_parent_dataset: xr.Dataset = parent_dataset.assign(renamed_data_vars)
+                    new_parent_dataset: xr.Dataset = parent_dataset.assign(renamed_data_vars).drop_vars(old_name)
                     parent_group.dataset = new_parent_dataset
                     self.dataChanged.emit(index, index)
                     return True
@@ -464,7 +466,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 try:
                     parent_dataset: xr.Dataset = parent_group.to_dataset()
                     renamed_coords = {name if name != old_name else new_name: coord for name, coord in parent_dataset.coords.items()}
-                    new_parent_dataset: xr.Dataset = parent_dataset.assign_coords(renamed_coords)
+                    new_parent_dataset: xr.Dataset = parent_dataset.assign_coords(renamed_coords).drop_vars(old_name)
                     parent_group.dataset = new_parent_dataset
                     self.dataChanged.emit(index, index)
                     # TODO: rename coord and also dimension if coord is an index coord
