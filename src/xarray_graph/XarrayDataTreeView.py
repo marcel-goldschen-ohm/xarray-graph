@@ -275,33 +275,14 @@ class XarrayDataTreeView(QTreeView):
         model: XarrayDataTreeModel = self.model()
         model.removeItems(items)
     
-    def appendNewNode(self, parent_item: XarrayDataTreeItem, name: str = None) -> None:
+    def appendNewChildGroup(self, parent_item: XarrayDataTreeItem) -> None:
         if not parent_item.is_group:
             return
-        if name is None:
-            parent: QWidget = self
-            title: str = 'New DataTree Group'
-            label: str = 'Group Name'
-            name, ok = QInputDialog.getText(parent, title, label)
-            if not ok:
-                return
-        if '/' in name:
-            parent: QWidget = self
-            title: str = 'Invalid Name'
-            text = f'"{name}" is an invalid DataTree path key which cannot contain path seaprators "/".'
-            QMessageBox.warning(parent, title, text)
-            return
-        parent_node: xr.DataTree = parent_item.data
-        if name in list(parent_node.keys()):
-            parent: QWidget = self
-            title: str = 'Existing Name'
-            text = f'"{name}" already exists in parent DataTree.'
-            QMessageBox.warning(self, title, text)
-            return
-        new_node = xr.DataTree()
-        new_item = XarrayDataTreeItem(new_node)
-        row = len(parent_item.children)
-        self.model().insertItems({name: new_item}, parent_item, row)
+        model: XarrayDataTreeModel = self.model()
+        row: int = len(parent_item.children)
+        count: int = 1
+        parent_index: QModelIndex = model.indexFromItem(parent_item)
+        model.insertRows(row, count, parent_index)
     
     @Slot(QPoint)
     def onCustomContextMenuRequested(self, point: QPoint) -> None:
@@ -340,10 +321,10 @@ class XarrayDataTreeView(QTreeView):
         menu.addSeparator()
         menu.addAction('Remove', self.removeSelectedItems).setEnabled(has_selection)
         
-        # insert new node
+        # insert new group
         if item.is_group:
             menu.addSeparator()
-            menu.addAction('New Child Group', lambda parent_item=item: self.appendNewNode(parent_item))
+            menu.addAction('New Child Group', lambda parent_item=item: self.appendNewChildGroup(parent_item))
 
         # TODO: rename things
         menu.addSeparator()
@@ -761,10 +742,10 @@ def test_live():
     dt['air_temperature/inherits'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/inherits/again'] = xr.tutorial.load_dataset('air_temperature')
     dt['child2'] = xr.DataTree()
-    dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
-    dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
-    dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
+    # dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
+    # dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
+    # dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
 
     app = QApplication()
 
@@ -775,20 +756,20 @@ def test_live():
     model.setDetailsColumnVisible(True)
     model.setDatatree(dt)
 
-    parent_item = model._root_item.children[0]
-    half_air = dt['air_temperature/air'] / 2
-    data_var_item = XarrayDataTreeItem(half_air, XarrayDataTreeType.DATA_VAR)
-    model.insertItems({'half air': data_var_item}, 0, parent_item)
+    # parent_item = model._root_item.children[0]
+    # half_air = dt['air_temperature/air'] / 2
+    # data_var_item = XarrayDataTreeItem(half_air, XarrayDataTreeType.DATA_VAR)
+    # model.insertItems({'half air': data_var_item}, 0, parent_item)
 
-    parent_item = model._root_item.children[0]
-    twice_lat = xr.DataArray(data=dt['air_temperature/lat'].values * 2, dims=('twice lat',))
-    coord_item = XarrayDataTreeItem(twice_lat, XarrayDataTreeType.COORD)
-    model.insertItems({'twice lat': coord_item}, 0, parent_item)
+    # parent_item = model._root_item.children[0]
+    # twice_lat = xr.DataArray(data=dt['air_temperature/lat'].values * 2, dims=('twice lat',))
+    # coord_item = XarrayDataTreeItem(twice_lat, XarrayDataTreeType.COORD)
+    # model.insertItems({'twice lat': coord_item}, 0, parent_item)
 
-    dt['air_temperature/inherits/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-    dt['air_temperature/inherits/again/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-    dt['air_temperature/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-    model.reset()
+    # dt['air_temperature/inherits/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
+    # dt['air_temperature/inherits/again/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
+    # dt['air_temperature/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
+    # model.reset()
 
     view = XarrayDataTreeView()
     view.setModel(model)
