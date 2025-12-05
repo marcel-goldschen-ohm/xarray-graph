@@ -1,11 +1,11 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
-- setData
-    - rename index coord -> rename dimension
-- moveRows
-    - ??? merge items
+- setData: rename index coord -> rename dimension
+- moveRows: merge items?
 - transferItems
+- moved inherited coords currently become regular coords but share the same underlying data as before. should we copy the data?
+- auto order coords?
 """
 
 from __future__ import annotations

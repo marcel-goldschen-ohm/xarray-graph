@@ -3,8 +3,6 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- store/restore state
-- store/restore state of dragged items in dragEnterEvent() and dropEvent()
 - edit attrs in key-value tree ui
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
 - global rename of variables throughout the entire branch or tree?
@@ -26,10 +24,7 @@ class XarrayDataTreeView(QTreeView):
     finishedEditingAttrs = Signal()
     wasRefreshed = Signal()
 
-    # for store/restore view state
-    STATE_KEY = '_state'
-
-    window_decoration_offset: QPoint = None
+    _window_decoration_offset: QPoint = None
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -54,6 +49,9 @@ class XarrayDataTreeView(QTreeView):
         # context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.onCustomContextMenuRequested)
+
+        # persistent view state
+        self._view_state: dict[str, dict] = {}
 
         # optionally show vars and coords
         self._showDataVarsAction = QAction(
@@ -94,9 +92,9 @@ class XarrayDataTreeView(QTreeView):
         )
     
     def refresh(self) -> None:
-        self.storeState()
+        self.storeViewState()
         self.model().reset()
-        self.restoreState()
+        self.restoreViewState()
         self.wasRefreshed.emit()
     
     def model(self) -> XarrayDataTreeModel:
@@ -132,87 +130,79 @@ class XarrayDataTreeView(QTreeView):
     def _updateModelFromViewOptions(self):
         model: XarrayDataTreeModel = self.model()
         
-        self.storeState()
+        self.storeViewState()
         model.setDataVarsVisible(self._showDataVarsAction.isChecked())
         model.setCoordsVisible(self._showCoordsAction.isChecked())
         model.setInheritedCoordsVisible(self._showInheritedCoordsAction.isChecked())
         model.setDetailsColumnVisible(self._showDetailsColumnAction.isChecked())
-        self.restoreState()
+        self.restoreViewState()
     
     def datatree(self) -> xr.DataTree:
         return self.model().datatree()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
-        self.storeState()
+        self.storeViewState()
         if self.model() is None:
             self.setModel(XarrayDataTreeModel(datatree=datatree), updateViewOptionsFromModel=False)
         else:
             self.model().setDatatree(datatree)
-        self.restoreState()
+        self.restoreViewState()
     
-    def storeState(self) -> None:
-        return
+    def forgetViewState(self) -> None:
+        self._view_state = {}
+    
+    def storeViewState(self, items: list[XarrayDataTreeItem] = None) -> None:
         model: XarrayDataTreeModel = self.model()
-        dt: xr.DataTree = model.datatree()
-        
-        state = getattr(self, self.STATE_KEY, {})
-        selected: list[QModelIndex] = self.selectionModel().selectedIndexes()
-        node: xr.DataTree
-        for node in dt.subtree:
-            if node is dt:
+        if items is None:
+            items = list(model._root_item.subtree_depth_first())
+        selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
+        item: XarrayDataTreeItem
+        for item in items:
+            if item.is_root:
                 continue
-            paths: list[str] = [node.path]
-            for name in model._rowNames(node):
-                path: str = f'{node.path}/{name}'
-                if isinstance(dt[path], xr.DataTree):
-                    # already handled in outer loop over nodes
-                    continue
-                paths.append(path)
-            for path in paths:
-                index: QModelIndex = model.indexFromPath(path)
-                if not index.isValid():
-                    continue
-                state[path] = {
-                    'expanded': self.isExpanded(index),
-                    'selected': index in selected
-                }
-        setattr(self, self.STATE_KEY, state)
+            index: QModelIndex = model.indexFromItem(item)
+            if not index.isValid():
+                continue
+            self._view_state[item.path] = {
+                'expanded': self.isExpanded(index),
+                'selected': index in selected_indexes
+            }
 
-    def restoreState(self) -> None:
-        return
+    def restoreViewState(self, items: list[XarrayDataTreeItem] = None) -> None:
         model: XarrayDataTreeModel = self.model()
-        dt: xr.DataTree = model.datatree()
-        state = getattr(self, self.STATE_KEY, {})
-        if not state:
+        if not self._view_state:
             return
-
-        self.selectionModel().clearSelection()
-        selection: QItemSelection = QItemSelection()
-        node: xr.DataTree
-        for node in dt.subtree:
-            if node is dt:
+        if items is None:
+            items = list(model._root_item.subtree_depth_first())
+        # self.selectionModel().clearSelection()
+        selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
+        to_be_selected: QItemSelection = QItemSelection()
+        to_be_deselected: QItemSelection = QItemSelection()
+        item: XarrayDataTreeItem
+        for item in items:
+            if item.is_root:
                 continue
-            paths: list[str] = [node.path]
-            for name in model._rowNames(node):
-                path: str = f'{node.path}/{name}'
-                if isinstance(dt[path], xr.DataTree):
-                    # already handled in outer loop over nodes
-                    continue
-                paths.append(path)
-            for path in paths:
-                if path not in state:
-                    continue
-                index: QModelIndex = model.indexFromPath(path)
-                if not index.isValid():
-                    continue
-                item_state: dict = state[path]
-                isExpanded = item_state.get('expanded', False)
-                self.setExpanded(index, isExpanded)
-                isSelected = item_state.get('selected', False)
-                if isSelected:
-                    selection.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-        if selection.count():
-            self.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+            item_view_state: dict = self._view_state.get(item.path, None)
+            if item_view_state is None:
+                continue
+            index: QModelIndex = model.indexFromItem(item)
+            if not index.isValid():
+                continue
+            is_expanded = item_view_state.get('expanded', False)
+            self.setExpanded(index, is_expanded)
+            is_selected = item_view_state.get('selected', False)
+            if is_selected and index not in selected_indexes:
+                to_be_selected.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+            elif not is_selected and index in selected_indexes:
+                to_be_deselected.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
+        #     if is_selected:
+        #         selection.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        # if selection.count():
+        #     self.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        if to_be_selected.count():
+            self.selectionModel().select(to_be_selected, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        if to_be_deselected.count():
+            self.selectionModel().select(to_be_deselected, QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
     
     @Slot(QItemSelection, QItemSelection)
     def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
@@ -415,7 +405,7 @@ class XarrayDataTreeView(QTreeView):
         frame: QRect = window.frameGeometry()
         geo: QRect = window.geometry()
         window.close()
-        XarrayDataTreeView.window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
+        XarrayDataTreeView._window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
     
     def cutSelection(self) -> None:
         pass # TODO
@@ -659,26 +649,31 @@ class XarrayDataTreeView(QTreeView):
         self.setDropIndicatorShown(enabled)
     
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        print('dragEnterEvent...')
-        # self.storeState()
-        # mime_data = event.mimeData()
-        # if isinstance(mime_data, XarrayDataTreeMimeData) and mime_data.model is self.model():
-        #     # Store the current state of the dragged paths and all their descendent paths in the MIME data.
-        #     # We only want to do this for the model where the drag was initiated (i.e., mime_data.model).
-        #     # We'll use this stored state in the dropEvent to restore the view of the dropped items.
-        #     state: dict[str, dict] = getattr(self, self.STATE_KEY, {})
-        #     dragged_paths: list[str] = mime_data.paths
-        #     for dragged_path in dragged_paths:
-        #         for path in state:
-        #             if path.startswith(dragged_path) and path not in mime_data.src_view_state:
-        #                 mime_data.src_view_state[path] = state[path]
-        #     # import json
-        #     # print('src_view_state')
-        #     # print(json.dumps(mime_data.src_view_state, indent=2))
+        # print('dragEnterEvent...')
+        data: XarrayDataTreeMimeData = event.mimeData()
+
+        # gather all items being dragged (includes descendents in subtrees)
+        dragged_items: list[XarrayDataTreeItem] = []
+        src_item: XarrayDataTreeItem
+        for src_item in data.src_items:
+            subtree_items = list(src_item.subtree_depth_first())
+            item: XarrayDataTreeItem
+            for item in subtree_items:
+                if item not in dragged_items:
+                    dragged_items.append(item)
+        
+        # keep track of full list of dragged subtrees in mime data
+        data._dragged_items = dragged_items
+
+        # store view state of all dragged items in the items themselves
+        self.storeViewState(dragged_items)
+        for item in dragged_items:
+            item._view_state = self._view_state[item.path]
+
         QTreeView.dragEnterEvent(self, event)
     
     def dropEvent(self, event: QDropEvent) -> None:
-        print('dropEvent...')
+        # print('dropEvent...')
         data: XarrayDataTreeMimeData = event.mimeData()
         if not isinstance(data, XarrayDataTreeMimeData):
             event.ignore()
@@ -716,12 +711,19 @@ class XarrayDataTreeView(QTreeView):
         # handle drop event
         QTreeView.dropEvent(self, event)
 
-        # TODO: update view state of dragged items and all their descendents as specified in the mime data
-        # state = getattr(self, self.STATE_KEY, {})
-        # for path, path_state in mime_data.dst_view_state.items():
-        #     state[path] = path_state
-        # setattr(self, self.STATE_KEY, state)
-        # self.restoreState()
+        # update view state of dragged items and all their descendents as specified in the mime data
+        # only updated wether items are expanded, selection should be handled already in drag-n-drop
+        dragged_items: list[XarrayDataTreeItem] = getattr(data, '_dragged_items', [])
+        item: XarrayDataTreeItem
+        for item in dragged_items:
+            index: QModelIndex = dst_model.indexFromItem(item)
+            if not index.isValid():
+                continue
+            item_view_state = getattr(item, '_view_state', None)
+            if item_view_state is None:
+                continue
+            is_expanded = item_view_state['expanded']
+            self.setExpanded(index, is_expanded)
     
     # def dropMimeData(self, index: QModelIndex, data: QMimeData, action: Qt.DropAction) -> bool:
     #     print('dropMimeData...')
