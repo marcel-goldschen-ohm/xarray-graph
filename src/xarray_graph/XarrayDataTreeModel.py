@@ -2,7 +2,6 @@
 
 TODO:
 - setData:
-    - fix rename variable bug
     - rename index coord -> rename dimension
 - moveRows:
     - properly order moved variables
@@ -117,7 +116,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
     _data_type_order: tuple[XarrayDataTreeType] = (COORD, DATA_VAR, GROUP)
 
     # for dev and debug - show ids of datatree objects in details column
-    _show_debug_ids: bool = True
+    _show_debug_info: bool = True
 
     # optionally use color to denote shared data arrays - mostly for dev and debug, but might be useful otherwise
     _highlight_shared_data: bool = True
@@ -367,7 +366,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 if item.is_group:
                     sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.data.dataset.sizes.items()])
                     rep = f'({sizes_str})'
-                    if self._show_debug_ids:
+                    if self._show_debug_info:
                         rep = f'<{id(item.data)}> ' + rep
                     return rep
                 elif item.is_data_var:
@@ -378,7 +377,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     i = rep.find('(', i)  # skip data_var name
                     j = rep.find('\n', i)
                     rep = rep[i:j] if j > 0 else rep[i:]
-                    if self._show_debug_ids:
+                    if self._show_debug_info:
                         rep = f'<{id(item.data.data)}> ' + rep
                     return rep
                 elif item.is_coord:
@@ -389,8 +388,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     i = rep.find('(', i)  # skip coord name
                     j = rep.find('\n', i)
                     rep = rep[i:j] if j > 0 else rep[i:]
-                    if self._show_debug_ids:
-                        rep = f'<{id(item.data.data)}> ' + rep
+                    if self._show_debug_info:
+                        rep = f'{'* ' if item.is_index_coord else ''}<{id(item.data.data)}> ' + rep
                     return rep
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
@@ -448,30 +447,52 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     parent_group.children = {name if name != old_name else new_name: child for name, child in parent_group.children.items()}
                     self.dataChanged.emit(index, index)
                     return True
-                except:
+                except Exception as err:
+                    from warnings import warn
+                    warn(err)
                     return False
             elif item.is_data_var:
                 # rename data_var
                 try:
                     parent_dataset: xr.Dataset = parent_group.to_dataset()
                     renamed_data_vars = {name if name != old_name else new_name: data_var for name, data_var in parent_dataset.data_vars.items()}
-                    new_parent_dataset: xr.Dataset = parent_dataset.assign(renamed_data_vars).drop_vars(old_name)
+                    new_parent_dataset = xr.Dataset(
+                        data_vars=renamed_data_vars,
+                        coords=parent_dataset.coords,
+                        attrs=parent_dataset.attrs,
+                    )
                     parent_group.dataset = new_parent_dataset
+                    item.data = new_parent_dataset.data_vars[new_name]
                     self.dataChanged.emit(index, index)
                     return True
-                except:
+                except Exception as err:
+                    from warnings import warn
+                    warn(err)
                     return False
             elif item.is_coord:
                 # rename coord
                 try:
                     parent_dataset: xr.Dataset = parent_group.to_dataset()
-                    renamed_coords = {name if name != old_name else new_name: coord for name, coord in parent_dataset.coords.items()}
-                    new_parent_dataset: xr.Dataset = parent_dataset.assign_coords(renamed_coords).drop_vars(old_name)
+                    new_parent_dataset: xr.Dataset = parent_dataset.assign_coords({new_name: parent_dataset.coords[old_name]}).drop_vars([old_name])
+                    new_coord_names = [name if name != old_name else new_name for name in parent_dataset.coords]
+                    renamed_coords = {name: new_parent_dataset.coords[name] for name in new_coord_names}
+                    new_parent_dataset = xr.Dataset(
+                        data_vars=new_parent_dataset.data_vars,
+                        coords=renamed_coords,
+                        attrs=parent_dataset.attrs,
+                    )
                     parent_group.dataset = new_parent_dataset
+                    item.data = new_parent_dataset.coords[new_name]
+                    for item in parent_item.children:
+                        if item.is_data_var:
+                            item.data = new_parent_dataset.data_vars[item.name]
                     self.dataChanged.emit(index, index)
+                    self._updateSubtreeCoordItems(parent_item)
                     # TODO: rename coord and also dimension if coord is an index coord
                     return True
-                except:
+                except Exception as err:
+                    from warnings import warn
+                    warn(err)
                     return False
         return False
 
@@ -746,7 +767,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
 
             # update inherited coord items in descendents of parent item
             if self.isCoordsVisible() and self.isInheritedCoordsVisible():
-                self._updateSubtreeInheritedCoordItems(parent_item)
+                self._updateSubtreeCoordItems(parent_item)
         
         except error:
             # !!! This should never happen
@@ -913,7 +934,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
 
             # for any newly inserted index coords, insert inherited coord items in descendents of parent_item
             if (dtype == COORD) and self.isCoordsVisible() and self.isInheritedCoordsVisible():
-                self._updateSubtreeInheritedCoordItems(parent_item)
+                self._updateSubtreeCoordItems(parent_item)
 
             print()
             print('datatree post insert:')
@@ -1225,12 +1246,12 @@ class XarrayDataTreeModel(QAbstractItemModel):
             # for any moved coords, update inherited coord items in descendents of src and dst parent items
             if self.isCoordsVisible() and self.isInheritedCoordsVisible():
                 if src_parent_in_dst_parent_subtree:
-                    self._updateSubtreeInheritedCoordItems(dst_parent_item)
+                    self._updateSubtreeCoordItems(dst_parent_item)
                 elif dst_parent_in_src_parent_subtree:
-                    self._updateSubtreeInheritedCoordItems(src_parent_item)
+                    self._updateSubtreeCoordItems(src_parent_item)
                 else:
-                    self._updateSubtreeInheritedCoordItems(dst_parent_item)
-                    self._updateSubtreeInheritedCoordItems(src_parent_item)
+                    self._updateSubtreeCoordItems(dst_parent_item)
+                    self._updateSubtreeCoordItems(src_parent_item)
 
             # print()
             # print('datatree post move:')
@@ -1296,7 +1317,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             dst_model._updateSharedDataColors()
             dst_model.endResetModel()
     
-    def _updateSubtreeInheritedCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
+    def _updateSubtreeCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
         item: XarrayDataTreeItem
         for item in parent_item.subtree_depth_first():
             if not item.is_group:
@@ -1305,21 +1326,25 @@ class XarrayDataTreeModel(QAbstractItemModel):
             index: QModelIndex = self.indexFromItem(item)
             group: xr.DataTree = item.data
             inherited_coord_names: set[str] = group._inherited_coords_set()
+            coord_names: list[str] = list(group.coords)
             
-            # remove invalid inherited coord items (no need to touch datatree)
-            # note: invalid inherited coord items may have a data_type of None after tree manipulation
-            inherited_coord_items_to_remove: list[XarrayDataTreeItem] = [child for child in item.children if (child.is_inherited_coord and child.name not in inherited_coord_names) or child.data_type is None]
-            for item in inherited_coord_items_to_remove:
+            # remove invalid coord items (no need to touch datatree)
+            # note: invalid coord items may have a data_type of None after tree manipulation
+            coord_items_to_remove: list[XarrayDataTreeItem] = [child for child in item.children if (child.is_coord and child.name not in group.coords) or (child.data_type is None) or (not self.isInheritedCoordsVisible() and child.is_inherited_coord)]
+            for item in reversed(coord_items_to_remove):
                 self.beginRemoveRows(index, item.row, item.row)
                 item.orphan()
                 self.endRemoveRows()
             
-            # add missing inherited coord items (no need to touch datatree)
-            existing_inherited_coord_names: list[str] = [child.name for child in item.children if child.is_inherited_coord]
-            missing_inherited_coord_names: list[str] = [name for name in inherited_coord_names if name not in existing_inherited_coord_names]
-            if missing_inherited_coord_names:
+            if not self.isCoordsVisible():
+                continue
+            
+            # add missing coord items (no need to touch datatree)
+            existing_coord_names: list[str] = [child.name for child in item.children if child.is_coord]
+            missing_coord_names: list[str] = [name for name in coord_names if (name not in existing_coord_names) and (self.isInheritedCoordsVisible() or name not in inherited_coord_names)]
+            if missing_coord_names:
                 row_names: list[str] = self._visibleRowNames(group)
-                for name in missing_inherited_coord_names:
+                for name in missing_coord_names:
                     inherited_coord_item = XarrayDataTreeItem(group.coords[name])
                     row: int = row_names.index(name)
                     if row == -1:

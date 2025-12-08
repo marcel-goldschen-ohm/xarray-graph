@@ -399,7 +399,7 @@ class XarrayDataTreeView(QTreeView):
         # self.finishedEditingAttrs.emit()
     
     @staticmethod
-    def _get_window_decoration_offset():
+    def _getWindowDecorationOffset():
         window = QWidget()
         window.show()
         frame: QRect = window.frameGeometry()
