@@ -1,13 +1,11 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
-- setData:
-    - rename index coord -> rename dimension
-- moveRows:
-    - properly order moved variables
-    - merge items?
+- setData: rename index coord -> rename dimension
+- moveRows: merge items?
 - transferItems
 - moved inherited coords currently become regular coords but share the same underlying data as before. should we copy the data?
+- should we ask before removing inherited coords in descendents when moving a coord?
 """
 
 from __future__ import annotations
@@ -572,9 +570,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if count <= 0:
             return False
         num_rows: int = self.rowCount(parent_index)
-        if row < 0:
-            # negative indexing
-            row += num_rows
         if (row < 0) or (row + count > num_rows):
             return False
         
@@ -668,9 +663,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
         """ Defaults to inserting new empty auto-named groups. For anything else, see `insertItems` instead.
         """
         num_rows: int = self.rowCount(parent_index)
-        if row < 0:
-            # negative indexing
-            row += num_rows
         if (row < 0) or (row > num_rows):
             return False
         
@@ -961,15 +953,9 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if count <= 0:
             return False
         num_src_rows: int = self.rowCount(src_parent_index)
-        if src_row < 0:
-            # negative indexing
-            src_row += num_src_rows
         if (src_row < 0) or (src_row + count > num_src_rows):
             return False
         num_dst_rows: int = self.rowCount(dst_parent_index)
-        if dst_row < 0:
-            # negative indexing
-            dst_row += num_dst_rows
         if (dst_row < 0) or (dst_row > num_dst_rows):
             return False
         
@@ -1019,8 +1005,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 return False
 
             # final reordered dtype names
-            pre_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[:dst_first] if item.data_type == dtype]
-            post_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[dst_first:] if item.data_type == dtype]
+            pre_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[:dst_first] if item.data_type == dtype and item not in name_item_map.values()]
+            post_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[dst_first:] if item.data_type == dtype and item not in name_item_map.values()]
             final_dtype_names: list[str] = pre_insertion_dtype_names + list(name_item_map) + post_insertion_dtype_names
 
             self.beginMoveRows(src_parent_index, src_first, src_last, dst_parent_index, dst_first)
@@ -1042,10 +1028,22 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 dst_parent_group.children = {name: dst_parent_group.children[name] for name in final_dtype_names}
         
             elif dtype == DATA_VAR:
-                dst_parent_group.dataset = dst_parent_group.to_dataset().assign({name: dst_parent_group.data_vars[name] for name in final_dtype_names})
+                dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset()
+                new_dst_parent_dataset = xr.Dataset(
+                    data_vars={name: dst_parent_dataset.data_vars[name] for name in final_dtype_names},
+                    coords=dst_parent_dataset.coords,
+                    attrs=dst_parent_dataset.attrs,
+                )
+                dst_parent_group.dataset = new_dst_parent_dataset
             
             elif dtype == COORD:
-                dst_parent_group.dataset = dst_parent_group.to_dataset().assign_coords({name: dst_parent_group.coords[name] for name in final_dtype_names})
+                dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset()
+                new_dst_parent_dataset = xr.Dataset(
+                    data_vars=dst_parent_dataset.data_vars,
+                    coords={name: dst_parent_dataset.coords[name] for name in final_dtype_names},
+                    attrs=dst_parent_dataset.attrs,
+                )
+                dst_parent_group.dataset = new_dst_parent_dataset
             
             # update itemtree
             item: XarrayDataTreeItem
@@ -1137,8 +1135,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
             dst_first: int = self._insertionRow(dst_parent_item, dtype, dst_row)
 
             # final ordered dtype names after insertion
-            pre_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[:dst_first] if item.data_type == dtype]
-            post_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[dst_first:] if item.data_type == dtype]
+            pre_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[:dst_first] if item.data_type == dtype and item not in name_item_map.values()]
+            post_insertion_dtype_names: list[str] = [item.name for item in dst_parent_item.children[dst_first:] if item.data_type == dtype and item not in name_item_map.values()]
             final_dtype_names: list[str] = pre_insertion_dtype_names + list(name_item_map) + post_insertion_dtype_names
 
             # move item block
