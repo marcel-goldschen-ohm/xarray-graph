@@ -1,167 +1,383 @@
-""" Tree viewer with a XarrayDataTreeView and side widgets for interacting with the tree including an IPython console.
+""" PyQt widget for visualizing and manipulating Xarray DataTrees.
 
 TODO:
-- store/restore attrs view states
+- check info view for multiple selected items on Windows computer
 """
 
 from __future__ import annotations
+import os
+# from copy import copy, deepcopy
+from pathlib import Path
+# import numpy as np
 import xarray as xr
-import textwrap
+import zarr
+
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from xarray_graph import XarrayDataTreeModel, XarrayDataTreeView, IPythonConsole, XarrayDataTreeDebugView
-from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
+import qtawesome as qta
+from xarray_graph import xarray_utils, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, IPythonConsole
 
 
-class XarrayDataTreeViewer(QSplitter):
+class XarrayDataTreeViewer(QMainWindow):
+    """ PyQt widget for visualizing and manipulating Xarray DataTrees.
+    """
 
-    def __init__(self, datatree: xr.DataTree = None, orientation: Qt.Orientation = Qt.Orientation.Horizontal, parent: QObject = None, debug: bool = False) -> None:
-        QSplitter.__init__(self, orientation, parent)
+    _filetype_extensions_map: dict[str, list[str]] = {
+        'Zarr Directory': [''],
+        'Zarr Zip': ['.zip'],
+        'NetCDF': ['.nc'],
+        'HDF5': ['.h5', '.hdf5'],
+    }
 
-        if datatree is None:
-            datatree = xr.DataTree()
+    _default_settings = {
+        'icon size': 32,
+        'icon opacity': 0.5,
+    }
 
+    def __init__(self, *args, **kwargs):
+        orientation: Qt.Orientation = kwargs.pop('orientation', Qt.Orientation.Horizontal)
+        super().__init__(*args, **kwargs)
+
+        # tree view
         self._datatree_view = XarrayDataTreeView()
-        model = XarrayDataTreeModel()
-        model.setDatatree(datatree)
-        model.setDetailsColumnVisible(False)
-        self._datatree_view.setModel(model)
+        self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
 
+        # info for selected items
         self._info_view = QTextEdit()
         self._info_view.setReadOnly(True)
 
-        self._attrs_view = KeyValueTreeView()
-        self._attrs_view.setAlternatingRowColors(True)
-        # self._attrs_view.setModel(KeyValueTreeModel(None))
+        # attrs for selected items
+        # TODO
 
+        # console
         self._console = IPythonConsole()
-        self._console.add_variable('dt', datatree)
-        self._console.add_variable('ui', self) # for debugging
-
-        if debug:
-            self._debug_view = XarrayDataTreeDebugView(datatree=datatree)
-            model.dataChanged.connect(lambda index0, index1: self._debug_view.updateView())
-            self.view().wasRefreshed.connect(self._debug_view.updateView)
-
-            self._update_debug_view_button = QPushButton("Update Debug View")
-            self._update_debug_view_button.clicked.connect(self._debug_view.updateView)
-
-            debug_widget = QWidget()
-            debug_vbox = QVBoxLayout(debug_widget)
-            debug_vbox.setContentsMargins(0, 0, 0, 0)
-            debug_vbox.setSpacing(5)
-            debug_vbox.addWidget(self._update_debug_view_button)
-            debug_vbox.addWidget(self._debug_view)
-
-        self._tabs = QTabWidget()
-        self._tabs.addTab(self._info_view, "Info")
-        self._tabs.addTab(self._attrs_view, "Attrs")
-        self._tabs.addTab(self._console, "Console")
-        if debug:
-            self._tabs.addTab(debug_widget, "Debug")
-            self._tabs.setCurrentWidget(debug_widget)
-
-        self.addWidget(self._datatree_view)
-        self.addWidget(self._tabs)
-
-        self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
-        self._datatree_view.finishedEditingAttrs.connect(self.onSelectionChanged)
-
-        msg = """
+        self._console.execute('import numpy as np', hidden=True)
+        self._console.execute('import xarray as xr', hidden=True)
+        self._console.add_variable('ui', self) # mostly for debugging
+        self._console.executed.connect(self._datatree_view.refresh)
+        self._console._one_time_message_on_show = """
         ----------------------------------------------------
-        Variables: dt -> The Xarray DataTree
-        Modules loaded at startup: numpy as np, xarray as xr
+        Variables:
+          dt -> The Xarray DataTree
+          ui -> This widget
+        Modules loaded at startup:
+          numpy as np
+          xarray as xr
         ----------------------------------------------------
         """
-        msg = textwrap.dedent(msg).strip()
-        # need to delay a bit to let the console show
-        QTimer.singleShot(100, lambda: self._console.print_message(msg))
-    
-    def view(self) -> XarrayDataTreeView:
-        return self._datatree_view
+
+        # actions
+        self._init_actions()
+
+        # menus
+        self._init_menubar()
+
+        # layout
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._info_view, "Info")
+        self._tabs.addTab(self._console, "Console")
+
+        self._splitter = QSplitter(orientation)
+        self._splitter.addWidget(self._datatree_view)
+        self._splitter.addWidget(self._tabs)
+
+        self.setCentralWidget(self._splitter)
     
     def datatree(self) -> xr.DataTree:
-        return self.view().model().datatree()
+        return self._datatree_view.datatree()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
-        self.view().model().setDatatree(datatree)
+        self._datatree_view.setDatatree(datatree)
         self._console.add_variable('dt', datatree)
-        if hasattr(self, '_debug_view'):
-            self._debug_view.setDatatree(datatree)
+    
+    def sizeHint(self) -> QSize:
+        return QSize(1000, 800)
+
+    def refresh(self) -> None:
+        self._datatree_view.refresh()
+    
+    def about(self) -> None:
+        """ Popup about message dialog.
+        """
+        import textwrap
+
+        text = f"""
+        {self.__class__.__name__}
+        
+        PyQt widget for visualizing and manipulating Xarray DataTrees.
+
+        Author: Marcel Goldschen-Ohm
+
+        Repository: https://github.com/marcel-goldschen-ohm/xarray-graph
+        PyPI: https://pypi.org/project/xarray-graph
+        """
+        text = textwrap.dedent(text).strip()
+        
+        QMessageBox.about(self, f'About {self.__class__.__name__}', text)
+
+    def settings(self) -> None:
+        print('settings') # TODO
+    
+    def load(self, filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None) -> None:
+        """ Load datatree from file.
+        """
+
+        if filepath is None:
+            if filetype == 'Zarr Directory':
+                filepath = QFileDialog.getExistingDirectory(self, 'Open Zarr Directory')
+            else:
+                filepath, _ = QFileDialog.getOpenFileNames(self, 'Open File(s)')
+            if not filepath:
+                return
+            if isinstance(filepath, list) and len(filepath) == 1:
+                filepath = filepath[0]
+        
+        # handle sequence of multiple filepaths
+        if isinstance(filepath, list):
+            for path in filepath:
+                self.load(path, filetype)
+            return
+        
+        # ensure Path filepath object
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        
+        if not filepath.exists():
+            QMessageBox.warning(self, 'File Not Found', f'File not found: {filepath}')
+            return
+        
+        # get filetype
+        if filepath.is_dir():
+            filetype = 'Zarr Directory'
+        elif filetype is None:
+            # infer filetype from file extension
+            extension_filetype_map = {
+                ext: filetype
+                for filetype, extensions in self._filetype_extensions_map.items()
+                for ext in extensions
+            }
+            filetype = extension_filetype_map.get(filepath.suffix, None)
+        
+        # read datatree from filesystem
+        datatree: xr.DataTree = None
+        if filetype == 'Zarr Directory':
+            with zarr.storage.LocalStore(filepath, mode='r') as store:
+                datatree = xr.open_datatree(store, engine='zarr')
+        elif filetype == 'Zarr Zip':
+            with zarr.storage.ZipStore(filepath, mode='r') as store:
+                datatree = xr.open_datatree(store, engine='zarr')
+        elif filetype == 'NetCDF':
+            datatree: xr.DataTree = xr.open_datatree(filepath)#, engine='netcdf4')
+        elif filetype == 'HDF5':
+            datatree: xr.DataTree = xr.open_datatree(filepath)#, engine='h5netcdf')
+        else:
+            try:
+                # see if xarray can open the file
+                datatree = xr.open_datatree(filepath)
+            except:
+                QMessageBox.warning(self, 'Invalid File Type', f'"{filepath}" format is not supported.')
+                return
+        
+        if datatree is None:
+            QMessageBox.warning(self, 'Invalid File', f'Unable to open file: {filepath}')
+            return
+
+        # use filename for root node
+        datatree.name = filepath.stem
+    
+    def save(self) -> None:
+        """ Save data tree to current file. """
+
+        filepath = getattr(self, '_filepath', None)
+        self.saveAs(filepath)
+    
+    def saveAs(self, filepath: str | os.PathLike = None, filetype: str = None) -> None:
+        """ Save data tree to file. """
+
+        if filepath is None:
+            filepath, _ = QFileDialog.getSaveFileName(self, 'Save File')
+            if not filepath:
+                return
+        
+        # ensure Path filepath object
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        
+        # get filetype
+        if filepath.is_dir():
+            filetype = 'Zarr Directory'
+        elif filetype is None:
+            if filepath.suffix == '':
+                # default
+                filetype = 'Zarr Zip'
+            else:
+                # get filetype from file extension
+                extension_filetype_map = {
+                    ext: filetype
+                    for filetype, extensions in self._filetype_extensions_map.items()
+                    for ext in extensions
+                }
+                filetype = extension_filetype_map.get(filepath.suffix, None)
+        
+        # ensure proper file extension for new files
+        if not filepath.exists() and (filetype != 'Zarr Directory'):
+            ext = self._filetype_extensions_map.get(filetype, [None])[0]
+            if ext is not None:
+                filepath = filepath.with_suffix(ext)
+
+        # prepare datatree for storage
+        datatree: xr.DataTree = self.datatree()
+
+        # write datatree to filesystem
+        if filetype == 'Zarr Directory':
+            with zarr.storage.LocalStore(filepath, mode='w') as store:
+                datatree.to_zarr(store)
+        elif filetype == 'Zarr Zip':
+            if filepath.suffix != '.zip':
+                filepath = filepath.with_suffix('.zip')
+            with zarr.storage.ZipStore(filepath, mode='w') as store:
+                datatree.to_zarr(store)
+        elif filetype == 'NetCDF':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        elif filetype == 'HDF5':
+            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
+            return
+        else:
+            QMessageBox.warning(self, 'Invalid File Type', f'Saving to {filetype} format is not supported.')
+            return
+        
+        self._filepath = filepath
     
     def onSelectionChanged(self) -> None:
-        dt: xr.DataTree = self.datatree()
-        selected_paths: list[str] = self.view().selectedPaths()
-        if len(selected_paths) == 0:
-            # if nothing is selected, show info for the tree root node
-            selected_paths = ['/']
-        ordered_paths: list[str] = []
-        node: xr.DataTree
-        for node in dt.subtree:
-            paths = [node.path] \
-                + [f'{node.path}/{name}' for name in node.data_vars] \
-                + [f'{node.path}/{name}' for name in node.coords]
-            for path in paths:
-                if path in selected_paths:
-                    ordered_paths.append(path)
+        self._update_info_view()
+    
+    def _update_info_view(self) -> None:
+        selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
+        if not selected_items:
+            try:
+                selected_items = [self._datatree_view.model().root()]
+            except:
+                self._info_view.clear()
+                return
+        
+        self._info_view.clear()
+        sep = False
+        item: XarrayDataTreeItem
+        for item in self._datatree_view.model().root().subtree_depth_first():
+            if item in selected_items:
+                data: xr.DataTree | xr.DataArray = item.data
+                if isinstance(data, xr.DataTree):
+                    data = data.dataset
+                if sep:
+                    # TODO: check if this works on Windows (see https://stackoverflow.com/questions/76710833/how-do-i-add-a-full-width-horizontal-line-in-qtextedit)
+                    self._info_view.insertHtml('<br><hr><br>')
+                else:
+                    sep = True
+                self._info_view.insertPlainText(f'{item.path}:\n{data}')
 
-        # update info for selection
-        info_text = ''
-        for path in ordered_paths:
-            obj = dt[path]
-            if isinstance(obj, xr.DataTree):
-                obj = obj.dataset
-            if info_text:
-                dashed_line: str = '-' * 50
-                info_text += f'\n{dashed_line}\n\n'
-            info_text += f'{path}:\n{obj}\n'
-        self._info_view.setPlainText(info_text)
+                # tc = self.result_text_box.textCursor()
+                # # move the cursor to the end of the document
+                # tc.movePosition(tc.End)
+                # # insert an arbitrary QTextBlock that will inherit the previous format
+                # tc.insertBlock()
+                # # get the block format
+                # fmt = tc.blockFormat()
+                # # remove the horizontal ruler property from the block
+                # fmt.clearProperty(fmt.BlockTrailingHorizontalRulerWidth)
+                # # set (not merge!) the block format
+                # tc.setBlockFormat(fmt)
+                # # eventually, apply the cursor so that editing actually starts at the end
+                # self.result_text_box.setTextCursor(tc)
+    
+    def _init_actions(self) -> None:
 
-        # only show attrs key[value] tree view if a single item is selected
-        if len(selected_paths) == 1:
-            # show attrs for selected item
-            obj: xr.DataTree | xr.DataArray = dt[path]
-            if self._attrs_view.model() is None:
-                self._attrs_view.setModel(KeyValueTreeModel(obj.attrs))
-            else:
-                self._attrs_view.model().setTreeData(obj.attrs)
-            self._attrs_view.resizeAllColumnsToContents()
-        else:
-            # clear attrs
-            self._attrs_view.setModel(None)
+        self._refresh_action = QAction(
+            parent=self,
+            icon=qta.icon('mdi.refresh', options=[{'opacity': 1.0}]),
+            iconVisibleInMenu=False,
+            text='Refresh',
+            toolTip='Refresh UI',
+            shortcut = QKeySequence('Ctrl+R'),
+            triggered=lambda checked: self.refresh())
+
+        self._about_action = QAction(
+            parent=self,
+            iconVisibleInMenu=False,
+            text=f'About {self.__class__.__name__}',
+            toolTip=f'About {self.__class__.__name__}',
+            triggered=lambda checked: self.about())
+
+        self._settings_action = QAction(
+            parent=self,
+            icon=qta.icon('msc.gear', options=[{'opacity': 1.0}]),
+            iconVisibleInMenu=False,
+            text='Settings',
+            toolTip='Settings',
+            triggered=lambda checked: self.settings())
+
+        self._toggle_console_action = QAction(
+            parent=self,
+            icon=qta.icon('mdi.console', options=[{'opacity': 1.0}]),
+            iconVisibleInMenu=False,
+            text='Console',
+            toolTip='Console',
+            checkable=True,
+            checked=True,
+            shortcut = QKeySequence('`'),
+            triggered=lambda checked: self._console.setVisible(checked))
+    
+    def _init_menubar(self) -> None:
+        """ Main menubar.
+        """
+        menubar = self.menuBar()
+
+        self._file_menu = menubar.addMenu('File')
+        # self._file_menu.addAction('New Window', QKeySequence.StandardKey.New, self.newWindow)
+        # self._file_menu.addSeparator()
+        self._file_menu.addAction(qta.icon('fa5.folder-open'), 'Open', QKeySequence.StandardKey.Open, self.load)
+        self._import_menu = self._file_menu.addMenu('Import')
+        self._file_menu.addSeparator()
+        self._file_menu.addAction(qta.icon('fa5.save'), 'Save', QKeySequence.StandardKey.Save, self.save)
+        self._file_menu.addAction(qta.icon('fa5.save'), 'Save As', QKeySequence.StandardKey.SaveAs, self.saveAs)
+        self._export_menu = self._file_menu.addMenu('Export')
+        self._file_menu.addSeparator()
+        self._file_menu.addAction('Close Window', QKeySequence.StandardKey.Close, self.close)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, QApplication.instance().quit)
+
+        self._import_menu.addAction('Zarr Zip', lambda: self.load(filetype='Zarr Zip'))
+        self._import_menu.addAction('Zarr Directory', lambda: self.load(filetype='Zarr Directory'))
+        self._import_menu.addAction('NetCDF', lambda: self.load(filetype='NetCDF'))
+        self._import_menu.addAction('HDF5', lambda: self.load(filetype='HDF5'))
+
+        self._export_menu.addAction('Zarr Zip', lambda: self.saveAs(filetype='Zarr Zip'))
+        self._export_menu.addAction('Zarr Directory', lambda: self.saveAs(filetype='Zarr Directory'))
+        self._export_menu.addAction('NetCDF', lambda: self.saveAs(filetype='NetCDF'))
+        self._export_menu.addAction('HDF5', lambda: self.saveAs(filetype='HDF5'))
+
+        self._view_menu = menubar.addMenu('View')
+        self._view_menu.addAction(self._toggle_console_action)
+        self._view_menu.addSeparator()
+        self._view_menu.addAction(self._refresh_action)
+        self._view_menu.addSeparator()
+        self._view_menu.addAction(self._about_action)
+        self._view_menu.addSeparator()
+        self._view_menu.addAction(self._settings_action)
+        self._view_menu.addSeparator()
 
 
 def test_live():
-    dt = xr.DataTree()
-    # dt['child1'] = xr.tutorial.load_dataset('air_temperature')
-    # dt['child2'] = xr.DataTree()
-    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
-    # dt['child3/grandchild1/greatgrandchild2'] = xr.tutorial.load_dataset('tiny')
-    # dt['child3/grandchild2'] = xr.DataTree()
-    dt['a'] = xr.tutorial.load_dataset('air_temperature')
-    dt['a/b'] = xr.tutorial.load_dataset('air_temperature')
-    dt['a/b/c'] = xr.tutorial.load_dataset('air_temperature')
-    print(dt)
-
-    from xarray_graph import xarray_utils
-    # xarray_utils.rename_dims_in_branch(dt['a/b'], {'time': 't'})
-    # node = dt['a']
-    # node.dataset = node.to_dataset().rename_dims({'time': 't'})
-    # for node in node.subtree:
-    #     for name, data_var in node.data_vars.items():
-    #         if 'time' in data_var.dims:
-    #             new_data_var = data_var.swap_dims({'time': 't'})
-    #             node.dataset = node.to_dataset().assign({name: new_data_var})
-
     app = QApplication()
-    viewer = XarrayDataTreeViewer(dt, Qt.Orientation.Horizontal, debug=True)
-    viewer.resize(1200, 800)
-    viewer.view().model().setCoordsVisible(True)
-    viewer.view().expandAll()
-    viewer.show()
+
+    window = XarrayDataTreeViewer()
+    window.show()
+    dt = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
+    dt['eggs'] = dt['EEG'] * 10
+    window.setDatatree(dt)
+
     app.exec()
-    print(dt)
 
 
 if __name__ == '__main__':
