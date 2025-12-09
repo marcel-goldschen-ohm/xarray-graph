@@ -141,10 +141,10 @@ class XarrayDataTreeView(QTreeView):
         return self.model().datatree()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
-        self.storeViewState()
         if self.model() is None:
             self.setModel(XarrayDataTreeModel(datatree=datatree), updateViewOptionsFromModel=False)
         else:
+            self.storeViewState()
             self.model().setDatatree(datatree)
         self.restoreViewState()
     

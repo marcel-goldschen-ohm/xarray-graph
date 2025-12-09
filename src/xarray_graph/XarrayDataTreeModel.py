@@ -6,6 +6,9 @@ TODO:
 - transferItems
 - moved inherited coords currently become regular coords but share the same underlying data as before. should we copy the data?
 - should we ask before removing inherited coords in descendents when moving a coord?
+- enforce coord order? note: this currently happens when refreshing the tree, but not otherwise.
+- test all tree manipulations
+- test all conflict handling
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ GROUP, DATA_VAR, COORD = list(XarrayDataTreeType)
 
 
 class XarrayDataTreeItem(AbstractTreeItem):
-    """ Tree item wrapper for groups and variables in XarrayDataTreeModel.
+    """ Tree item wrapper for xarray groups and variables in XarrayDataTreeModel.
 
     This isn't strictly necessary, but it speeds object access and thus tree UI performance as compared to using paths to access the underlying datatree objects, and it also provides a consistent interface to all tree models using AbstractTreeItem to interface with their data.
     """
@@ -158,6 +161,9 @@ class XarrayDataTreeModel(QAbstractItemModel):
             self._updateSharedDataColors()
         self.endResetModel()
 
+    def root(self) -> XarrayDataTreeItem:
+        return self._root_item
+    
     def datatree(self) -> xr.DataTree:
         """ Get the model's current datatree.
         """
