@@ -2,6 +2,7 @@
 """
 
 # from __future__ import annotations
+from qtpy.QtGui import QShowEvent
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.inprocess import QtInProcessKernelManager
 
@@ -40,6 +41,18 @@ class IPythonConsole(RichJupyterWidget):
             import textwrap
             message = textwrap.dedent(message).strip()
         self._append_plain_text(message, before_prompt=True)
+
+    def showEvent(self, event: QShowEvent):
+        """ This method is called when the widget is shown.
+        """
+        super().showEvent(event) # Call the base class implementation
+
+        # show custom message if it exists
+        msg: str = getattr(self, '_one_time_message_on_show', None)
+        if msg:
+            self.print_message(msg)
+            # so we don't keep displaying the message
+            delattr(self, '_one_time_message_on_show')
     
     
 def test_live():
