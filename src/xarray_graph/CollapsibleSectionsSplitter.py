@@ -3,6 +3,7 @@
 TODO:
 - bug: can't recover first section after focus on another section when first header not shown
 - unfocus?
+- default handle width?
 """
 
 from __future__ import annotations
