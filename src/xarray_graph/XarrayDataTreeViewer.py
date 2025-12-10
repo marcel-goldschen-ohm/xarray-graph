@@ -1,7 +1,11 @@
 """ PyQt widget for visualizing and manipulating Xarray DataTrees.
 
 TODO:
+- file I/O
+    - multi-file loading/saving (maybe all files loaded as children of root and named after filename?)
 - check info view for multiple selected items on Windows computer
+- attrs view for selected items
+- optional debug symbols and highlighting in tree view
 """
 
 from __future__ import annotations
