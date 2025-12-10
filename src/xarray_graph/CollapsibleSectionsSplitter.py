@@ -78,6 +78,18 @@ class CollapsibleSectionsSplitter(QSplitter):
                 current_widget.setParent(None)
                 self.insertWidget(index, self._spacers[index])
     
+    def toggleExpanded(self, index: int):
+        index += 1  # account for initial spacer
+        current_widget: QWidget = self.widget(index)
+        if current_widget is self._widgets[index]:
+            # toggle off by replacing widget with spacer
+            current_widget.setParent(None)
+            self.insertWidget(index, self._spacers[index])
+        else:
+            # toggle on by replacing spacer with widget
+            current_widget.setParent(None)
+            self.insertWidget(index, self._widgets[index])
+    
     def focusSection(self, index: int):
         index += 1  # account for initial spacer
         is_focused: bool = getattr(self, '_focused_index', None) is not None
@@ -167,15 +179,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     # treat as click => toggle section
                     splitter: CollapsibleSectionsSplitter = self.splitter()
                     index: int = splitter.indexOf(self)
-                    current_widget: QWidget = splitter.widget(index)
-                    if current_widget is splitter._widgets[index]:
-                        # toggle off by replacing widget with spacer
-                        current_widget.setParent(None)
-                        splitter.insertWidget(index, splitter._spacers[index])
-                    else:
-                        # toggle on by replacing spacer with widget
-                        current_widget.setParent(None)
-                        splitter.insertWidget(index, splitter._widgets[index])
+                    splitter.toggleExpanded(index - 1)  # account for initial spacer
     
     def paintEvent(self, event: QPaintEvent):
         splitter: CollapsibleSectionsSplitter = self.splitter()
