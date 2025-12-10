@@ -61,6 +61,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._outer_splitter = CollapsibleSectionsSplitter()
         self._outer_splitter.addSection('DataTree', self._inner_splitter)
         self._outer_splitter.addSection('Console', self._console)
+        self._outer_splitter.setFirstSectionHeaderVisible(False)
 
         self.setCentralWidget(self._outer_splitter)
 
