@@ -42,17 +42,17 @@ class IPythonConsole(RichJupyterWidget):
             message = textwrap.dedent(message).strip()
         self._append_plain_text(message, before_prompt=True)
 
-    def showEvent(self, event: QShowEvent):
-        """ This method is called when the widget is shown.
-        """
-        super().showEvent(event) # Call the base class implementation
+    # def showEvent(self, event: QShowEvent):
+    #     """ This method is called when the widget is shown.
+    #     """
+    #     super().showEvent(event) # Call the base class implementation
 
-        # show custom message if it exists
-        msg: str = getattr(self, '_one_time_message_on_show', None)
-        if msg:
-            self.print_message(msg)
-            # so we don't keep displaying the message
-            delattr(self, '_one_time_message_on_show')
+    #     # show custom message if it exists
+    #     msg: str = getattr(self, '_one_time_message_on_show', None)
+    #     if msg:
+    #         self.print_message(msg)
+    #         # so we don't keep displaying the message
+    #         delattr(self, '_one_time_message_on_show')
     
     
 def test_live():

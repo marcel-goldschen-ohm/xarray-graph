@@ -1,4 +1,8 @@
 """ PyQt widget emulating a list of collapsible views like in VSCode sidebar (e.g., explorer, outline).
+
+TODO:
+- optionally remove first handle (remove first spacer)
+- query and set expanded/collapsed state of sections
 """
 
 from __future__ import annotations

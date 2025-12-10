@@ -1,6 +1,8 @@
 
 from xarray_graph import xarray_utils
 
+from xarray_graph.CollapsibleSectionsSplitter import CollapsibleSectionsSplitter
+
 from xarray_graph.IPythonConsole import IPythonConsole
 
 from xarray_graph.AbstractTreeItem import AbstractTreeItem

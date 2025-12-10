@@ -16,7 +16,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, IPythonConsole
+from xarray_graph import xarray_utils, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, IPythonConsole, CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeViewer(QMainWindow):
@@ -36,53 +36,36 @@ class XarrayDataTreeViewer(QMainWindow):
     }
 
     def __init__(self, *args, **kwargs):
-        orientation: Qt.Orientation = kwargs.pop('orientation', Qt.Orientation.Horizontal)
         super().__init__(*args, **kwargs)
 
-        # tree view
-        self._datatree_view = XarrayDataTreeView()
-        self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
-
-        # info for selected items
-        self._info_view = QTextEdit()
-        self._info_view.setReadOnly(True)
-
-        # attrs for selected items
-        # TODO
-
-        # console
-        self._console = IPythonConsole()
-        self._console.execute('import numpy as np', hidden=True)
-        self._console.execute('import xarray as xr', hidden=True)
-        self._console.add_variable('ui', self) # mostly for debugging
-        self._console.executed.connect(self._datatree_view.refresh)
-        self._console._one_time_message_on_show = """
-        ----------------------------------------------------
-        Variables:
-          dt -> The Xarray DataTree
-          ui -> This widget
-        Modules loaded at startup:
-          numpy as np
-          xarray as xr
-        ----------------------------------------------------
-        """
-
-        # actions
+        self._init_componenets()
         self._init_actions()
-
-        # menus
         self._init_menubar()
 
         # layout
-        self._tabs = QTabWidget()
-        self._tabs.addTab(self._info_view, "Info")
-        self._tabs.addTab(self._console, "Console")
+        self._selection_splitter = CollapsibleSectionsSplitter()
+        self._selection_splitter.addSection('Info', self._info_view)
+        self._selection_splitter.addSection('Attrs', self._attrs_view)
 
-        self._splitter = QSplitter(orientation)
-        self._splitter.addWidget(self._datatree_view)
-        self._splitter.addWidget(self._tabs)
+        self._selection_splitter_wrapper = QWidget()
+        vbox = QVBoxLayout(self._selection_splitter_wrapper)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+        vbox.addWidget(self._selection_splitter, stretch=10000)
+        vbox.addStretch(1)
+    
+        self._inner_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._inner_splitter.addWidget(self._datatree_view)
+        self._inner_splitter.addWidget(self._selection_splitter_wrapper)
 
-        self.setCentralWidget(self._splitter)
+        self._outer_splitter = CollapsibleSectionsSplitter()
+        self._outer_splitter.addSection('DataTree', self._inner_splitter)
+        self._outer_splitter.addSection('Console', self._console)
+
+        self.setCentralWidget(self._outer_splitter)
+
+        msg = self._console._one_time_message_on_show
+        QTimer.singleShot(300, lambda msg=msg: self._console.print_message(msg))
     
     def datatree(self) -> xr.DataTree:
         return self._datatree_view.datatree()
@@ -290,6 +273,38 @@ class XarrayDataTreeViewer(QMainWindow):
                 # tc.setBlockFormat(fmt)
                 # # eventually, apply the cursor so that editing actually starts at the end
                 # self.result_text_box.setTextCursor(tc)
+    
+    def _init_componenets(self) -> None:
+        """ Initialize main components.
+        """
+
+        # tree view
+        self._datatree_view = XarrayDataTreeView()
+        self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
+
+        # info for selected items
+        self._info_view = QTextEdit()
+        self._info_view.setReadOnly(True)
+
+        # attrs for selected items
+        self._attrs_view = QTreeView() # TODO
+
+        # console
+        self._console = IPythonConsole()
+        self._console.execute('import numpy as np', hidden=True)
+        self._console.execute('import xarray as xr', hidden=True)
+        self._console.add_variable('ui', self) # mostly for debugging
+        self._console.executed.connect(self._datatree_view.refresh)
+        self._console._one_time_message_on_show = """
+        ----------------------------------------------------
+        Variables:
+          dt -> The Xarray DataTree
+          ui -> This app widget
+        Modules loaded at startup:
+          numpy as np
+          xarray as xr
+        ----------------------------------------------------
+        """
     
     def _init_actions(self) -> None:
 
