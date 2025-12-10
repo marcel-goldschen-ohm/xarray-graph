@@ -1,9 +1,4 @@
 """ PyQt widget emulating a list of collapsible views like in VSCode sidebar (e.g., explorer, outline).
-
-TODO:
-- bug: can't recover first section after focus on another section when first header not shown
-- unfocus?
-- default handle width?
 """
 
 from __future__ import annotations
@@ -17,7 +12,13 @@ import qtawesome as qta
 class CollapsibleSectionsSplitter(QSplitter):
 
     def __init__(self):
-        super().__init__(orientation=Qt.Orientation.Vertical, handleWidth=14)
+        super().__init__(orientation=Qt.Orientation.Vertical)
+
+        # set handle width to height of QToolButton with text beside icon
+        button = QToolButton(toolButtonStyle=Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        opt = QStyleOptionToolButton()
+        button.initStyleOption(opt)
+        self.setHandleWidth(opt.fontMetrics.height())
 
         self._begin_spacer = QWidget()
         self._begin_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -31,7 +32,7 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._collapsed_icon = qta.icon('msc.chevron-right')
         self._expanded_icon = qta.icon('msc.chevron-down')
         self._focus_icon = qta.icon('ri.fullscreen-line')
-        # self._unfocus_icon = qta.icon('ri.fullscreen-exit-line')
+        self._unfocus_icon = qta.icon('ri.fullscreen-exit-line')
     
     def addSection(self, title: str, widget: QWidget):
         self.insertSection(self.count() - 1, title, widget)
@@ -79,8 +80,26 @@ class CollapsibleSectionsSplitter(QSplitter):
     
     def focusSection(self, index: int):
         index += 1  # account for initial spacer
-        for i in range(1, self.count()):
-            self.setExpanded(i - 1, i == index)
+        is_focused: bool = getattr(self, '_focused_index', None) is not None
+        if is_focused:
+            self._expanded_state[index] = True
+        else:
+            self._expanded_state = [None] # for initial spacer
+        for i in range(self.count() - 1):
+            if not is_focused:
+                self._expanded_state.append(self.isExpanded(i))
+            self.setExpanded(i, i + 1 == index)
+        self._focused_index: int = index
+        self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
+    
+    def unfocusSection(self):
+        focused_index: int =  getattr(self, '_focused_index', None)
+        if focused_index is None:
+            return
+        for i in range(self.count() - 1):
+            self.setExpanded(i, self._expanded_state[i + 1])
+        self._focused_index = None
+        self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
     
     def setFirstSectionHeaderVisible(self, visible: bool):
         self._begin_spacer.setVisible(visible)
@@ -105,7 +124,16 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                 # toggle fullscreen of section
                 splitter: CollapsibleSectionsSplitter = self.splitter()
                 index: int = splitter.indexOf(self)
-                splitter.focusSection(index - 1)  # account for initial spacer
+                is_focused: bool = getattr(splitter, '_focused_index', None) == index
+                if is_focused:
+                    # unfocus: expand all sections
+                    splitter.unfocusSection()
+                else:
+                    # focus this section
+                    splitter.focusSection(index - 1)  # account for initial spacer
+                # clear last press info to avoid toggling expand/collapse as well
+                self._last_press_position = None
+                self._last_press_time_sec = None
                 return
             # store press position and time
             self._last_press_position: QPoint = event.pos()
@@ -128,6 +156,9 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         super().mouseReleaseEvent(event)
         if event.button() == Qt.MouseButton.LeftButton:
             # if release is close to press in both space and time, treat as click
+            has_last_press_time: bool = hasattr(self, '_last_press_time_sec') and self._last_press_time_sec is not None
+            if not has_last_press_time:
+                return
             delta_time_sec: float = time.time() - self._last_press_time_sec
             if delta_time_sec <= self._click_time_sec:
                 delta_position: QPoint = event.pos() - self._last_press_position
@@ -173,7 +204,11 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         painter.drawPixmap(rect.x(), rect.y(), pixmap)
 
         # focus section icon
-        icon: QIcon = splitter._focus_icon
+        is_focused: bool = index == getattr(splitter, '_focused_index', None)
+        if is_focused:
+            icon: QIcon = splitter._unfocus_icon
+        else:
+            icon: QIcon = splitter._focus_icon
         icon_size = QSize(rect.height(), rect.height())
         pixmap: QPixmap = icon.pixmap(icon_size, QIcon.Normal, QIcon.On)
         painter.drawPixmap(rect.right() - rect.height(), rect.y(), pixmap)
