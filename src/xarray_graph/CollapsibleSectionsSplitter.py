@@ -1,4 +1,7 @@
 """ PyQt widget emulating a list of collapsible views like in VSCode sidebar (e.g., explorer, outline).
+
+TODO:
+- unfocus?
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._collapsed_icon = qta.icon('msc.chevron-right')
         self._expanded_icon = qta.icon('msc.chevron-down')
         self._focus_icon = qta.icon('ri.fullscreen-line')
+        # self._unfocus_icon = qta.icon('ri.fullscreen-exit-line')
     
     def addSection(self, title: str, widget: QWidget):
         self.insertSection(self.count() - 1, title, widget)
