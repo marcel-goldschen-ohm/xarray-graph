@@ -342,7 +342,7 @@ class XarrayDataTreeViewer(QMainWindow):
             checkable=True,
             checked=True,
             shortcut = QKeySequence('`'),
-            triggered=lambda checked: self._console.setVisible(checked))
+            triggered=lambda checked: self._outer_splitter.setExpanded(1, checked))
     
     def _init_menubar(self) -> None:
         """ Main menubar.
