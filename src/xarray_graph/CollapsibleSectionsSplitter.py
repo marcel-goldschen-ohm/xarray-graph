@@ -1,6 +1,7 @@
 """ PyQt widget emulating a list of collapsible views like in VSCode sidebar (e.g., explorer, outline).
 
 TODO:
+- bug: can't recover first section after focus on another section when first header not shown
 - unfocus?
 """
 
