@@ -1,8 +1,4 @@
 """ PyQt widget emulating a list of collapsible views like in VSCode sidebar (e.g., explorer, outline).
-
-TODO:
-- optionally remove first handle (remove first spacer)
-- query and set expanded/collapsed state of sections
 """
 
 from __future__ import annotations
@@ -23,15 +19,19 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._begin_spacer.setFixedHeight(0)
         self.addWidget(self._begin_spacer)
 
-        self._widgets: list[QWidget] = [self._begin_spacer]
-        self._titles: list[str] = ['']
-        self._spacers: list[QWidget] = [None]
+        self._widgets: list[QWidget] = [None]
+        self._titles: list[str] = [None]
+        self._spacers: list[QWidget] = [self._begin_spacer]
 
         self._collapsed_icon = qta.icon('msc.chevron-right')
         self._expanded_icon = qta.icon('msc.chevron-down')
+        self._focus_icon = qta.icon('ri.fullscreen-line')
     
     def addSection(self, title: str, widget: QWidget):
-        index: int = self.count()# - 1
+        self.insertSection(self.count() - 1, title, widget)
+    
+    def insertSection(self, index: int, title: str, widget: QWidget):
+        index += 1  # account for initial spacer
         self.insertWidget(index, widget)
 
         spacer = QWidget()
@@ -41,6 +41,43 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._widgets.insert(index, widget)
         self._titles.insert(index, title)
         self._spacers.insert(index, spacer)
+    
+    def removeSection(self, index: int):
+        index += 1  # account for initial spacer
+
+        current_widget = self.widget(index)
+        current_widget.setParent(None)
+
+        self._widgets.pop(index)
+        self._titles.pop(index)
+        self._spacers.pop(index)
+    
+    def isExpanded(self, index: int) -> bool:
+        index += 1  # account for initial spacer
+        current_widget: QWidget = self.widget(index)
+        return current_widget is self._widgets[index]
+    
+    def setExpanded(self, index: int, expanded: bool):
+        index += 1  # account for initial spacer
+        current_widget: QWidget = self.widget(index)
+        if expanded:
+            if current_widget is self._spacers[index]:
+                # toggle on by replacing spacer with widget
+                current_widget.setParent(None)
+                self.insertWidget(index, self._widgets[index])
+        else:
+            if current_widget is self._widgets[index]:
+                # toggle off by replacing widget with spacer
+                current_widget.setParent(None)
+                self.insertWidget(index, self._spacers[index])
+    
+    def focusSection(self, index: int):
+        index += 1  # account for initial spacer
+        for i in range(1, self.count()):
+            self.setExpanded(i - 1, i == index)
+    
+    def setFirstSectionHeaderVisible(self, visible: bool):
+        self._begin_spacer.setVisible(visible)
     
     def createHandle(self) -> QSplitterHandle:
         return CollapsibleSectionsHandle(self.orientation(), self)
@@ -53,13 +90,33 @@ class CollapsibleSectionsHandle(QSplitterHandle):
 
     def __init__(self, orientation: Qt.Orientation, parent: QSplitter):
         super().__init__(orientation, parent)
+        self.setMouseTracking(True)
     
     def mousePressEvent(self, event: QMouseEvent):
-        super().mousePressEvent(event)
         if event.button() == Qt.MouseButton.LeftButton:
+            focus_icon_rect: QRect = QRect(self.width() - self.height(), 0, self.height(), self.height())
+            if focus_icon_rect.contains(event.pos()):
+                # toggle fullscreen of section
+                splitter: CollapsibleSectionsSplitter = self.splitter()
+                index: int = splitter.indexOf(self)
+                splitter.focusSection(index - 1)  # account for initial spacer
+                return
             # store press position and time
             self._last_press_position: QPoint = event.pos()
             self._last_press_time_sec: float = time.time()
+        super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event: QMouseEvent):
+        super().mouseMoveEvent(event)
+        # check if mouse over a button-like icon in handle and set cursor accordingly
+        expanded_icon_rect: QRect = QRect(0, 0, self.height(), self.height())
+        focus_icon_rect: QRect = QRect(self.width() - self.height(), 0, self.height(), self.height())
+        if expanded_icon_rect.contains(event.pos()):
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        elif focus_icon_rect.contains(event.pos()):
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            self.setCursor(Qt.CursorShape.SplitVCursor if self.orientation() == Qt.Orientation.Vertical else Qt.CursorShape.SplitHCursor)
     
     def mouseReleaseEvent(self, event: QMouseEvent):
         super().mouseReleaseEvent(event)
@@ -73,17 +130,14 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     # treat as click => toggle section
                     splitter: CollapsibleSectionsSplitter = self.splitter()
                     index: int = splitter.indexOf(self)
-                    # print(index, 'of', tray.count())
-                    if splitter._spacers[index] is None:
-                        # this is a bookending spacer
-                        return
                     current_widget: QWidget = splitter.widget(index)
-                    current_widget.setParent(None)
                     if current_widget is splitter._widgets[index]:
                         # toggle off by replacing widget with spacer
+                        current_widget.setParent(None)
                         splitter.insertWidget(index, splitter._spacers[index])
                     else:
                         # toggle on by replacing spacer with widget
+                        current_widget.setParent(None)
                         splitter.insertWidget(index, splitter._widgets[index])
     
     def paintEvent(self, event: QPaintEvent):
@@ -102,22 +156,27 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         painter = QStylePainter(self)
         painter.drawComplexControl(QStyle.CC_ToolButton, opt)
 
-        # icon
+        # expand/collapse icon
         is_expanded: bool = splitter.widget(index) is splitter._widgets[index]
         if is_expanded:
             icon: QIcon = splitter._expanded_icon
         else:
             icon: QIcon = splitter._collapsed_icon
-        height: int = splitter.handleWidth()
-        icon_size = QSize(height, height)
+        icon_size = QSize(rect.height(), rect.height())
         pixmap: QPixmap = icon.pixmap(icon_size, QIcon.Normal, QIcon.On)
         painter.drawPixmap(rect.x(), rect.y(), pixmap)
+
+        # focus section icon
+        icon: QIcon = splitter._focus_icon
+        icon_size = QSize(rect.height(), rect.height())
+        pixmap: QPixmap = icon.pixmap(icon_size, QIcon.Normal, QIcon.On)
+        painter.drawPixmap(rect.right() - rect.height(), rect.y(), pixmap)
 
         # title
         font = painter.font()
         font.setPixelSize(rect.height() - 4)
         painter.setFont(font)
-        painter.drawText(rect.adjusted(height + 5, 0, -1, -1), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
+        painter.drawText(rect.adjusted(rect.height() + 5, 0, -1, -1), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
 
 
 def test_live():
@@ -127,7 +186,11 @@ def test_live():
     ui.addSection('tree', QTreeView())
     ui.addSection('table', QTableView())
     ui.addSection('list', QListView())
+    ui.addSection('button', QPushButton('click me'))
     ui.addSection('try', QTreeView())
+    ui.addSection('button', QPushButton('click me too'))
+    # ui.setFirstSectionHeaderVisible(False)
+    # ui.removeSection(0)
     ui.show()
 
     app.exec()
