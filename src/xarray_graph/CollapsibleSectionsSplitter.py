@@ -35,10 +35,12 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._unfocus_icon = qta.icon('ri.fullscreen-exit-line')
     
     def addSection(self, title: str, widget: QWidget):
-        self.insertSection(self.count() - 1, title, widget)
+        self.insertSection(self.count(), title, widget)
     
     def insertSection(self, index: int, title: str, widget: QWidget):
-        index += 1  # account for initial spacer
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
         self.insertWidget(index, widget)
 
         spacer = QWidget()
@@ -50,8 +52,9 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._spacers.insert(index, spacer)
     
     def removeSection(self, index: int):
-        index += 1  # account for initial spacer
-
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
         current_widget = self.widget(index)
         current_widget.setParent(None)
 
@@ -59,13 +62,20 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._titles.pop(index)
         self._spacers.pop(index)
     
+    def indexOfSection(self, title: str) -> int:
+        return self._titles.index(title)
+    
     def isExpanded(self, index: int) -> bool:
-        index += 1  # account for initial spacer
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
         current_widget: QWidget = self.widget(index)
         return current_widget is self._widgets[index]
     
     def setExpanded(self, index: int, expanded: bool):
-        index += 1  # account for initial spacer
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
         current_widget: QWidget = self.widget(index)
         if expanded:
             if current_widget is self._spacers[index]:
@@ -79,28 +89,21 @@ class CollapsibleSectionsSplitter(QSplitter):
                 self.insertWidget(index, self._spacers[index])
     
     def toggleExpanded(self, index: int):
-        index += 1  # account for initial spacer
-        current_widget: QWidget = self.widget(index)
-        if current_widget is self._widgets[index]:
-            # toggle off by replacing widget with spacer
-            current_widget.setParent(None)
-            self.insertWidget(index, self._spacers[index])
-        else:
-            # toggle on by replacing spacer with widget
-            current_widget.setParent(None)
-            self.insertWidget(index, self._widgets[index])
+        self.setExpanded(index, not self.isExpanded(index))
     
     def focusSection(self, index: int):
-        index += 1  # account for initial spacer
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
         is_focused: bool = getattr(self, '_focused_index', None) is not None
         if is_focused:
             self._expanded_state[index] = True
         else:
             self._expanded_state = [None] # for initial spacer
-        for i in range(self.count() - 1):
+        for i in range(1, self.count()):
             if not is_focused:
                 self._expanded_state.append(self.isExpanded(i))
-            self.setExpanded(i, i + 1 == index)
+            self.setExpanded(i, i == index)
         self._focused_index: int = index
         self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
     
@@ -108,8 +111,8 @@ class CollapsibleSectionsSplitter(QSplitter):
         focused_index: int =  getattr(self, '_focused_index', None)
         if focused_index is None:
             return
-        for i in range(self.count() - 1):
-            self.setExpanded(i, self._expanded_state[i + 1])
+        for i in range(1, self.count()):
+            self.setExpanded(i, self._expanded_state[i])
         self._focused_index = None
         self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
     
@@ -142,7 +145,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     splitter.unfocusSection()
                 else:
                     # focus this section
-                    splitter.focusSection(index - 1)  # account for initial spacer
+                    splitter.focusSection(index)
                 # clear last press info to avoid toggling expand/collapse as well
                 self._last_press_position = None
                 self._last_press_time_sec = None
@@ -179,7 +182,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     # treat as click => toggle section
                     splitter: CollapsibleSectionsSplitter = self.splitter()
                     index: int = splitter.indexOf(self)
-                    splitter.toggleExpanded(index - 1)  # account for initial spacer
+                    splitter.toggleExpanded(index)
     
     def paintEvent(self, event: QPaintEvent):
         splitter: CollapsibleSectionsSplitter = self.splitter()
@@ -234,7 +237,7 @@ def test_live():
     ui.addSection('button', QPushButton('click me'))
     ui.addSection('try', QTreeView())
     ui.addSection('button', QPushButton('click me too'))
-    # ui.setFirstSectionHeaderVisible(False)
+    ui.setFirstSectionHeaderVisible(False)
     # ui.removeSection(0)
     ui.show()
 
