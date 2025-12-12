@@ -313,15 +313,32 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # new combined window
         combined_window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
-        combined_window.setDatatree(combined_datatree)
         combined_window.setWindowTitle('Combined')
-        combined_window.show()
+        combined_window.setDatatree(combined_datatree)
 
         # close old windows
         for window in tuple(XarrayDataTreeViewer._windows):
             if window is not combined_window:
                 window.close()
     
+    def _separateFirstLevelGroups(self) -> None:
+        """ Separate first level groups into multiple windows.
+        """
+        dt: xr.DataTree = self.datatree()
+        groups: tuple[xr.DataTree] = tuple(dt.children.values())
+        if not groups:
+            return
+        
+        group: xr.DataTree
+        for group in groups:
+            window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
+            window.setWindowTitle(group.name)
+            group.orphan()
+            window.setDatatree(group)
+        
+        # close this window
+        self.close()
+   
     @staticmethod
     def _update_window_menus() -> None:
         """ Update Window menu with list of open windows.
@@ -564,7 +581,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         self._window_menu = menubar.addMenu('Window')
         self._window_menu.addAction('Combine All', XarrayDataTreeViewer._combineAllWindows)
-        self._window_menu.addAction('Separate First Level Groups')
+        self._window_menu.addAction('Separate First Level Groups', self._separateFirstLevelGroups)
         self._window_menu.addSeparator()
         self._window_menu.addAction('Bring All to Front')
         self._before_windows_list_action: QAction = self._window_menu.addSeparator()
