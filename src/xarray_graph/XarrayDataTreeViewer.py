@@ -110,9 +110,9 @@ class XarrayDataTreeViewer(QMainWindow):
         import textwrap
 
         text = f"""
-        {self.__class__.__name__}
-        
-        PyQt widget for visualizing and manipulating Xarray DataTrees.
+        XarrayGraph
+
+        PyQt UIs for visualizing and manipulating Xarray DataTrees.
 
         Author: Marcel Goldschen-Ohm
 
@@ -121,7 +121,7 @@ class XarrayDataTreeViewer(QMainWindow):
         """
         text = textwrap.dedent(text).strip()
         
-        QMessageBox.about(self, f'About {self.__class__.__name__}', text)
+        QMessageBox.about(self, 'About XarrayGraph', text)
 
     def settings(self) -> None:
         print('settings') # TODO
@@ -516,8 +516,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         self._window_menu = menubar.addMenu('Window')
         self._window_menu.addAction('Combine All')
-        self._window_menu.addSeparator()
-        self._window_menu.addAction('Separate First Level Children')
+        self._window_menu.addAction('Separate First Level Groups')
         self._window_menu.addSeparator()
         self._window_menu.addAction('Bring All to Front')
         self._before_windows_list_action: QAction = self._window_menu.addSeparator()
