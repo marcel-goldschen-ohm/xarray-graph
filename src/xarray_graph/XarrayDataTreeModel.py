@@ -169,7 +169,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
         """
         self.beginResetModel()
         self._updateItemSubtree(self._root_item)
-        if self._highlight_shared_data:
+        if self._is_shared_data_highlighted:
             self._updateSharedDataColors()
         self.endResetModel()
 
