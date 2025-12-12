@@ -190,6 +190,12 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     splitter: CollapsibleSectionsSplitter = self.splitter()
                     index: int = splitter.indexOf(self)
                     splitter.toggleSectionExpanded(index)
+                    # if we collapsed the focused section, unfocus it
+                    if splitter.isSectionExpanded(index) == False:
+                        focused_index: int =  getattr(splitter, '_focused_index', None)
+                        if index == focused_index:
+                            splitter._expanded_state[index] = False
+                            splitter.unfocusSection()
     
     def paintEvent(self, event: QPaintEvent):
         splitter: CollapsibleSectionsSplitter = self.splitter()
