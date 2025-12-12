@@ -126,22 +126,26 @@ class XarrayDataTreeViewer(QMainWindow):
     def settings(self) -> None:
         print('settings') # TODO
     
-    def new(self) -> XarrayDataTreeViewer:
+    @staticmethod
+    def new() -> XarrayDataTreeViewer:
         """ Create new XarrayDataTreeViewer top level window.
         """
         window = XarrayDataTreeViewer()
         window.show()
         return window
     
-    def open(self, filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None) -> None:
+    @staticmethod
+    def open(filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None) -> XarrayDataTreeViewer | list[XarrayDataTreeViewer] | None:
         """ Load datatree from file.
         """
 
+        focus_widget: QWidget = QApplication.instance().focusWidget()
+
         if filepath is None:
             if filetype == 'Zarr Directory':
-                filepath = QFileDialog.getExistingDirectory(self, 'Open Zarr Directory')
+                filepath = QFileDialog.getExistingDirectory(focus_widget, 'Open Zarr Directory')
             else:
-                filepath, _ = QFileDialog.getOpenFileNames(self, 'Open File(s)')
+                filepath, _ = QFileDialog.getOpenFileNames(focus_widget, 'Open File(s)')
             if not filepath:
                 return
             if isinstance(filepath, list) and len(filepath) == 1:
@@ -149,15 +153,17 @@ class XarrayDataTreeViewer(QMainWindow):
         
         # handle sequence of multiple filepaths
         if isinstance(filepath, list):
+            windows: list[XarrayDataTreeViewer] = []
             for path in filepath:
-                self.open(path, filetype)
-            return
+                window = XarrayDataTreeViewer.open(path, filetype)
+                windows.append(window)
+            return windows
         
         # ensure Path filepath object
         filepath = Path(filepath)
         
         if not filepath.exists():
-            QMessageBox.warning(self, 'File Not Found', f'File not found: {filepath}')
+            QMessageBox.warning(focus_widget, 'File Not Found', f'File not found: {filepath}')
             return
         
         # get filetype
@@ -167,7 +173,7 @@ class XarrayDataTreeViewer(QMainWindow):
             # infer filetype from file extension
             extension_filetype_map = {
                 ext: filetype
-                for filetype, extensions in self._filetype_extensions_map.items()
+                for filetype, extensions in XarrayDataTreeViewer._filetype_extensions_map.items()
                 for ext in extensions
             }
             filetype = extension_filetype_map.get(filepath.suffix, None)
@@ -189,30 +195,41 @@ class XarrayDataTreeViewer(QMainWindow):
                 # see if xarray can open the file
                 datatree = xr.open_datatree(filepath)
             except:
-                QMessageBox.warning(self, 'Invalid File Type', f'"{filepath}" format is not supported.')
+                QMessageBox.warning(focus_widget, 'Invalid File Type', f'"{filepath}" format is not supported.')
                 return
         
         if datatree is None:
-            QMessageBox.warning(self, 'Invalid File', f'Unable to read file: {filepath}')
+            QMessageBox.warning(focus_widget, 'Invalid File', f'Unable to read file: {filepath}')
             return
         
+        # restore datatree from serialization
+        # TODO
+
+        # new window
+        window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
+        
         # set datatree
-        self.setDatatree(datatree)
+        window.setDatatree(datatree)
 
         # keep track of current filepath
-        self._filepath = filepath
+        window._filepath = filepath
 
         # set window title to filename without extension
-        self.setWindowTitle(filepath.stem)
+        window.setWindowTitle(filepath.stem)
+
+        window.show()
+        return window
     
     def save(self) -> None:
-        """ Save data tree to current file. """
+        """ Save data tree to current file.
+        """
 
         filepath = getattr(self, '_filepath', None)
         self.saveAs(filepath)
     
     def saveAs(self, filepath: str | os.PathLike = None, filetype: str = None) -> None:
-        """ Save data tree to file. """
+        """ Save data tree to file.
+        """
 
         if filepath is None:
             filepath, _ = QFileDialog.getSaveFileName(self, 'Save File')
@@ -220,8 +237,7 @@ class XarrayDataTreeViewer(QMainWindow):
                 return
         
         # ensure Path filepath object
-        if isinstance(filepath, str):
-            filepath = Path(filepath)
+        filepath = Path(filepath)
         
         # get filetype
         if filepath.is_dir():
@@ -245,7 +261,7 @@ class XarrayDataTreeViewer(QMainWindow):
             if ext is not None:
                 filepath = filepath.with_suffix(ext)
 
-        # prepare datatree for storage
+        # prepare datatree for serilazation
         datatree: xr.DataTree = self.datatree()
 
         # write datatree to filesystem
@@ -253,8 +269,6 @@ class XarrayDataTreeViewer(QMainWindow):
             with zarr.storage.LocalStore(filepath, mode='w') as store:
                 datatree.to_zarr(store)
         elif filetype == 'Zarr Zip':
-            if filepath.suffix != '.zip':
-                filepath = filepath.with_suffix('.zip')
             with zarr.storage.ZipStore(filepath, mode='w') as store:
                 datatree.to_zarr(store)
         elif filetype == 'NetCDF':
@@ -267,7 +281,11 @@ class XarrayDataTreeViewer(QMainWindow):
             QMessageBox.warning(self, 'Invalid File Type', f'Saving to {filetype} format is not supported.')
             return
         
+        # keep track of current filepath
         self._filepath = filepath
+
+        # set window title to filename without extension
+        self.setWindowTitle(filepath.stem)
     
     @staticmethod
     def windows() -> list[XarrayDataTreeViewer]:
@@ -278,6 +296,31 @@ class XarrayDataTreeViewer(QMainWindow):
             if isinstance(widget, XarrayDataTreeViewer):
                 windows.append(widget)
         return windows
+    
+    @staticmethod
+    def _combineAllWindows() -> None:
+        """ Combine all open windows into one window with multiple top-level groups.
+        """
+        if not XarrayDataTreeViewer._windows:
+            QStyleHintReturn
+        
+        # combined datatree
+        combined_datatree = xr.DataTree()
+        window: XarrayDataTreeViewer
+        for window in XarrayDataTreeViewer._windows:
+            title = window.windowTitle()
+            combined_datatree[title] = window.datatree()
+
+        # new combined window
+        combined_window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
+        combined_window.setDatatree(combined_datatree)
+        combined_window.setWindowTitle('Combined')
+        combined_window.show()
+
+        # close old windows
+        for window in tuple(XarrayDataTreeViewer._windows):
+            if window is not combined_window:
+                window.close()
     
     @staticmethod
     def _update_window_menus() -> None:
@@ -520,7 +563,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._view_menu.addAction(self._refresh_action)
 
         self._window_menu = menubar.addMenu('Window')
-        self._window_menu.addAction('Combine All')
+        self._window_menu.addAction('Combine All', XarrayDataTreeViewer._combineAllWindows)
         self._window_menu.addAction('Separate First Level Groups')
         self._window_menu.addSeparator()
         self._window_menu.addAction('Bring All to Front')
@@ -575,10 +618,7 @@ def test_live():
     app = QApplication()
     # app.setQuitOnLastWindowClosed(False)
 
-    window = XarrayDataTreeViewer()
-    window.show()
-
-    window.open('examples/ERPdata.nc')
+    window = XarrayDataTreeViewer.open('examples/ERPdata.nc')
     dt = window.datatree()
     dt['eggs'] = dt['EEG'] * 10
     window.refresh()
