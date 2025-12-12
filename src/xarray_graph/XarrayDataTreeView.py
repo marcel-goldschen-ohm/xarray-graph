@@ -52,44 +52,6 @@ class XarrayDataTreeView(QTreeView):
 
         # persistent view state
         self._view_state: dict[str, dict] = {}
-
-        # optionally show vars and coords
-        self._showDataVarsAction = QAction(
-            text = 'Show Variables',
-            icon = qta.icon('ph.cube-thin'),
-            checkable = True,
-            checked = True,
-            toolTip = 'Show data_vars in the tree view. Uncheck to hide them.',
-            triggered = self._updateModelFromViewOptions
-        )
-
-        self._showCoordsAction = QAction(
-            text = 'Show Coordinates',
-            icon = qta.icon('ph.list-numbers-thin'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Show coords in the tree view. Uncheck to hide them.',
-            triggered = self._updateModelFromViewOptions
-        )
-
-        self._showInheritedCoordsAction = QAction(
-            text = 'Show Inherited Coordinates',
-            icon = qta.icon('ph.list-numbers-thin'),
-            checkable = True,
-            checked = True,
-            toolTip = 'Show inherited coords in the tree view. Uncheck to hide them.',
-            triggered = self._updateModelFromViewOptions
-        )
-
-        # optional details column
-        self._showDetailsColumnAction = QAction(
-            text = 'Show Details Column',
-            icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
-            triggered = self._updateModelFromViewOptions
-        )
     
     def refresh(self) -> None:
         self.storeViewState()
@@ -101,41 +63,9 @@ class XarrayDataTreeView(QTreeView):
         model: XarrayDataTreeModel = super().model()
         return model
     
-    def setModel(self, model: XarrayDataTreeModel, updateViewOptionsFromModel: bool = True) -> None:
+    def setModel(self, model: XarrayDataTreeModel) -> None:
         super().setModel(model)
-        if updateViewOptionsFromModel:
-            self._updateViewOptionsFromModel()
-        else:
-            self._updateModelFromViewOptions()
-
-    def _updateViewOptionsFromModel(self):
-        model: XarrayDataTreeModel = self.model()
-        
-        self._showDataVarsAction.blockSignals(True)
-        self._showDataVarsAction.setChecked(model.isDataVarsVisible())
-        self._showDataVarsAction.blockSignals(False)
-        
-        self._showCoordsAction.blockSignals(True)
-        self._showCoordsAction.setChecked(model.isCoordsVisible())
-        self._showCoordsAction.blockSignals(False)
-        
-        self._showInheritedCoordsAction.blockSignals(True)
-        self._showInheritedCoordsAction.setChecked(model.isInheritedCoordsVisible())
-        self._showInheritedCoordsAction.blockSignals(False)
-        
-        self._showDetailsColumnAction.blockSignals(True)
-        self._showDetailsColumnAction.setChecked(model.isDetailsColumnVisible())
-        self._showDetailsColumnAction.blockSignals(False)
-
-    def _updateModelFromViewOptions(self):
-        model: XarrayDataTreeModel = self.model()
-        
-        self.storeViewState()
-        model.setDataVarsVisible(self._showDataVarsAction.isChecked())
-        model.setCoordsVisible(self._showCoordsAction.isChecked())
-        model.setInheritedCoordsVisible(self._showInheritedCoordsAction.isChecked())
-        model.setDetailsColumnVisible(self._showDetailsColumnAction.isChecked())
-        self.restoreViewState()
+        model._views.append(self)
     
     def datatree(self) -> xr.DataTree:
         return self.model().datatree()
@@ -333,10 +263,12 @@ class XarrayDataTreeView(QTreeView):
 
         # visible types
         menu.addSeparator()
-        menu.addAction(self._showDataVarsAction)
-        menu.addAction(self._showCoordsAction)
-        menu.addAction(self._showInheritedCoordsAction)
-        menu.addAction(self._showDetailsColumnAction)
+        menu.addAction(model._showDataVarsAction)
+        menu.addAction(model._showCoordsAction)
+        menu.addAction(model._showInheritedCoordsAction)
+        menu.addAction(model._showDetailsColumnAction)
+        menu.addAction(model._highlightSharedDataAction)
+        menu.addAction(model._showDebugInfoAction)
 
         # refresh
         menu.addSeparator()

@@ -116,15 +116,18 @@ class XarrayDataTreeModel(QAbstractItemModel):
 
     _data_type_order: tuple[XarrayDataTreeType] = (COORD, DATA_VAR, GROUP)
 
-    # for dev and debug - show ids of datatree objects in details column
-    _show_debug_info: bool = True
+    # # for dev and debug - show ids of datatree objects in details column
+    # _show_debug_info: bool = True
 
-    # optionally use color to denote shared data arrays - mostly for dev and debug, but might be useful otherwise
-    _highlight_shared_data: bool = True
+    # # optionally use color to denote shared data arrays - mostly for dev and debug, but might be useful otherwise
+    # _highlight_shared_data: bool = True
 
     def __init__(self, *args, **kwargs):
         datatree: xr.DataTree = kwargs.pop('datatree', xr.DataTree())
         super().__init__(*args, **kwargs)
+
+        # keep track of views
+        self._views = []
 
         # headers
         self._row_labels: list[str] = []
@@ -135,6 +138,8 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self._is_coords_visible: bool = False
         self._is_inherited_coords_visible: bool = False
         self._is_details_column_visible: bool = False
+        self._is_shared_data_highlighted: bool = False
+        self._is_debug_info_visible: bool = False
 
         # drag-and-drop support for moving tree items within the tree or copying them to other tree models
         self._supportedDropActions: Qt.DropActions = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
@@ -148,9 +153,16 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self._inherited_coords_color: QColor = QColor(128, 128, 128)
         self._shared_data_colormap: dict[int, QColor] = {}
 
+        # actions
+        self._initActions()
+
         # setup item tree
         self._root_item = XarrayDataTreeItem(datatree)
         self._updateItemSubtree(self._root_item)
+    
+    def _currentViews(self) -> list:
+        self._views = [view for view in self._views if view.model() is self]
+        return self._views
     
     def reset(self) -> None:
         """ Reset the model.
@@ -175,7 +187,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self.beginResetModel()
         self._root_item = XarrayDataTreeItem(datatree)
         self._updateItemSubtree(self._root_item)
-        if self._highlight_shared_data:
+        if self._is_shared_data_highlighted:
             self._updateSharedDataColors()
         self.endResetModel()
     
@@ -240,10 +252,16 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setDataVarsVisible(self, visible: bool) -> None:
         if visible == self.isDataVarsVisible():
             return
+        
+        self._viewOptionsAboutToChange()
+
         self.beginResetModel()
         self._is_data_vars_visible = visible
         self._updateItemSubtree(self._root_item)
         self.endResetModel()
+
+        self._showDataVarsAction.setChecked(visible)
+        self._viewOptionsChanged()
     
     def isCoordsVisible(self) -> bool:
         return self._is_coords_visible
@@ -251,10 +269,16 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setCoordsVisible(self, visible: bool) -> None:
         if visible == self.isCoordsVisible():
             return
+        
+        self._viewOptionsAboutToChange()
+        
         self.beginResetModel()
         self._is_coords_visible = visible
         self._updateItemSubtree(self._root_item)
         self.endResetModel()
+
+        self._showCoordsAction.setChecked(visible)
+        self._viewOptionsChanged()
     
     def isInheritedCoordsVisible(self) -> bool:
         return self._is_inherited_coords_visible
@@ -262,10 +286,16 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setInheritedCoordsVisible(self, visible: bool) -> None:
         if visible == self.isInheritedCoordsVisible():
             return
+        
+        self._viewOptionsAboutToChange()
+        
         self.beginResetModel()
         self._is_inherited_coords_visible = visible
         self._updateItemSubtree(self._root_item)
         self.endResetModel()
+
+        self._showInheritedCoordsAction.setChecked(visible)
+        self._viewOptionsChanged()
     
     def isDetailsColumnVisible(self) -> bool:
         return self._is_details_column_visible
@@ -281,6 +311,50 @@ class XarrayDataTreeModel(QAbstractItemModel):
             self.beginRemoveColumns(QModelIndex(), 1, 1)
             self._is_details_column_visible = visible
             self.endRemoveColumns()
+        self._showDetailsColumnAction.setChecked(visible)
+    
+    def isSharedDataHighlighted(self) -> bool:
+        return self._is_shared_data_highlighted
+    
+    def setSharedDataHighlighted(self, highlighted: bool) -> None:
+        if highlighted == self.isSharedDataHighlighted():
+            return
+        
+        self._viewOptionsAboutToChange()
+
+        if highlighted:
+            self._updateSharedDataColors()
+
+        self.beginResetModel()
+        self._is_shared_data_highlighted = highlighted
+        self.endResetModel()
+
+        self._highlightSharedDataAction.setChecked(highlighted)
+        self._viewOptionsChanged()
+    
+    def isDebugInfoVisible(self) -> bool:
+        return self._is_debug_info_visible
+    
+    def setDebugInfoVisible(self, visible: bool) -> None:
+        if visible == self.isDebugInfoVisible():
+            return
+        
+        self._viewOptionsAboutToChange()
+
+        self.beginResetModel()
+        self._is_debug_info_visible = visible
+        self.endResetModel()
+
+        self._showDebugInfoAction.setChecked(visible)
+        self._viewOptionsChanged()
+    
+    def _viewOptionsAboutToChange(self) -> None:
+        for view in self._currentViews():
+            view.storeViewState()
+    
+    def _viewOptionsChanged(self) -> None:
+        for view in self._currentViews():
+            view.restoreViewState()
     
     def itemFromIndex(self, index: QModelIndex) -> XarrayDataTreeItem:
         if not index.isValid():
@@ -370,7 +444,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                 if item.is_group:
                     sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.data.dataset.sizes.items()])
                     rep = f'({sizes_str})'
-                    if self._show_debug_info:
+                    if self._is_debug_info_visible:
                         rep = f'<{id(item.data)}> ' + rep
                     return rep
                 elif item.is_data_var:
@@ -381,7 +455,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     i = rep.find('(', i)  # skip data_var name
                     j = rep.find('\n', i)
                     rep = rep[i:j] if j > 0 else rep[i:]
-                    if self._show_debug_info:
+                    if self._is_debug_info_visible:
                         rep = f'<{id(item.data.data)}> ' + rep
                     return rep
                 elif item.is_coord:
@@ -392,8 +466,10 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     i = rep.find('(', i)  # skip coord name
                     j = rep.find('\n', i)
                     rep = rep[i:j] if j > 0 else rep[i:]
-                    if self._show_debug_info:
-                        rep = f'{'* ' if item.is_index_coord else ''}<{id(item.data.data)}> ' + rep
+                    if item.is_index_coord:
+                        rep = '* ' + rep
+                    if self._is_debug_info_visible:
+                        rep = f'<{id(item.data.data)}> ' + rep
                     return rep
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
@@ -408,7 +484,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             if item.is_inherited_coord:
                 return self._inherited_coords_color
-            if self._highlight_shared_data:
+            if self._is_shared_data_highlighted:
                 if item.is_variable:
                     mem = id(item.data.values)
                     return self._shared_data_colormap.get(mem, None)
@@ -1535,6 +1611,66 @@ class XarrayDataTreeModel(QAbstractItemModel):
         cm = cmap.Colormap('viridis')
         colors = cm(np.linspace(0, 1, len(shared_ids)))
         self._shared_data_colormap: dict[int, QColor] = {id_: QColor(*[int(255*c) for c in color[:3]]) for id_, color in zip(shared_ids, colors)}
+    
+    def _initActions(self) -> None:
+
+        # optionally show vars and coords
+        self._showDataVarsAction = QAction(
+            text = 'Show Variables',
+            icon = self._data_var_icon,
+            checkable = True,
+            checked = True,
+            toolTip = 'Show/hide data_vars in the tree view.',
+            triggered = lambda checked: self.setDataVarsVisible(checked)
+        )
+
+        self._showCoordsAction = QAction(
+            text = 'Show Coordinates',
+            icon = self._coord_icon,
+            checkable = True,
+            checked = False,
+            toolTip = 'Show/hide coords in the tree view.',
+            triggered = lambda checked: self.setCoordsVisible(checked)
+        )
+
+        self._showInheritedCoordsAction = QAction(
+            text = 'Show Inherited Coordinates',
+            icon = self._coord_icon,
+            checkable = True,
+            checked = True,
+            toolTip = 'Show/hide inherited coords in the tree view.',
+            triggered = lambda checked: self.setInheritedCoordsVisible(checked)
+        )
+
+        # optional details column
+        self._showDetailsColumnAction = QAction(
+            text = 'Show Details Column',
+            icon = qta.icon('ph.info'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
+            triggered = lambda checked: self.setDetailsColumnVisible(checked)
+        )
+
+        # optionally highlight shared data arrays
+        self._highlightSharedDataAction = QAction(
+            text = 'Highlight Shared Data',
+            # icon = qta.icon('ph.info'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Highlight shared data arrays.',
+            triggered = lambda checked: self.setSharedDataHighlighted(checked)
+        )
+
+        # optionally show data array IDs (for debugging)
+        self._showDebugInfoAction = QAction(
+            text = 'Show Data Array IDs (For Debugging)',
+            # icon = qta.icon('ph.info'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Show IDs of underlying data arrays.',
+            triggered = lambda checked: self.setDebugInfoVisible(checked)
+        )
     
     def supportedDropActions(self) -> Qt.DropActions:
         return self._supportedDropActions
