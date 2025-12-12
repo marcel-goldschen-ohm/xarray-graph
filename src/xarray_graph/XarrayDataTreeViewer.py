@@ -27,6 +27,9 @@ class XarrayDataTreeViewer(QMainWindow):
     """ PyQt widget for visualizing and manipulating Xarray DataTrees.
     """
 
+    # global list of all XarrayDataTreeViewer top level windows
+    _windows: list[XarrayDataTreeViewer] = []
+
     _filetype_extensions_map: dict[str, list[str]] = {
         'Zarr Directory': [''],
         'Zarr Zip': ['.zip'],
@@ -42,9 +45,13 @@ class XarrayDataTreeViewer(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        n = len(XarrayDataTreeViewer._windows)
+        self.setWindowTitle(f'Untitled {n}')
+
         self._init_componenets()
         self._init_actions()
         self._init_menubar()
+        # self._init_top_toolbar()
 
         # layout
         self._selection_splitter = CollapsibleSectionsSplitter()
@@ -66,11 +73,23 @@ class XarrayDataTreeViewer(QMainWindow):
         self._outer_splitter.addSection('DataTree', self._inner_splitter)
         self._outer_splitter.addSection('Console', self._console)
         self._outer_splitter.setFirstSectionHeaderVisible(False)
+        self._outer_splitter.sectionIsExpandedChanged.connect(self.onOuterSplitterSectionIsExpandedChanged)
 
         self.setCentralWidget(self._outer_splitter)
 
         msg = self._console._one_time_message_on_show
         QTimer.singleShot(300, lambda msg=msg: self._console.print_message(msg))
+
+        # initial state
+        self.setConsoleVisible(False)
+
+        # for testing only
+        dt = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
+        dt['eggs'] = dt['EEG'] * 10
+        self.setDatatree(dt)
+
+        # register with global windows list
+        XarrayDataTreeViewer._windows.append(self)
     
     def datatree(self) -> xr.DataTree:
         return self._datatree_view.datatree()
@@ -107,7 +126,14 @@ class XarrayDataTreeViewer(QMainWindow):
     def settings(self) -> None:
         print('settings') # TODO
     
-    def load(self, filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None) -> None:
+    def new(self) -> XarrayDataTreeViewer:
+        """ Create new XarrayDataTreeViewer top level window.
+        """
+        window = XarrayDataTreeViewer()
+        window.show()
+        return window
+    
+    def open(self, filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None) -> None:
         """ Load datatree from file.
         """
 
@@ -124,7 +150,7 @@ class XarrayDataTreeViewer(QMainWindow):
         # handle sequence of multiple filepaths
         if isinstance(filepath, list):
             for path in filepath:
-                self.load(path, filetype)
+                self.open(path, filetype)
             return
         
         # ensure Path filepath object
@@ -238,6 +264,56 @@ class XarrayDataTreeViewer(QMainWindow):
         
         self._filepath = filepath
     
+    @staticmethod
+    def windows() -> list[XarrayDataTreeViewer]:
+        """ Get list of all XarrayDataTreeViewer top level windows in z-order from front to back.
+        """
+        windows = []
+        for widget in QApplication.instance().topLevelWidgets():
+            if isinstance(widget, XarrayDataTreeViewer):
+                windows.append(widget)
+        return windows
+    
+    @staticmethod
+    def _update_window_menus() -> None:
+        """ Update Window menu with list of open windows.
+        """
+        if not XarrayDataTreeViewer._windows:
+            return
+        
+        top_window: XarrayDataTreeViewer = QApplication.instance().activeWindow()
+        # print(f'Top window: {top_window.windowTitle()}')
+        
+        window: XarrayDataTreeViewer
+        for window in XarrayDataTreeViewer._windows:
+            # clear old window list
+            for action in window._windows_list_action_group.actions():
+                window._windows_list_action_group.removeAction(action)
+                window._window_menu.removeAction(action)
+            
+            # make current window list
+            for i, list_window in enumerate(XarrayDataTreeViewer._windows):
+                action = QAction(
+                    parent=window,
+                    text=list_window.windowTitle() or f'Untitled {i}',
+                    checkable=True,
+                    checked=list_window is top_window,
+                    triggered=lambda checked, window=list_window: window.raise_())
+                window._windows_list_action_group.addAction(action)
+                window._window_menu.addAction(action)
+    
+    def isConsoleVisible(self) -> bool:
+        index: int = self._outer_splitter.indexOfSection('Console')
+        return self._outer_splitter.isSectionExpanded(index)
+    
+    def setConsoleVisible(self, visible: bool) -> None:
+        index: int = self._outer_splitter.indexOfSection('Console')
+        return self._outer_splitter.setSectionExpanded(index, visible)
+    
+    def onOuterSplitterSectionIsExpandedChanged(self, index: int, expanded: bool) -> None:
+        if index == self._outer_splitter.indexOfSection('Console'):
+            self._toggle_console_action.setChecked(expanded)
+    
     def onSelectionChanged(self) -> None:
         self._update_info_view()
     
@@ -280,11 +356,12 @@ class XarrayDataTreeViewer(QMainWindow):
                 # self.result_text_box.setTextCursor(tc)
     
     def _init_componenets(self) -> None:
-        """ Initialize main components.
+        """ Initialize UI components.
         """
 
         # tree view
         self._datatree_view = XarrayDataTreeView()
+        self._datatree_view.setDatatree(xr.DataTree())
         self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
 
         # info for selected items
@@ -312,6 +389,8 @@ class XarrayDataTreeViewer(QMainWindow):
         """
     
     def _init_actions(self) -> None:
+        """ Actions.
+        """
 
         self._refresh_action = QAction(
             parent=self,
@@ -337,6 +416,17 @@ class XarrayDataTreeViewer(QMainWindow):
             toolTip='Settings',
             triggered=lambda checked: self.settings())
 
+        # self._toggle_toolbar_action = QAction(
+        #     parent=self,
+        #     # icon=qta.icon('mdi.console', options=[{'opacity': 1.0}]),
+        #     iconVisibleInMenu=False,
+        #     text='Tool Bar',
+        #     toolTip='Tool Bar',
+        #     checkable=True,
+        #     checked=True,
+        #     # shortcut=QKeySequence('`'),
+        #     triggered=lambda checked: self._toolbar.setVisible(checked))
+
         self._toggle_console_action = QAction(
             parent=self,
             icon=qta.icon('mdi.console', options=[{'opacity': 1.0}]),
@@ -345,8 +435,47 @@ class XarrayDataTreeViewer(QMainWindow):
             toolTip='Console',
             checkable=True,
             checked=True,
-            shortcut = QKeySequence('`'),
-            triggered=lambda checked: self._outer_splitter.setExpanded(1, checked))
+            shortcut=QKeySequence('`'),
+            triggered=lambda checked: self.setConsoleVisible(checked))
+
+        self._new_action = QAction(
+            parent=self,
+            iconVisibleInMenu=False,
+            text='New',
+            toolTip='New Window',
+            checkable=False,
+            shortcut=QKeySequence.StandardKey.New,
+            triggered=lambda: self.new())
+
+        self._open_action = QAction(
+            parent=self,
+            icon=qta.icon('fa5.folder-open', options=[{'opacity': 1.0}]),
+            iconVisibleInMenu=False,
+            text='Open',
+            toolTip='Open',
+            checkable=False,
+            shortcut=QKeySequence.StandardKey.Open,
+            triggered=lambda: self.open())
+
+        self._save_action = QAction(
+            parent=self,
+            icon=qta.icon('fa5.save', options=[{'opacity': 1.0}]),
+            iconVisibleInMenu=False,
+            text='Save',
+            toolTip='Save',
+            checkable=False,
+            shortcut=QKeySequence.StandardKey.Save,
+            triggered=lambda: self.save())
+
+        self._save_as_action = QAction(
+            parent=self,
+            icon=qta.icon('fa5.save', options=[{'opacity': 1.0}]),
+            iconVisibleInMenu=False,
+            text='Save As',
+            toolTip='Save As',
+            checkable=False,
+            shortcut=QKeySequence.StandardKey.SaveAs,
+            triggered=lambda: self.saveAs())
     
     def _init_menubar(self) -> None:
         """ Main menubar.
@@ -354,23 +483,23 @@ class XarrayDataTreeViewer(QMainWindow):
         menubar = self.menuBar()
 
         self._file_menu = menubar.addMenu('File')
-        # self._file_menu.addAction('New Window', QKeySequence.StandardKey.New, self.newWindow)
-        # self._file_menu.addSeparator()
-        self._file_menu.addAction(qta.icon('fa5.folder-open'), 'Open', QKeySequence.StandardKey.Open, self.load)
+        self._file_menu.addAction(self._new_action)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction(self._open_action)
         self._import_menu = self._file_menu.addMenu('Import')
         self._file_menu.addSeparator()
-        self._file_menu.addAction(qta.icon('fa5.save'), 'Save', QKeySequence.StandardKey.Save, self.save)
-        self._file_menu.addAction(qta.icon('fa5.save'), 'Save As', QKeySequence.StandardKey.SaveAs, self.saveAs)
+        self._file_menu.addAction(self._save_action)
+        self._file_menu.addAction(self._save_as_action)
         self._export_menu = self._file_menu.addMenu('Export')
         self._file_menu.addSeparator()
         self._file_menu.addAction('Close Window', QKeySequence.StandardKey.Close, self.close)
         self._file_menu.addSeparator()
         self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, QApplication.instance().quit)
 
-        self._import_menu.addAction('Zarr Zip', lambda: self.load(filetype='Zarr Zip'))
-        self._import_menu.addAction('Zarr Directory', lambda: self.load(filetype='Zarr Directory'))
-        self._import_menu.addAction('NetCDF', lambda: self.load(filetype='NetCDF'))
-        self._import_menu.addAction('HDF5', lambda: self.load(filetype='HDF5'))
+        self._import_menu.addAction('Zarr Zip', lambda: self.open(filetype='Zarr Zip'))
+        self._import_menu.addAction('Zarr Directory', lambda: self.open(filetype='Zarr Directory'))
+        self._import_menu.addAction('NetCDF', lambda: self.open(filetype='NetCDF'))
+        self._import_menu.addAction('HDF5', lambda: self.open(filetype='HDF5'))
 
         self._export_menu.addAction('Zarr Zip', lambda: self.saveAs(filetype='Zarr Zip'))
         self._export_menu.addAction('Zarr Directory', lambda: self.saveAs(filetype='Zarr Directory'))
@@ -378,14 +507,63 @@ class XarrayDataTreeViewer(QMainWindow):
         self._export_menu.addAction('HDF5', lambda: self.saveAs(filetype='HDF5'))
 
         self._view_menu = menubar.addMenu('View')
+        # self._view_menu.addAction(self._toggle_toolbar_action)
         self._view_menu.addAction(self._toggle_console_action)
         self._view_menu.addSeparator()
-        self._view_menu.addAction(self._refresh_action)
-        self._view_menu.addSeparator()
         self._view_menu.addAction(self._about_action)
-        self._view_menu.addSeparator()
         self._view_menu.addAction(self._settings_action)
-        self._view_menu.addSeparator()
+        self._view_menu.addAction(self._refresh_action)
+
+        self._window_menu = menubar.addMenu('Window')
+        self._window_menu.addAction('Combine All')
+        self._window_menu.addSeparator()
+        self._window_menu.addAction('Separate First Level Children')
+        self._window_menu.addSeparator()
+        self._window_menu.addAction('Bring All to Front')
+        self._before_windows_list_action: QAction = self._window_menu.addSeparator()
+        self._windows_list_action_group = QActionGroup(self)
+        self._windows_list_action_group.setExclusive(True)
+
+    # def _init_top_toolbar(self) -> None:
+    #     """ Toolbar.
+    #     """
+
+    #     self._toolbar = QToolBar()
+    #     self._toolbar.setOrientation(Qt.Orientation.Horizontal)
+    #     self._toolbar.setStyleSheet("QToolBar{spacing:2px;}")
+    #     self._toolbar.setIconSize(QSize(24, 24))
+    #     self._toolbar.setMovable(False)
+    #     self._toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+
+    #     self._toolbar.addAction(self._open_action)
+    #     self._toolbar.addAction(self._save_as_action)
+
+    #     self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._toolbar)
+
+    def changeEvent(self, event: QEvent):
+        """ Overrides the changeEvent to catch window activation changes.
+        """
+        super().changeEvent(event)
+        if event.type() == QEvent.ActivationChange:
+            if self.isActiveWindow():
+                # print(f"\n{self.windowTitle()} gained focus/activation")
+                XarrayDataTreeViewer._update_window_menus()
+            # else:
+            #     print(f"\n{self.windowTitle()} lost focus/activation")
+    
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # Unregister the window from the global list when closed
+        XarrayDataTreeViewer._windows.remove(self)
+        super().closeEvent(event)
+    
+    # def eventFilter(self, obj, event):
+    #     if event.type() == QEvent.WindowActivate:
+    #         print('WindowActivate')
+    #         return True
+    #     if event.type() == QEvent.WindowFocusIn:
+    #         print('WindowFocusIn')
+    #         return True
+    #     return super().eventFilter(obj, event)
 
 
 def test_live():
