@@ -1,4 +1,7 @@
 """ PyQt widget emulating a list of collapsible views like in VSCode sidebar (e.g., explorer, outline).
+
+TODO:
+- expand/collapse in response to dragging handle?
 """
 
 from __future__ import annotations
@@ -10,6 +13,8 @@ import qtawesome as qta
 
 
 class CollapsibleSectionsSplitter(QSplitter):
+
+    sectionIsExpandedChanged = Signal(int, bool)  # index, expanded
 
     def __init__(self):
         super().__init__(orientation=Qt.Orientation.Vertical)
@@ -65,14 +70,14 @@ class CollapsibleSectionsSplitter(QSplitter):
     def indexOfSection(self, title: str) -> int:
         return self._titles.index(title)
     
-    def isExpanded(self, index: int) -> bool:
+    def isSectionExpanded(self, index: int) -> bool:
         if index < 1:
             raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
         
         current_widget: QWidget = self.widget(index)
         return current_widget is self._widgets[index]
     
-    def setExpanded(self, index: int, expanded: bool):
+    def setSectionExpanded(self, index: int, expanded: bool):
         if index < 1:
             raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
         
@@ -82,14 +87,16 @@ class CollapsibleSectionsSplitter(QSplitter):
                 # toggle on by replacing spacer with widget
                 current_widget.setParent(None)
                 self.insertWidget(index, self._widgets[index])
+                self.sectionIsExpandedChanged.emit(index, True)
         else:
             if current_widget is self._widgets[index]:
                 # toggle off by replacing widget with spacer
                 current_widget.setParent(None)
                 self.insertWidget(index, self._spacers[index])
+                self.sectionIsExpandedChanged.emit(index, False)
     
-    def toggleExpanded(self, index: int):
-        self.setExpanded(index, not self.isExpanded(index))
+    def toggleSectionExpanded(self, index: int):
+        self.setSectionExpanded(index, not self.isSectionExpanded(index))
     
     def focusSection(self, index: int):
         if index < 1:
@@ -102,8 +109,8 @@ class CollapsibleSectionsSplitter(QSplitter):
             self._expanded_state = [None] # for initial spacer
         for i in range(1, self.count()):
             if not is_focused:
-                self._expanded_state.append(self.isExpanded(i))
-            self.setExpanded(i, i == index)
+                self._expanded_state.append(self.isSectionExpanded(i))
+            self.setSectionExpanded(i, i == index)
         self._focused_index: int = index
         self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
     
@@ -112,7 +119,7 @@ class CollapsibleSectionsSplitter(QSplitter):
         if focused_index is None:
             return
         for i in range(1, self.count()):
-            self.setExpanded(i, self._expanded_state[i])
+            self.setSectionExpanded(i, self._expanded_state[i])
         self._focused_index = None
         self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
     
@@ -182,7 +189,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     # treat as click => toggle section
                     splitter: CollapsibleSectionsSplitter = self.splitter()
                     index: int = splitter.indexOf(self)
-                    splitter.toggleExpanded(index)
+                    splitter.toggleSectionExpanded(index)
     
     def paintEvent(self, event: QPaintEvent):
         splitter: CollapsibleSectionsSplitter = self.splitter()
@@ -231,13 +238,16 @@ def test_live():
     app = QApplication()
 
     ui = CollapsibleSectionsSplitter()
+    table = QTableView()
     ui.addSection('tree', QTreeView())
-    ui.addSection('table', QTableView())
+    ui.addSection('table', table)
     ui.addSection('list', QListView())
     ui.addSection('button', QPushButton('click me'))
     ui.addSection('try', QTreeView())
     ui.addSection('button', QPushButton('click me too'))
+    print('index of "table":', ui.indexOf(table))
     ui.setFirstSectionHeaderVisible(False)
+    print('index of "table":', ui.indexOf(table))
     # ui.removeSection(0)
     ui.show()
 
