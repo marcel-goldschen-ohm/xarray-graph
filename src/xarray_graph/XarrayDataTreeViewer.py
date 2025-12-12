@@ -45,8 +45,8 @@ class XarrayDataTreeViewer(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        n = len(XarrayDataTreeViewer._windows)
-        self.setWindowTitle(f'Untitled {n}')
+        title = xarray_utils.unique_name('Untitled', [w.windowTitle() for w in XarrayDataTreeViewer._windows])
+        self.setWindowTitle(title)
 
         self._init_componenets()
         self._init_actions()
@@ -154,8 +154,7 @@ class XarrayDataTreeViewer(QMainWindow):
             return
         
         # ensure Path filepath object
-        if isinstance(filepath, str):
-            filepath = Path(filepath)
+        filepath = Path(filepath)
         
         if not filepath.exists():
             QMessageBox.warning(self, 'File Not Found', f'File not found: {filepath}')
@@ -194,11 +193,17 @@ class XarrayDataTreeViewer(QMainWindow):
                 return
         
         if datatree is None:
-            QMessageBox.warning(self, 'Invalid File', f'Unable to open file: {filepath}')
+            QMessageBox.warning(self, 'Invalid File', f'Unable to read file: {filepath}')
             return
+        
+        # set datatree
+        self.setDatatree(datatree)
 
-        # use filename for root node
-        datatree.name = filepath.stem
+        # keep track of current filepath
+        self._filepath = filepath
+
+        # set window title to filename without extension
+        self.setWindowTitle(filepath.stem)
     
     def save(self) -> None:
         """ Save data tree to current file. """
@@ -553,6 +558,7 @@ class XarrayDataTreeViewer(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         # Unregister the window from the global list when closed
         XarrayDataTreeViewer._windows.remove(self)
+        XarrayDataTreeViewer._update_window_menus()
         super().closeEvent(event)
     
     # def eventFilter(self, obj, event):
@@ -567,12 +573,15 @@ class XarrayDataTreeViewer(QMainWindow):
 
 def test_live():
     app = QApplication()
+    # app.setQuitOnLastWindowClosed(False)
 
     window = XarrayDataTreeViewer()
     window.show()
-    dt = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
+
+    window.open('examples/ERPdata.nc')
+    dt = window.datatree()
     dt['eggs'] = dt['EEG'] * 10
-    window.setDatatree(dt)
+    window.refresh()
 
     app.exec()
 
