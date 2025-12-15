@@ -386,7 +386,7 @@ class XarrayDataTreeViewer(QMainWindow):
         selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
         if not selected_items:
             try:
-                selected_items = [self._datatree_view.model().root()]
+                selected_items = [self._datatree_view.model().rootItem()]
             except:
                 self._info_view.clear()
                 return
@@ -394,7 +394,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._info_view.clear()
         sep = False
         item: XarrayDataTreeItem
-        for item in self._datatree_view.model().root().subtree_depth_first():
+        for item in self._datatree_view.model().rootItem().subtree_depth_first():
             if item in selected_items:
                 data: xr.DataTree | xr.DataArray = item.data
                 if isinstance(data, xr.DataTree):

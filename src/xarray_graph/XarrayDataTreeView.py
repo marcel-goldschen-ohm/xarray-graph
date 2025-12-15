@@ -14,70 +14,84 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils, XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
+from xarray_graph import xarray_utils, TreeView, XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
 # from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
 
 
-class XarrayDataTreeView(QTreeView):
+class XarrayDataTreeView(TreeView):
 
-    selectionWasChanged = Signal()
     finishedEditingAttrs = Signal()
-    wasRefreshed = Signal()
-
-    _window_decoration_offset: QPoint = None
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        # general settings
-        sizePolicy = self.sizePolicy()
-        sizePolicy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sizePolicy.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.setSizePolicy(sizePolicy)
-        self.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
-        self.setUniformRowHeights(True)
-        self.setSortingEnabled(False)
+        self._initActions()
+    
+    def setModel(self, model: XarrayDataTreeModel, updateViewOptionsFromModel: bool = True) -> None:
+        super().setModel(model)
+        if updateViewOptionsFromModel:
+            self._updateViewOptionsFromModel()
+        else:
+            self._updateModelFromViewOptions()
 
-        # selection
-        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    def _updateViewOptionsFromModel(self):
+        model: XarrayDataTreeModel = self.model()
+        
+        self._showDataVarsAction.blockSignals(True)
+        self._showDataVarsAction.setChecked(model.isDataVarsVisible())
+        self._showDataVarsAction.blockSignals(False)
+        
+        self._showCoordsAction.blockSignals(True)
+        self._showCoordsAction.setChecked(model.isCoordsVisible())
+        self._showCoordsAction.blockSignals(False)
+        
+        self._showInheritedCoordsAction.blockSignals(True)
+        self._showInheritedCoordsAction.setChecked(model.isInheritedCoordsVisible())
+        self._showInheritedCoordsAction.blockSignals(False)
+        
+        self._showDetailsColumnAction.blockSignals(True)
+        self._showDetailsColumnAction.setChecked(model.isDetailsColumnVisible())
+        self._showDetailsColumnAction.blockSignals(False)
+        
+        self._highlightSharedDataAction.blockSignals(True)
+        self._highlightSharedDataAction.setChecked(model.isSharedDataHighlighted())
+        self._highlightSharedDataAction.blockSignals(False)
+        
+        self._showDebugInfoAction.blockSignals(True)
+        self._showDebugInfoAction.setChecked(model.isDebugInfoVisible())
+        self._showDebugInfoAction.blockSignals(False)
 
-        # drag-n-drop
-        self.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.setDragAndDropEnabled(True)
-
-        # context menu
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.onCustomContextMenuRequested)
-
-        # persistent view state
-        self._view_state: dict[str, dict] = {}
+    def _updateModelFromViewOptions(self):
+        model: XarrayDataTreeModel = self.model()
+        self.storeViewState()
+        model.setDataVarsVisible(self._showDataVarsAction.isChecked())
+        model.setCoordsVisible(self._showCoordsAction.isChecked())
+        model.setInheritedCoordsVisible(self._showInheritedCoordsAction.isChecked())
+        model.setDetailsColumnVisible(self._showDetailsColumnAction.isChecked())
+        model.setSharedDataHighlighted(self._highlightSharedDataAction.isChecked())
+        model.setDebugInfoVisible(self._showDebugInfoAction.isChecked())
+        self.restoreViewState()
     
     def refresh(self) -> None:
+        model: XarrayDataTreeModel = self.model()
         self.storeViewState()
-        self.model().reset()
+        model.reset()
         self.restoreViewState()
         self.wasRefreshed.emit()
     
-    def model(self) -> XarrayDataTreeModel:
-        model: XarrayDataTreeModel = super().model()
-        return model
-    
-    def setModel(self, model: XarrayDataTreeModel) -> None:
-        super().setModel(model)
-        model._views.append(self)
-    
     def datatree(self) -> xr.DataTree:
-        return self.model().datatree()
+        model: XarrayDataTreeModel = self.model()
+        return model.datatree()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
-        if self.model() is None:
-            model: XarrayDataTreeModel = XarrayDataTreeModel()
+        model: XarrayDataTreeModel = self.model()
+        if model is None:
+            model = XarrayDataTreeModel()
             model.setDatatree(datatree)
             self.setModel(model)
         else:
             self.storeViewState()
-            self.model().setDatatree(datatree)
+            model.setDatatree(datatree)
             self.restoreViewState()
     
     def forgetViewState(self) -> None:
@@ -136,67 +150,6 @@ class XarrayDataTreeView(QTreeView):
         if to_be_deselected.count():
             self.selectionModel().select(to_be_deselected, QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
     
-    @Slot(QItemSelection, QItemSelection)
-    def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
-        QTreeView.selectionChanged(self, selected, deselected)
-        self.selectionWasChanged.emit()
-
-    def selectedItems(self) -> list[XarrayDataTreeItem]:
-        model: XarrayDataTreeModel = self.model()
-        indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
-        # get unique items from indexes
-        items: list[XarrayDataTreeItem] = []
-        index: QModelIndex
-        for index in indexes:
-            item: XarrayDataTreeItem = model.itemFromIndex(index)
-            if item not in items:
-                items.append(item)
-        return items
-    
-    def setSelectedItems(self, items: list[XarrayDataTreeItem]):
-        model: XarrayDataTreeModel = self.model()
-        self.selectionModel().clearSelection()
-        selection: QItemSelection = QItemSelection()
-        flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
-        item: XarrayDataTreeItem
-        for item in items:
-            index: QModelIndex = model.indexFromItem(item)
-            if not index.isValid():
-                continue
-            selection.merge(QItemSelection(index, index), flags)
-        if selection.count():
-            self.selectionModel().select(selection, flags)
-    
-    def removeSelectedItems(self, ask: bool = True) -> None:
-        items: list[XarrayDataTreeItem] = self.selectedItems()
-        if not items:
-            return
-        if len(items) == 1:
-            text = f'Remove {items[0].path}?'
-        else:
-            text = 'Remove selected?'
-        self.removeItems(items, ask, text)
-    
-    def removeItems(self, items: list[XarrayDataTreeItem], ask: bool = True, text: str = None) -> None:
-        if not items:
-            return
-        if ask:
-            parent_widget: QWidget = self
-            title = 'Remove'
-            if text is None:
-                if len(items) == 1:
-                    text = f'Remove {items[0].path}?'
-                else:
-                    text = f'Remove {len(items)} items?'
-            answer = QMessageBox.question(parent_widget, title, text, 
-                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
-                defaultButton=QMessageBox.StandardButton.No
-            )
-            if answer!= QMessageBox.StandardButton.Yes:
-                return
-        model: XarrayDataTreeModel = self.model()
-        model.removeItems(items)
-    
     def appendNewChildGroup(self, parent_item: XarrayDataTreeItem) -> None:
         if not parent_item.is_group:
             return
@@ -206,73 +159,69 @@ class XarrayDataTreeView(QTreeView):
         parent_index: QModelIndex = model.indexFromItem(parent_item)
         model.insertRows(row, count, parent_index)
     
-    @Slot(QPoint)
-    def onCustomContextMenuRequested(self, point: QPoint) -> None:
-        index: QModelIndex = self.indexAt(point)
-        menu: QMenu = self.customContextMenu(index)
-        menu.exec(self.viewport().mapToGlobal(point))
-    
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
-        model: XarrayDataTreeModel = self.model()
-        menu = QMenu(self)
+        menu = super().customContextMenu(index)
 
         # item that was clicked on
+        model: XarrayDataTreeModel = self.model()
         item: XarrayDataTreeItem = model.itemFromIndex(index)
-        menu.addAction(f'{item.path}:').setEnabled(False)  # just a label, not clickable
-        menu.addAction('Info', lambda item=item: self._popupInfo(item))
-        if item.is_data_var or item.is_coord:
-            # TODO
-            menu.addAction('Data').setEnabled(False) #, lambda item=item: self._viewData(item))
-        menu.addAction('Attrs', lambda item=item: self._editAttrs(item))
-        
-        # selection
-        if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
-            menu.addSeparator()
-            menu.addAction('Select All', self.selectAll)
-            menu.addAction('Select None', self.clearSelection)
+        before: QAction = menu.actions()[0]
+        action = QAction(f'{item.path}:')
+        menu.insertAction(before, action)
+        action.setEnabled(False) # just a label
+        menu.insertAction(before, QAction('Info', triggered=lambda checked, item=item: self._popupInfo(item)))
+        menu.insertAction(before, QAction('Attrs', triggered=lambda checked, item=item: self._editAttrs(item)))
+        if item.is_variable:
+            menu.insertAction(before, QAction('Data'))
+        elif item.is_group:
+            subtree_menu = QMenu('Subtree')
+            subtree_menu.addAction('Rename Dimensions').setEnabled(False)
+            subtree_menu.addAction('Rename Variables').setEnabled(False)
+            menu.insertMenu(before, subtree_menu)
         
         # TODO: cut/copy/paste
         has_selection = self.selectionModel().hasSelection()
         has_copy = False # TODO
-        menu.addSeparator()
-        menu.addAction('Cut', self.cutSelection).setEnabled(has_selection)
-        menu.addAction('Copy', self.copySelection).setEnabled(has_selection)
-        menu.addAction('Paste', lambda item=item: self.pasteCopy(item)).setEnabled(has_copy)
+        before: QAction = menu._expandSeparatorAction
+        menu.insertSeparator(before)
+        for action, enabled in [
+            (QAction('Cut', triggered=lambda checked: self.cutSelection()), has_selection),
+            (QAction('Copy', triggered=lambda checked: self.copySelection()), has_selection),
+            (QAction('Paste', triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item)), has_copy),
+        ]:
+            menu.insertAction(before, action)
+            action.setEnabled(enabled)
         
         # remove item(s)
-        menu.addSeparator()
-        menu.addAction('Remove', self.removeSelectedItems).setEnabled(has_selection)
+        before: QAction = menu._expandSeparatorAction
+        menu.insertSeparator(before)
+        action = QAction('Remove', triggered=lambda checked: self.removeSelectedItems())
+        menu.insertAction(before, action)
+        action.setEnabled(has_selection)
+
+        # merge/concatenate/...
+        # TODO
         
         # insert new group
         if item.is_group:
-            menu.addSeparator()
-            menu.addAction('New Child Group', lambda parent_item=item: self.appendNewChildGroup(parent_item))
-
-        # TODO: rename things
-        menu.addSeparator()
-        menu.addAction('Rename Variables').setEnabled(False)
-        menu.addAction('Rename Dimensions').setEnabled(False)
-        
-        # expand/collapse
-        menu.addSeparator()
-        menu.addAction('Expand All', self.expandAll)
-        menu.addAction('Collapse All', self.collapseAll)
-        if model.columnCount() > 1:
-            menu.addAction('Resize Columns to Contents', self.resizeAllColumnsToContents)
-            menu.addAction('Show All', self.showAll)
+            before: QAction = menu._expandSeparatorAction
+            action = QAction('New Child Group', triggered=lambda checked, parent_item=item: self.appendNewChildGroup(parent_item))
+            menu.insertSeparator(before)
+            menu.insertAction(before, action)
 
         # visible types
-        menu.addSeparator()
-        menu.addAction(model._showDataVarsAction)
-        menu.addAction(model._showCoordsAction)
-        menu.addAction(model._showInheritedCoordsAction)
-        menu.addAction(model._showDetailsColumnAction)
-        menu.addAction(model._highlightSharedDataAction)
-        menu.addAction(model._showDebugInfoAction)
-
-        # refresh
-        menu.addSeparator()
-        menu.addAction('Refresh', self.refresh)
+        actions = [
+            self._showDataVarsAction,
+            self._showCoordsAction,
+            self._showInheritedCoordsAction,
+            self._showDetailsColumnAction,
+            self._highlightSharedDataAction,
+            self._showDebugInfoAction,
+        ]
+        before: QAction = menu._refreshSeparatorAction
+        menu.insertSeparator(before)
+        for action in actions:
+            menu.insertAction(before, action)
         
         return menu
     
@@ -331,15 +280,6 @@ class XarrayDataTreeView(QTreeView):
         # obj.attrs = attrs
         
         # self.finishedEditingAttrs.emit()
-    
-    @staticmethod
-    def _getWindowDecorationOffset():
-        window = QWidget()
-        window.show()
-        frame: QRect = window.frameGeometry()
-        geo: QRect = window.geometry()
-        window.close()
-        XarrayDataTreeView._window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
     
     def cutSelection(self) -> None:
         pass # TODO
@@ -432,31 +372,6 @@ class XarrayDataTreeView(QTreeView):
         # self.model().endResetModel()
         # self.restoreState()
     
-    def expandAll(self) -> None:
-        QTreeView.expandAll(self)
-        # store current expanded depth
-        self._expanded_depth = self.model().depth()
-    
-    def collapseAll(self) -> None:
-        QTreeView.collapseAll(self)
-        self._expanded_depth = 0
-    
-    def expandToDepth(self, depth: int) -> None:
-        depth = max(0, min(depth, self.model().depth()))
-        if depth == 0:
-            self.collapseAll()
-            return
-        QTreeView.expandToDepth(self, depth - 1)
-        self._expanded_depth = depth
-    
-    def resizeAllColumnsToContents(self) -> None:
-        for col in range(self.model().columnCount()):
-            self.resizeColumnToContents(col)
-    
-    def showAll(self) -> None:
-        self.expandAll()
-        self.resizeAllColumnsToContents()
-    
     # def renameDimensions(self, path: str = None) -> None:
     #     model: XarrayDataTreeModel = self.model()
     #     if model is None:
@@ -513,49 +428,65 @@ class XarrayDataTreeView(QTreeView):
     #     self.model().endResetModel()
     #     self.restoreState()
     
-    # def truncateLabel(self, label: str, max_length: int = 50) -> str:
-    #     """ Truncate long strings from the beginning.
-        
-    #     e.g., '...<end of label>'
-    #     This preserves the final part of any tree paths used as labels.
-    #     """
-    #     if len(label) <= max_length:
-    #         return label
-    #     return '...' + label[-(max_length - 3):]
-    
-    def eventFilter(self, obj: QObject, event: QEvent) -> None:
-        if event.type() == QEvent.Type.Wheel:
-            modifiers: Qt.KeyboardModifier = event.modifiers()
-            if Qt.KeyboardModifier.ControlModifier in modifiers \
-            or Qt.KeyboardModifier.AltModifier in modifiers \
-            or Qt.KeyboardModifier.MetaModifier in modifiers:
-                self.mouseWheelEvent(event)
-                return True
-        # elif event.type() == QEvent.Type.KeyPress:
-        #     event: QKeyEvent = event
-        #     modifiers: Qt.KeyboardModifier = event.modifiers()
-        #     if Qt.KeyboardModifier.ControlModifier in modifiers:
-        #         if event.key() == Qt.Key.Key_C:
-        #             self.copySelection()
-        #             return True
-        #         elif event.key() == Qt.Key.Key_V:
-        #             self.pasteCopiedItems()
-        #             return True
-        # elif event.type() == QEvent.Type.FocusIn:
-        #     print('FocusIn')
-        #     # self.showDropIndicator(True)
-        # elif event.type() == QEvent.Type.FocusOut:
-        #     print('FocusOut')
-        #     # self.showDropIndicator(False)
-        return QTreeView.eventFilter(self, obj, event)
-    
-    def mouseWheelEvent(self, event: QWheelEvent) -> None:
-        delta: int = event.angleDelta().y()
-        depth = getattr(self, '_expanded_depth', 0)
-        if delta > 0:
-            self.expandToDepth(depth + 1)
-        elif delta < 0:
-            self.expandToDepth(depth - 1)
+    def _initActions(self) -> None:
+
+        # optionally show vars and coords
+        self._showDataVarsAction = QAction(
+            text = 'Show Variables',
+            # icon = self._data_var_icon,
+            checkable = True,
+            checked = True,
+            toolTip = 'Show/hide data_vars in the tree view.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        self._showCoordsAction = QAction(
+            text = 'Show Coordinates',
+            # icon = self._coord_icon,
+            checkable = True,
+            checked = False,
+            toolTip = 'Show/hide coords in the tree view.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        self._showInheritedCoordsAction = QAction(
+            text = 'Show Inherited Coordinates',
+            # icon = self._coord_icon,
+            checkable = True,
+            checked = True,
+            toolTip = 'Show/hide inherited coords in the tree view.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        # optional details column
+        self._showDetailsColumnAction = QAction(
+            text = 'Show Details Column',
+            # icon = qta.icon('ph.info'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        # optionally highlight shared data arrays
+        self._highlightSharedDataAction = QAction(
+            text = 'Highlight Shared Data',
+            # icon = qta.icon('ph.info'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Highlight shared data arrays.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        # optionally show data array IDs (for debugging)
+        self._showDebugInfoAction = QAction(
+            text = 'Show Data IDs (For Debugging)',
+            # icon = qta.icon('ph.info'),
+            checkable = True,
+            checked = False,
+            toolTip = 'Show IDs of underlying data arrays.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
     
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_C:
@@ -571,101 +502,6 @@ class XarrayDataTreeView(QTreeView):
                 self.pasteCopy()
                 return
         return super().keyPressEvent(event)
-    
-    def setDragAndDropEnabled(self, enabled: bool) -> None:
-        if enabled:
-            self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
-        else:
-            self.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
-        self.setDragEnabled(enabled)
-        self.setAcceptDrops(enabled)
-        self.viewport().setAcceptDrops(enabled)
-        self.setDropIndicatorShown(enabled)
-    
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        # print('dragEnterEvent...')
-        data: XarrayDataTreeMimeData = event.mimeData()
-
-        # gather all items being dragged (includes descendents in subtrees)
-        dragged_items: list[XarrayDataTreeItem] = []
-        src_item: XarrayDataTreeItem
-        for src_item in data.src_items:
-            subtree_items = list(src_item.subtree_depth_first())
-            item: XarrayDataTreeItem
-            for item in subtree_items:
-                if item not in dragged_items:
-                    dragged_items.append(item)
-        
-        # keep track of full list of dragged subtrees in mime data
-        data._dragged_items = dragged_items
-
-        # store view state of all dragged items in the items themselves
-        self.storeViewState(dragged_items)
-        for item in dragged_items:
-            item._view_state = self._view_state[item.path]
-
-        QTreeView.dragEnterEvent(self, event)
-    
-    def dropEvent(self, event: QDropEvent) -> None:
-        # print('dropEvent...')
-        data: XarrayDataTreeMimeData = event.mimeData()
-        if not isinstance(data, XarrayDataTreeMimeData):
-            event.ignore()
-            return
-
-        src_model: XarrayDataTreeModel = data.src_model
-        src_items: list[XarrayDataTreeItem] = data.src_items
-        dst_model: XarrayDataTreeModel = self.model()
-        if not src_model or not src_items or not dst_model:
-            event.ignore()
-            return
-        
-        # set dst_row and dst_parent_index based on drop position
-        dst_index: QModelIndex = self.indexAt(event.pos())
-        dst_row = dst_index.row()
-        drop_pos = self.dropIndicatorPosition()
-        if drop_pos == QAbstractItemView.DropIndicatorPosition.OnViewport:
-            dst_parent_index = QModelIndex()
-            dst_row = dst_model.rowCount(dst_parent_index)
-        elif drop_pos == QAbstractItemView.DropIndicatorPosition.OnItem:
-            dst_parent_index = dst_index
-            dst_row = dst_model.rowCount(dst_parent_index)
-        elif drop_pos == QAbstractItemView.DropIndicatorPosition.AboveItem:
-            dst_parent_index: QModelIndex = dst_model.parent(dst_index)
-        elif drop_pos == QAbstractItemView.DropIndicatorPosition.BelowItem:
-            dst_parent_index: QModelIndex = dst_model.parent(dst_index)
-            dst_row += 1
-        dst_parent_item: XarrayDataTreeItem = dst_model.itemFromIndex(dst_parent_index)
-        
-        # store drop locaiton in mime data
-        data.dst_model = dst_model
-        data.dst_parent_item = dst_parent_item
-        data.dst_row = dst_row
-
-        # handle drop event
-        QTreeView.dropEvent(self, event)
-
-        # update view state of dragged items and all their descendents as specified in the mime data
-        # only updated wether items are expanded, selection should be handled already in drag-n-drop
-        dragged_items: list[XarrayDataTreeItem] = getattr(data, '_dragged_items', [])
-        item: XarrayDataTreeItem
-        for item in dragged_items:
-            index: QModelIndex = dst_model.indexFromItem(item)
-            if not index.isValid():
-                continue
-            item_view_state = getattr(item, '_view_state', None)
-            if item_view_state is None:
-                continue
-            is_expanded = item_view_state['expanded']
-            self.setExpanded(index, is_expanded)
-    
-    # def dropMimeData(self, index: QModelIndex, data: QMimeData, action: Qt.DropAction) -> bool:
-    #     print('dropMimeData...')
-    #     return False
-    
-    # def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: QModelIndex) -> bool:
-    #     print('canDropMimeData...')
-    #     return True
 
 
 def test_live():

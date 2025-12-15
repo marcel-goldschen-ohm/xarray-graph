@@ -20,7 +20,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils, AbstractTreeItem
+from xarray_graph import xarray_utils, AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
 import cmap
 
 
@@ -110,24 +110,14 @@ class XarrayDataTreeItem(AbstractTreeItem):
         return self.is_coord and self.data.name in self.parent.data._inherited_coords_set()
 
 
-class XarrayDataTreeModel(QAbstractItemModel):
+class XarrayDataTreeModel(AbstractTreeModel):
     """ PyQt tree model interface for a Xarray DataTree.
     """
 
     _data_type_order: tuple[XarrayDataTreeType] = (COORD, DATA_VAR, GROUP)
 
-    # # for dev and debug - show ids of datatree objects in details column
-    # _show_debug_info: bool = True
-
-    # # optionally use color to denote shared data arrays - mostly for dev and debug, but might be useful otherwise
-    # _highlight_shared_data: bool = True
-
     def __init__(self, *args, **kwargs):
-        datatree: xr.DataTree = kwargs.pop('datatree', xr.DataTree())
         super().__init__(*args, **kwargs)
-
-        # keep track of views
-        self._views = []
 
         # headers
         self._row_labels: list[str] = []
@@ -141,9 +131,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self._is_shared_data_highlighted: bool = False
         self._is_debug_info_visible: bool = False
 
-        # drag-and-drop support for moving tree items within the tree or copying them to other tree models
-        self._supportedDropActions: Qt.DropActions = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
-
         # icons
         self._group_icon: QIcon = qta.icon('ph.folder-thin')
         self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
@@ -153,43 +140,27 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self._inherited_coords_color: QColor = QColor(128, 128, 128)
         self._shared_data_colormap: dict[int, QColor] = {}
 
-        # actions
-        self._initActions()
-
         # setup item tree
+        datatree: xr.DataTree = xr.DataTree()
         self._root_item = XarrayDataTreeItem(datatree)
         self._updateItemSubtree(self._root_item)
-    
-    def _currentViews(self) -> list:
-        self._views = [view for view in self._views if view.model() is self]
-        return self._views
-    
-    def reset(self) -> None:
-        """ Reset the model.
-        """
-        self.beginResetModel()
-        self._updateItemSubtree(self._root_item)
-        if self._is_shared_data_highlighted:
-            self._updateSharedDataColors()
-        self.endResetModel()
-
-    def root(self) -> XarrayDataTreeItem:
-        return self._root_item
     
     def datatree(self) -> xr.DataTree:
         """ Get the model's current datatree.
         """
-        return self._root_item.data
+        root_item: XarrayDataTreeItem = self.rootItem()
+        return root_item.data
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
         """ Reset the model to the input datatree.
         """
-        self.beginResetModel()
-        self._root_item = XarrayDataTreeItem(datatree)
+        root_item = XarrayDataTreeItem(datatree)
+        self.setRootItem(root_item)
+    
+    def _onReset(self):
         self._updateItemSubtree(self._root_item)
         if self._is_shared_data_highlighted:
             self._updateSharedDataColors()
-        self.endResetModel()
     
     def _updateItemSubtree(self, item: XarrayDataTreeItem) -> None:
         if not item.is_group:
@@ -252,16 +223,11 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setDataVarsVisible(self, visible: bool) -> None:
         if visible == self.isDataVarsVisible():
             return
-        
-        self._viewOptionsAboutToChange()
 
         self.beginResetModel()
         self._is_data_vars_visible = visible
         self._updateItemSubtree(self._root_item)
         self.endResetModel()
-
-        self._showDataVarsAction.setChecked(visible)
-        self._viewOptionsChanged()
     
     def isCoordsVisible(self) -> bool:
         return self._is_coords_visible
@@ -270,15 +236,10 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if visible == self.isCoordsVisible():
             return
         
-        self._viewOptionsAboutToChange()
-        
         self.beginResetModel()
         self._is_coords_visible = visible
         self._updateItemSubtree(self._root_item)
         self.endResetModel()
-
-        self._showCoordsAction.setChecked(visible)
-        self._viewOptionsChanged()
     
     def isInheritedCoordsVisible(self) -> bool:
         return self._is_inherited_coords_visible
@@ -287,15 +248,10 @@ class XarrayDataTreeModel(QAbstractItemModel):
         if visible == self.isInheritedCoordsVisible():
             return
         
-        self._viewOptionsAboutToChange()
-        
         self.beginResetModel()
         self._is_inherited_coords_visible = visible
         self._updateItemSubtree(self._root_item)
         self.endResetModel()
-
-        self._showInheritedCoordsAction.setChecked(visible)
-        self._viewOptionsChanged()
     
     def isDetailsColumnVisible(self) -> bool:
         return self._is_details_column_visible
@@ -303,6 +259,7 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setDetailsColumnVisible(self, visible: bool) -> None:
         if visible == self.isDetailsColumnVisible():
             return
+        
         if visible:
             self.beginInsertColumns(QModelIndex(), 1, 1)
             self._is_details_column_visible = visible
@@ -311,7 +268,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
             self.beginRemoveColumns(QModelIndex(), 1, 1)
             self._is_details_column_visible = visible
             self.endRemoveColumns()
-        self._showDetailsColumnAction.setChecked(visible)
     
     def isSharedDataHighlighted(self) -> bool:
         return self._is_shared_data_highlighted
@@ -319,8 +275,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setSharedDataHighlighted(self, highlighted: bool) -> None:
         if highlighted == self.isSharedDataHighlighted():
             return
-        
-        self._viewOptionsAboutToChange()
 
         if highlighted:
             self._updateSharedDataColors()
@@ -328,9 +282,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
         self.beginResetModel()
         self._is_shared_data_highlighted = highlighted
         self.endResetModel()
-
-        self._highlightSharedDataAction.setChecked(highlighted)
-        self._viewOptionsChanged()
     
     def isDebugInfoVisible(self) -> bool:
         return self._is_debug_info_visible
@@ -338,67 +289,15 @@ class XarrayDataTreeModel(QAbstractItemModel):
     def setDebugInfoVisible(self, visible: bool) -> None:
         if visible == self.isDebugInfoVisible():
             return
-        
-        self._viewOptionsAboutToChange()
 
         self.beginResetModel()
         self._is_debug_info_visible = visible
         self.endResetModel()
-
-        self._showDebugInfoAction.setChecked(visible)
-        self._viewOptionsChanged()
-    
-    def _viewOptionsAboutToChange(self) -> None:
-        for view in self._currentViews():
-            view.storeViewState()
-    
-    def _viewOptionsChanged(self) -> None:
-        for view in self._currentViews():
-            view.restoreViewState()
-    
-    def itemFromIndex(self, index: QModelIndex) -> XarrayDataTreeItem:
-        if not index.isValid():
-            return self._root_item
-        item: XarrayDataTreeItem = index.internalPointer()
-        return item
-    
-    def indexFromItem(self, item: XarrayDataTreeItem, column: int = 0) -> QModelIndex:
-        if (item is self._root_item) or (item.parent is None):
-            return QModelIndex()
-        row: int = item.parent.children.index(item)
-        return self.createIndex(row, column, item)
-    
-    def rowCount(self, parent_index: QModelIndex = QModelIndex()) -> int:
-        parent_item: XarrayDataTreeItem = self.itemFromIndex(parent_index)
-        if parent_item is None:
-            return 0
-        return len(parent_item.children)
     
     def columnCount(self, parent_index: QModelIndex = QModelIndex()) -> int:
         if self.isDetailsColumnVisible():
             return 2
         return 1
-
-    def parent(self, index: QModelIndex = QModelIndex()) -> QModelIndex:
-        if not index.isValid():
-            return QModelIndex()
-        item: XarrayDataTreeItem = self.itemFromIndex(index)
-        parent_item: XarrayDataTreeItem = item.parent
-        if (parent_item is None) or (parent_item is self._root_item):
-            return QModelIndex()
-        return self.indexFromItem(parent_item)
-
-    def index(self, row: int, column: int, parent_index: QModelIndex = QModelIndex()) -> QModelIndex:
-        if not self.hasIndex(row, column, parent_index):
-            return QModelIndex()
-        if parent_index.isValid() and parent_index.column() != 0:
-            return QModelIndex()
-        try:
-            parent_item: XarrayDataTreeItem = self.itemFromIndex(parent_index)
-            item: XarrayDataTreeItem = parent_item.children[row]
-            return self.createIndex(row, column, item)
-        except IndexError:
-            return QModelIndex()
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
         """ Default item flags.
@@ -576,78 +475,6 @@ class XarrayDataTreeModel(QAbstractItemModel):
                     return False
         return False
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int):
-        """ Get data from `rowLabels` or `columnLabels`.
-        """
-        if role == Qt.ItemDataRole.DisplayRole:
-            if orientation == Qt.Orientation.Horizontal:
-                labels = self.columnLabels()
-            elif orientation == Qt.Orientation.Vertical:
-                labels = self.rowLabels()
-            if section < len(labels):
-                label = labels[section]
-                if label is not None:
-                    return label
-            return section
-
-    def setHeaderData(self, section: int, orientation: Qt.Orientation, value, role: int) -> bool:
-        """ Set data in `rowLabels` or `columnLabels`.
-        """
-        if role == Qt.ItemDataRole.EditRole:
-            if orientation == Qt.Orientation.Horizontal:
-                labels = self.columnLabels()
-            elif orientation == Qt.Orientation.Vertical:
-                labels = self.rowLabels()
-            if section < len(labels):
-                labels[section] = value
-            else:
-                labels += [None] * (section - len(labels)) + [value]
-            if orientation == Qt.Orientation.Horizontal:
-                self.setColumnLabels(labels)
-            elif orientation == Qt.Orientation.Vertical:
-                self.setRowLabels(labels)
-            self.headerDataChanged.emit(orientation, section, section)
-            return True
-        return False
-    
-    def rowLabels(self) -> list:
-        return self._row_labels
-    
-    def setRowLabels(self, labels: list) -> None:
-        old_labels = self._row_labels
-        n_overlap = min(len(labels), len(old_labels))
-        first_change = 0
-        while (first_change < n_overlap) and (labels[first_change] == old_labels[first_change]):
-            first_change += 1
-        last_change = max(len(labels), len(old_labels)) - 1
-        while (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
-            last_change -= 1
-        self._row_labels = labels
-        if first_change <= last_change: 
-            self.headerDataChanged.emit(Qt.Orientation.Vertical, first_change, last_change)
-    
-    def columnLabels(self) -> list | None:
-        return self._column_labels
-    
-    def setColumnLabels(self, labels: list | None) -> None:
-        old_labels = self._column_labels
-        n_overlap = min(len(labels), len(old_labels))
-        first_change = 0
-        while (first_change < n_overlap) and (labels[first_change] == old_labels[first_change]):
-            first_change += 1
-        last_change = max(len(labels), len(old_labels)) - 1
-        while (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
-            last_change -= 1
-        self._column_labels = labels
-        if first_change <= last_change: 
-            self.headerDataChanged.emit(Qt.Orientation.Horizontal, first_change, last_change)
-    
-    def depth(self) -> int:
-        """ Maximum depth of root's subtree.
-        """
-        dt: xr.DataTree = self.datatree()
-        return dt.depth - dt.level
-    
     def removeRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         if count <= 0:
             return False
@@ -1612,118 +1439,17 @@ class XarrayDataTreeModel(QAbstractItemModel):
         colors = cm(np.linspace(0, 1, len(shared_ids)))
         self._shared_data_colormap: dict[int, QColor] = {id_: QColor(*[int(255*c) for c in color[:3]]) for id_, color in zip(shared_ids, colors)}
     
-    def _initActions(self) -> None:
-
-        # optionally show vars and coords
-        self._showDataVarsAction = QAction(
-            text = 'Show Variables',
-            icon = self._data_var_icon,
-            checkable = True,
-            checked = True,
-            toolTip = 'Show/hide data_vars in the tree view.',
-            triggered = lambda checked: self.setDataVarsVisible(checked)
-        )
-
-        self._showCoordsAction = QAction(
-            text = 'Show Coordinates',
-            icon = self._coord_icon,
-            checkable = True,
-            checked = False,
-            toolTip = 'Show/hide coords in the tree view.',
-            triggered = lambda checked: self.setCoordsVisible(checked)
-        )
-
-        self._showInheritedCoordsAction = QAction(
-            text = 'Show Inherited Coordinates',
-            icon = self._coord_icon,
-            checkable = True,
-            checked = True,
-            toolTip = 'Show/hide inherited coords in the tree view.',
-            triggered = lambda checked: self.setInheritedCoordsVisible(checked)
-        )
-
-        # optional details column
-        self._showDetailsColumnAction = QAction(
-            text = 'Show Details Column',
-            icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
-            triggered = lambda checked: self.setDetailsColumnVisible(checked)
-        )
-
-        # optionally highlight shared data arrays
-        self._highlightSharedDataAction = QAction(
-            text = 'Highlight Shared Data',
-            # icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Highlight shared data arrays.',
-            triggered = lambda checked: self.setSharedDataHighlighted(checked)
-        )
-
-        # optionally show data array IDs (for debugging)
-        self._showDebugInfoAction = QAction(
-            text = 'Show Data Array IDs (For Debugging)',
-            # icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Show IDs of underlying data arrays.',
-            triggered = lambda checked: self.setDebugInfoVisible(checked)
-        )
-    
-    def supportedDropActions(self) -> Qt.DropActions:
-        return self._supportedDropActions
-    
-    def setSupportedDropActions(self, actions: Qt.DropActions) -> None:
-        self._supportedDropActions = actions
-
     def mimeTypes(self) -> list[str]:
         """ Return the MIME types supported by this view for drag-and-drop operations.
         """
         return [XarrayDataTreeMimeData.MIME_TYPE]
 
     def mimeData(self, indexes: list[QModelIndex]) -> XarrayDataTreeMimeData | None:
-        # print('mimeData...')
-        # print(f'mimeData(indexes={indexes})')
-        if not indexes:
+        data: AbstractTreeMimeData = super().mimeData(indexes)
+        if data is None:
             return
-        if self.datatree() is None:
-            return
-        # it is possible to have multiple model indexes for the same item, so we need to ensure we have only unique items
-        items: list[XarrayDataTreeItem] = []
-        index: QModelIndex
-        for index in indexes:
-            item: XarrayDataTreeItem = self.itemFromIndex(index)
-            if item not in items:
-                items.append(item)
-        if not items:
-            return
-        return XarrayDataTreeMimeData(self, items)
+        return XarrayDataTreeMimeData(data.src_model, data.src_items)
 
-    def dropMimeData(self, data: XarrayDataTreeMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex) -> bool:
-        # print('dropMimeData...')
-        if not isinstance(data, XarrayDataTreeMimeData):
-            return False
-        
-        src_model: XarrayDataTreeModel = data.src_model
-        src_items: list[XarrayDataTreeItem] = data.src_items
-        dst_model: XarrayDataTreeModel = data.dst_model
-        dst_parent_item: XarrayDataTreeItem = data.dst_parent_item
-        dst_row: int = data.dst_row
-        if dst_model is not self:
-            # sanity check
-            return False
-
-        if action == Qt.DropAction.MoveAction:
-            src_model.transferItems(src_items, dst_model, dst_parent_item, dst_row)
-        # elif action == Qt.DropAction.CopyAction:
-        #     pass # TODO
-
-        # !? If we return True, the model will attempt to remove rows.
-        # As we already completely handled the drop action above, this will corrupt our model, so return False.
-        return False
-    
     @staticmethod
     def _popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
@@ -1733,30 +1459,14 @@ class XarrayDataTreeModel(QAbstractItemModel):
             warn(text)
 
 
-class XarrayDataTreeMimeData(QMimeData):
+class XarrayDataTreeMimeData(AbstractTreeMimeData):
     """ Custom MIME data class for Xarray DataTree objects.
-
-    This class allows storing a reference to an XarrayDataTreeModel object in the MIME data.
-    It can be used to transfer DataTree or DataArray items within and between XarrayDataTreeModels in the same program/process.
-
-    Note:
-    This approach probably won't work if you need to pass items between XarrayDataTreeModels in separate programs/processes.
-    If you really need to do this, you need to somehow serialize the datatree or items thereof (maybe with pickle), pass the serialized bytes in the drag MIME data, then deserialize back to datatree items on drop.
     """
 
     MIME_TYPE = 'application/x-xarray-datatree-model'
 
     def __init__(self, src_model: XarrayDataTreeModel, src_items: list[XarrayDataTreeItem]):
-        QMimeData.__init__(self)
-
-        # these define the datatree items being dragged
-        self.src_model: XarrayDataTreeModel = src_model
-        self.src_items: list[XarrayDataTreeItem] = src_items
-
-        # these define where they are being dragged to (set in drop event)
-        self.dst_model: XarrayDataTreeModel = None
-        self.dst_parent_item: XarrayDataTreeItem = None
-        self.dst_row: int = -1
+        super().__init__(self, src_model, src_items)
 
         # Ensure that the MIME type self.MIME_TYPE is set.
         # The actual value of the data here is not important, as we won't use it.
@@ -1849,6 +1559,8 @@ class NameConflictDialog(QDialog):
 
 
 def test_model():
+    app = QApplication()
+
     dt = xr.DataTree()
     dt['child1'] = xr.tutorial.load_dataset('air_temperature')
     dt['child2'] = xr.DataTree()
@@ -1864,15 +1576,16 @@ def test_model():
     model.setDetailsColumnVisible(True)
     model.setDatatree(dt)
 
-    app = QApplication()
     view = QTreeView()
     view.setModel(model)
     view.expandAll()
     view.resizeColumnToContents(0)
     view.resize(800, 800)
     view.show()
+
     # dlg = NameConflictDialog('blah blah')
     # dlg.show()
+
     app.exec()
 
 

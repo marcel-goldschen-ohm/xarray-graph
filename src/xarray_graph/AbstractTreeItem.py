@@ -210,6 +210,16 @@ class AbstractTreeItem():
             yield item
             item = item._prev_leaf
     
+    def subtree_max_depth(self) -> int:
+        """ Maximum depth of this item's entire subtree.
+        """
+        max_depth: int = 0
+        for leaf in self.subtree_leaves():
+            depth: int = leaf.level - self.level
+            if depth > max_depth:
+                max_depth = depth
+        return max_depth
+    
     def orphan(self) -> None:
         if self.parent:
             self.parent.children.remove(self)
