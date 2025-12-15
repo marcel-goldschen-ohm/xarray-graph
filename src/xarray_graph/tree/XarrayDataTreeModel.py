@@ -51,13 +51,6 @@ class XarrayDataTreeItem(AbstractTreeItem):
         # Note: It is up to you to ensure this remains valid in those few cases where you need it.
         self._data_type: XarrayDataTreeType = GROUP if isinstance(data, xr.DataTree) else data_type
     
-    def __str__(self) -> str:
-        """ Returns a multi-line string representation of this item's tree branch.
-
-        Each item is described by its name.
-        """
-        return self._tree_repr(lambda item: item.data.name or '/')
-    
     @property
     def name(self) -> str:
         return self.data.name or '/'
@@ -333,6 +326,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
     def data(self, index: QModelIndex, role: int):
         if not index.isValid():
             return
+        
         if role in [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]:
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             if index.column() == 0:
@@ -370,6 +364,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     if self._is_debug_info_visible:
                         rep = f'<id={id(item.data.data)}> ' + rep
                     return rep
+        
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
                 item: XarrayDataTreeItem = self.itemFromIndex(index)
@@ -379,6 +374,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return self._data_var_icon
                 elif item.is_coord:
                     return self._coord_icon
+        
         elif role == Qt.ItemDataRole.ForegroundRole:
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             if self._is_shared_data_highlighted and item.is_variable:
@@ -1593,6 +1589,8 @@ def test_model():
     # dlg.show()
 
     app.exec()
+
+    print(model.rootItem())
 
 
 if __name__ == '__main__':
