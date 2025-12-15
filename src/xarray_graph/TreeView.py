@@ -5,6 +5,7 @@ from __future__ import annotations
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
+import qtawesome as qta
 from xarray_graph import AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
 
 
@@ -37,10 +38,67 @@ class TreeView(QTreeView):
 
         # context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.onCustomContextMenuRequested)
+        self.customContextMenuRequested.connect(self._onCustomContextMenuRequested)
 
         # persistent view state
         self._view_state: dict[str, dict] = {}
+
+        # actions
+        self._initActions()
+    
+    def _initActions(self) -> None:
+
+        self._refreshAction = QAction(
+            text = 'Refresh',
+            icon = qta.icon('msc.refresh'),
+            iconVisibleInMenu=True,
+            toolTip = 'Refresh UI',
+            shortcut=QKeySequence.StandardKey.Refresh,
+            triggered = lambda checked: self.refresh()
+        )
+
+        self._selectAllAction = QAction(
+            text = 'Select All',
+            toolTip = 'Select all',
+            shortcut=QKeySequence.StandardKey.SelectAll,
+            triggered = lambda checked: self.selectAll()
+        )
+
+        self._clearSelectionAction = QAction(
+            text = 'Clear Selection',
+            toolTip = 'Clear selection',
+            triggered = lambda checked: self.clearSelection()
+        )
+
+        self._removeSelectedAction = QAction(
+            text = 'Remove',
+            toolTip = 'Remove selected',
+            triggered = lambda checked: self.removeSelectedItems()
+        )
+
+        self._expandAllAction = QAction(
+            text = 'Expand All',
+            toolTip = 'Expand all',
+            triggered = lambda checked: self.expandAll()
+        )
+
+        self._collapseAllAction = QAction(
+            text = 'Collapse All',
+            toolTip = 'Collapse all',
+            triggered = lambda checked: self.collapseAll()
+        )
+
+        self._resizeAllColumnsToContentsAction = QAction(
+            text = 'Resize Columns to Contents',
+            toolTip = 'Resize all columns to contents',
+            triggered = lambda checked: self.resizeAllColumnsToContents()
+        )
+
+        self._showAllAction = QAction(
+            text = 'Show All',
+            toolTip = 'Expand all and resize all columns to contents',
+            triggered = lambda checked: self.showAll()
+        )
     
     def refresh(self) -> None:
         model: AbstractTreeModel = self.model()
@@ -181,7 +239,7 @@ class TreeView(QTreeView):
         model.removeItems(items)
     
     @Slot(QPoint)
-    def onCustomContextMenuRequested(self, point: QPoint) -> None:
+    def _onCustomContextMenuRequested(self, point: QPoint) -> None:
         index: QModelIndex = self.indexAt(point)
         menu: QMenu = self.customContextMenu(index)
         if menu:
@@ -190,41 +248,24 @@ class TreeView(QTreeView):
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: AbstractTreeModel = self.model()
         menu = QMenu(self)
-
-        # item that was clicked on
-        # item: AbstractTreeItem = model.itemFromIndex(index)
-        # menu.addAction(f'{item.path}:').setEnabled(False)  # just a label, not clickable
-        # OPTIONAL: add menu items specific to the item that was clicked on...
         
         # selection
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
             menu._selectionSeparatorAction = menu.addSeparator()
-            menu.addAction('Select All', self.selectAll)
-            menu.addAction('Select None', self.clearSelection)
-        
-        # # cut/copy/paste
-        # has_selection = self.selectionModel().hasSelection()
-        # has_copy = False # TODO: implement
-        # menu.addSeparator()
-        # menu.addAction('Cut', self.cutSelection).setEnabled(has_selection)
-        # menu.addAction('Copy', self.copySelection).setEnabled(has_selection)
-        # menu.addAction('Paste', lambda item=item: self.pasteCopy(item)).setEnabled(has_copy)
-        
-        # # remove item(s)
-        # menu.addSeparator()
-        # menu.addAction('Remove', self.removeSelectedItems).setEnabled(has_selection)
+            menu.addAction(self._selectAllAction)
+            menu.addAction(self._clearSelectionAction)
         
         # expand/collapse
         menu._expandSeparatorAction = menu.addSeparator()
-        menu.addAction('Expand All', self.expandAll)
-        menu.addAction('Collapse All', self.collapseAll)
+        menu.addAction(self._expandAllAction)
+        menu.addAction(self._collapseAllAction)
         if model.columnCount() > 1:
-            menu.addAction('Resize Columns to Contents', self.resizeAllColumnsToContents)
-            menu.addAction('Show All', self.showAll)
+            menu.addAction(self._resizeAllColumnsToContentsAction)
+            menu.addAction(self._showAllAction)
 
         # refresh
         menu._refreshSeparatorAction = menu.addSeparator()
-        menu.addAction('Refresh', self.refresh)
+        menu.addAction(self._refreshAction)
         
         return menu
     

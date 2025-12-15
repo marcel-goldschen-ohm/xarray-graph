@@ -459,11 +459,11 @@ class XarrayDataTreeViewer(QMainWindow):
 
         self._refresh_action = QAction(
             parent=self,
-            icon=qta.icon('mdi.refresh', options=[{'opacity': 1.0}]),
+            icon=qta.icon('msc.refresh', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Refresh',
             toolTip='Refresh UI',
-            shortcut = QKeySequence('Ctrl+R'),
+            shortcut = QKeySequence.StandardKey.Refresh,
             triggered=lambda checked: self.refresh())
 
         self._about_action = QAction(
@@ -479,6 +479,7 @@ class XarrayDataTreeViewer(QMainWindow):
             iconVisibleInMenu=False,
             text='Settings',
             toolTip='Settings',
+            shortcut=QKeySequence.StandardKey.Preferences,
             triggered=lambda checked: self.settings())
 
         # self._toggle_toolbar_action = QAction(

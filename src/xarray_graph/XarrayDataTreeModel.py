@@ -14,7 +14,7 @@ TODO:
 from __future__ import annotations
 from collections.abc import Iterator
 from enum import Enum
-from copy import copy, deepcopy
+from copy import copy
 import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -137,7 +137,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
 
         # colors
-        self._inherited_coords_color: QColor = QColor(128, 128, 128)
         self._shared_data_colormap: dict[int, QColor] = {}
 
         # setup item tree
@@ -344,7 +343,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.data.dataset.sizes.items()])
                     rep = f'({sizes_str})'
                     if self._is_debug_info_visible:
-                        rep = f'<{id(item.data)}> ' + rep
+                        rep = f'<id={id(item.data)}> ' + rep
                     return rep
                 elif item.is_data_var:
                     parent_group: xr.DataTree = item.parent.data
@@ -355,7 +354,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     j = rep.find('\n', i)
                     rep = rep[i:j] if j > 0 else rep[i:]
                     if self._is_debug_info_visible:
-                        rep = f'<{id(item.data.data)}> ' + rep
+                        rep = f'<id={id(item.data.data)}> ' + rep
                     return rep
                 elif item.is_coord:
                     parent_group: xr.DataTree = item.parent.data
@@ -368,7 +367,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     if item.is_index_coord:
                         rep = '* ' + rep
                     if self._is_debug_info_visible:
-                        rep = f'<{id(item.data.data)}> ' + rep
+                        rep = f'<id={id(item.data.data)}> ' + rep
                     return rep
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
@@ -379,14 +378,20 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return self._data_var_icon
                 elif item.is_coord:
                     return self._coord_icon
-        elif role == Qt.ItemDataRole.TextColorRole:
+        elif role == Qt.ItemDataRole.ForegroundRole:
             item: XarrayDataTreeItem = self.itemFromIndex(index)
+            if self._is_shared_data_highlighted and item.is_variable:
+                mem = id(item.data.values)
+                color = self._shared_data_colormap.get(mem, None)
+                if color is not None:
+                    if item.is_inherited_coord:
+                        color = copy(color)
+                        color.setAlpha(128)
+                    return color
             if item.is_inherited_coord:
-                return self._inherited_coords_color
-            if self._is_shared_data_highlighted:
-                if item.is_variable:
-                    mem = id(item.data.values)
-                    return self._shared_data_colormap.get(mem, None)
+                color: QColor = QApplication.palette().color(QPalette.ColorRole.Text)
+                color.setAlpha(128)
+                return color
 
     def setData(self, index: QModelIndex, value, role: int) -> bool:
         """ This amounts to just renaming items.

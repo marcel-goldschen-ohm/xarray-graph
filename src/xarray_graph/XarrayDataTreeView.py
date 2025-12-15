@@ -25,7 +25,80 @@ class XarrayDataTreeView(TreeView):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
+        # icons
+        self._group_icon: QIcon = qta.icon('ph.folder-thin')
+        self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
+        self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
+
+        # actions
         self._initActions()
+    
+    def _initActions(self) -> None:
+        super()._initActions()
+
+        # optionally show vars and coords
+        self._showDataVarsAction = QAction(
+            text = 'Show Variables',
+            icon = qta.icon('ph.cube-thin'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = True,
+            toolTip = 'Show/hide data_vars in the tree view.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        self._showCoordsAction = QAction(
+            text = 'Show Coordinates',
+            icon = qta.icon('ph.list-numbers-thin'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = False,
+            toolTip = 'Show/hide coords in the tree view.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        self._showInheritedCoordsAction = QAction(
+            text = 'Show Inherited Coordinates',
+            icon = qta.icon('ph.list-numbers-thin'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = True,
+            toolTip = 'Show/hide inherited coords in the tree view.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        # optional details column
+        self._showDetailsColumnAction = QAction(
+            text = 'Show Details Column',
+            icon = qta.icon('fa6s.info'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = False,
+            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        # optionally highlight shared data arrays
+        self._highlightSharedDataAction = QAction(
+            text = 'Highlight Shared Data',
+            icon = qta.icon('mdi6.format-color-highlight'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = False,
+            toolTip = 'Highlight shared data arrays.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+
+        # optionally show data array IDs (for debugging)
+        self._showDebugInfoAction = QAction(
+            text = 'Show Data IDs (For Debugging)',
+            icon = qta.icon('ph.bug-thin'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = False,
+            toolTip = 'Show IDs of underlying data arrays.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
     
     def setModel(self, model: XarrayDataTreeModel, updateViewOptionsFromModel: bool = True) -> None:
         super().setModel(model)
@@ -166,7 +239,13 @@ class XarrayDataTreeView(TreeView):
         model: XarrayDataTreeModel = self.model()
         item: XarrayDataTreeItem = model.itemFromIndex(index)
         before: QAction = menu.actions()[0]
-        action = QAction(f'{item.path}:')
+        if item.is_group:
+            icon: QIcon = self._group_icon
+        elif item.is_data_var:
+            icon: QIcon = self._data_var_icon
+        elif item.is_coord:
+            icon: QIcon = self._coord_icon
+        action = QAction(f'{item.path}:', icon=icon, iconVisibleInMenu=True)
         menu.insertAction(before, action)
         action.setEnabled(False) # just a label
         menu.insertAction(before, QAction('Info', triggered=lambda checked, item=item: self._popupInfo(item)))
@@ -199,13 +278,25 @@ class XarrayDataTreeView(TreeView):
         menu.insertAction(before, action)
         action.setEnabled(has_selection)
 
-        # merge/concatenate/...
-        # TODO
+        # combine items
+        n_selected: int = len(self.selectedIndexes())
+        if n_selected > 1:
+            before: QAction = menu._expandSeparatorAction
+            menu.insertSeparator(before)
+            combine_menu = QMenu('Combine')
+            combine_menu.addAction('Merge').setEnabled(False) # TODO
+            combine_menu.addAction('Concatenate').setEnabled(False) # TODO
+            menu.insertMenu(before, combine_menu)
         
         # insert new group
         if item.is_group:
             before: QAction = menu._expandSeparatorAction
-            action = QAction('New Child Group', triggered=lambda checked, parent_item=item: self.appendNewChildGroup(parent_item))
+            action = QAction(
+                'New Child Group',
+                icon=self._group_icon,
+                iconVisibleInMenu=True,
+                triggered=lambda checked, parent_item=item: self.appendNewChildGroup(parent_item)
+            )
             menu.insertSeparator(before)
             menu.insertAction(before, action)
 
@@ -427,66 +518,6 @@ class XarrayDataTreeView(TreeView):
     #     # print(node)
     #     self.model().endResetModel()
     #     self.restoreState()
-    
-    def _initActions(self) -> None:
-
-        # optionally show vars and coords
-        self._showDataVarsAction = QAction(
-            text = 'Show Variables',
-            # icon = self._data_var_icon,
-            checkable = True,
-            checked = True,
-            toolTip = 'Show/hide data_vars in the tree view.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
-
-        self._showCoordsAction = QAction(
-            text = 'Show Coordinates',
-            # icon = self._coord_icon,
-            checkable = True,
-            checked = False,
-            toolTip = 'Show/hide coords in the tree view.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
-
-        self._showInheritedCoordsAction = QAction(
-            text = 'Show Inherited Coordinates',
-            # icon = self._coord_icon,
-            checkable = True,
-            checked = True,
-            toolTip = 'Show/hide inherited coords in the tree view.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
-
-        # optional details column
-        self._showDetailsColumnAction = QAction(
-            text = 'Show Details Column',
-            # icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
-
-        # optionally highlight shared data arrays
-        self._highlightSharedDataAction = QAction(
-            text = 'Highlight Shared Data',
-            # icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Highlight shared data arrays.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
-
-        # optionally show data array IDs (for debugging)
-        self._showDebugInfoAction = QAction(
-            text = 'Show Data IDs (For Debugging)',
-            # icon = qta.icon('ph.info'),
-            checkable = True,
-            checked = False,
-            toolTip = 'Show IDs of underlying data arrays.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
     
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_C:
