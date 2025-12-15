@@ -6,7 +6,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
+from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
 
 
 class TreeView(QTreeView):

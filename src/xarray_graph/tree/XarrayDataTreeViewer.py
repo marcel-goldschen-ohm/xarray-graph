@@ -20,7 +20,9 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, IPythonConsole, CollapsibleSectionsSplitter
+from xarray_graph import xarray_utils
+from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView
+from xarray_graph.widgets import IPythonConsole, CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeViewer(QMainWindow):
@@ -78,7 +80,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self.setCentralWidget(self._outer_splitter)
 
         msg = self._console._one_time_message_on_show
-        QTimer.singleShot(300, lambda msg=msg: self._console.print_message(msg))
+        QTimer.singleShot(300, lambda msg=msg: self._console.printMessage(msg))
 
         # initial state
         self.setConsoleVisible(False)
@@ -96,7 +98,7 @@ class XarrayDataTreeViewer(QMainWindow):
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
         self._datatree_view.setDatatree(datatree)
-        self._console.add_variable('dt', datatree)
+        self._console.addVariable('dt', datatree)
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
@@ -440,7 +442,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._console = IPythonConsole()
         self._console.execute('import numpy as np', hidden=True)
         self._console.execute('import xarray as xr', hidden=True)
-        self._console.add_variable('ui', self) # mostly for debugging
+        self._console.addVariable('ui', self) # mostly for debugging
         self._console.executed.connect(self._datatree_view.refresh)
         self._console._one_time_message_on_show = """
         ----------------------------------------------------

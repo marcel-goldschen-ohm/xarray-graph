@@ -2,7 +2,8 @@
 """
 
 # from __future__ import annotations
-from qtpy.QtGui import QShowEvent
+# from qtpy.QtGui import QCloseEvent#, QShowEvent
+# from qtpy.QtWidgets import QApplication
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.inprocess import QtInProcessKernelManager
 
@@ -19,22 +20,35 @@ class IPythonConsole(RichJupyterWidget):
         super().__init__(*args, **kwargs)
 
         self.kernel_manager = QtInProcessKernelManager()
+        self.start()
+        # self.exit_requested.connect(self.stop)
+        # QApplication.instance().aboutToQuit.connect(self.stop)
+    
+    def start(self) -> None:
         self.kernel_manager.start_kernel(show_banner=False)
         self.kernel_client = self.kernel_manager.client()
         self.kernel_client.start_channels()
     
-    # def __del__(self) -> None:
-    #     """ Shutdown the console.
-    #     """
-    #     self.kernel_client.stop_channels()
-    #     self.kernel_manager.shutdown_kernel()
+    def stop(self) -> None:
+        self.kernel_client.stop_channels()
+        self.kernel_manager.shutdown_kernel()
+    
+    def pushVariables(self, variables: dict):
+        """ Given a dictionary containing name / value pairs, push those variables to the IPython console widget
+        """
+        self.kernel_manager.kernel.shell.push(variables)
 
-    def add_variable(self, name: str, value: object) -> None:
+    def addVariable(self, name: str, value: object) -> None:
         """ Add a variable to the console's namespace.
         """
         self.kernel_manager.kernel.shell.push({name: value})
     
-    def print_message(self, message: str, dedent: bool = True) -> None:
+    def clearTerminal(self):
+        """ Clears the terminal
+        """
+        self._control.clear()
+    
+    def printMessage(self, message: str, dedent: bool = True) -> None:
         """ Print message to the console.
         """
         if dedent:
@@ -53,6 +67,9 @@ class IPythonConsole(RichJupyterWidget):
     #         self.print_message(msg)
     #         # so we don't keep displaying the message
     #         delattr(self, '_one_time_message_on_show')
+
+    # def closeEvent(self, event: QCloseEvent) -> None:
+    #     self.stop()
     
     
 def test_live():
@@ -67,8 +84,8 @@ def test_live():
     # console._set_input_buffer('') # seems silly to have to call this?
 
     data = np.random.rand(4, 3)
-    console.add_variable('data', data)
-    console.add_variable('self', console)
+    console.addVariable('data', data)
+    console.addVariable('self', console)
 
     console.executed.connect(lambda: print("Code executed in console."))
 
@@ -81,7 +98,7 @@ def test_live():
     ----------------------------------------------------
     """
     # need to delay a bit to let the console show first
-    QTimer.singleShot(100, lambda: console.print_message(msg))
+    QTimer.singleShot(100, lambda: console.printMessage(msg))
     
     console.show()
     app.exec()

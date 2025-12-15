@@ -5,7 +5,7 @@ from __future__ import annotations
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from xarray_graph import AbstractTreeItem
+from xarray_graph.tree import AbstractTreeItem
 
 
 class AbstractTreeModel(QAbstractItemModel):
