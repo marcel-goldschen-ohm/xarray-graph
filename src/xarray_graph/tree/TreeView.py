@@ -251,12 +251,12 @@ class TreeView(QTreeView):
         
         # selection
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
-            menu._selectionSeparatorAction = menu.addSeparator()
+            menu.addSeparator()
             menu.addAction(self._selectAllAction)
             menu.addAction(self._clearSelectionAction)
         
         # expand/collapse
-        menu._expandSeparatorAction = menu.addSeparator()
+        menu.addSeparator()
         menu.addAction(self._expandAllAction)
         menu.addAction(self._collapseAllAction)
         if model.columnCount() > 1:
@@ -264,7 +264,7 @@ class TreeView(QTreeView):
             menu.addAction(self._showAllAction)
 
         # refresh
-        menu._refreshSeparatorAction = menu.addSeparator()
+        menu.addSeparator()
         menu.addAction(self._refreshAction)
         
         return menu

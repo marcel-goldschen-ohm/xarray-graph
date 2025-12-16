@@ -3,7 +3,6 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- edit attrs in key-value tree ui
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
 - global rename of variables throughout the entire branch or tree?
 """
@@ -15,8 +14,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import xarray_utils
-from xarray_graph.tree import TreeView, XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData
-# from pyqt_ext.tree import KeyValueTreeItem, KeyValueTreeModel, KeyValueTreeView
+from xarray_graph.tree import TreeView, XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData, KeyValueTreeModel, KeyValueTreeView
 
 
 class XarrayDataTreeView(TreeView):
@@ -234,86 +232,79 @@ class XarrayDataTreeView(TreeView):
         model.insertRows(row, count, parent_index)
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
-        menu = super().customContextMenu(index)
+        model: XarrayDataTreeModel = self.model()
+        menu = QMenu(self)
 
         # item that was clicked on
-        model: XarrayDataTreeModel = self.model()
         item: XarrayDataTreeItem = model.itemFromIndex(index)
-        before: QAction = menu.actions()[0]
         if item.is_group:
             icon: QIcon = self._group_icon
         elif item.is_data_var:
             icon: QIcon = self._data_var_icon
         elif item.is_coord:
             icon: QIcon = self._coord_icon
-        action = QAction(f'{item.path}:', icon=icon, iconVisibleInMenu=True)
-        menu.insertAction(before, action)
-        action.setEnabled(False) # just a label
-        menu.insertAction(before, QAction('Info', triggered=lambda checked, item=item: self._popupInfo(item)))
-        menu.insertAction(before, QAction('Attrs', triggered=lambda checked, item=item: self._editAttrs(item)))
+        menu.addAction(QAction(f'{item.path}:', parent=menu, icon=icon, iconVisibleInMenu=True, enabled=False))
+        menu.addAction(QAction('Info', parent=menu, triggered=lambda checked, item=item: self._popupInfo(item)))
+        menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self._editAttrs(item)))
         if item.is_variable:
-            menu.insertAction(before, QAction('Data'))
+            menu.addAction(QAction('Data', parent=menu, enabled=False))
         elif item.is_group:
-            subtree_menu = QMenu('Subtree')
-            subtree_menu.addAction('Rename Dimensions').setEnabled(False)
-            subtree_menu.addAction('Rename Variables').setEnabled(False)
-            menu.insertMenu(before, subtree_menu)
+            subtree_menu = QMenu('Subtree', parent=menu)
+            subtree_menu.addAction(QAction('Rename Dimensions', parent=menu, enabled=False))
+            subtree_menu.addAction(QAction('Rename Variables', parent=menu, enabled=False))
+            menu.addMenu(subtree_menu)
+        
+        # selection
+        if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
+            menu.addSeparator()
+            menu.addAction(self._selectAllAction)
+            menu.addAction(self._clearSelectionAction)
         
         # TODO: cut/copy/paste
         has_selection = self.selectionModel().hasSelection()
         has_copy = False # TODO
-        before: QAction = menu._expandSeparatorAction
-        menu.insertSeparator(before)
-        for action, enabled in [
-            (QAction('Cut', triggered=lambda checked: self.cutSelection()), has_selection),
-            (QAction('Copy', triggered=lambda checked: self.copySelection()), has_selection),
-            (QAction('Paste', triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item)), has_copy),
-        ]:
-            menu.insertAction(before, action)
-            action.setEnabled(enabled)
+        menu.addSeparator()
+        menu.addAction(QAction('Cut', parent=menu, triggered=lambda checked: self.cutSelection(), enabled=has_selection))
+        menu.addAction(QAction('Copy', parent=menu, triggered=lambda checked: self.copySelection(), enabled=has_selection))
+        menu.addAction(QAction('Paste', parent=menu, triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item), enabled=has_copy))
         
         # remove item(s)
-        before: QAction = menu._expandSeparatorAction
-        menu.insertSeparator(before)
-        action = QAction('Remove', triggered=lambda checked: self.removeSelectedItems())
-        menu.insertAction(before, action)
-        action.setEnabled(has_selection)
+        menu.addSeparator()
+        menu.addAction(QAction('Remove', parent=menu, triggered=lambda checked: self.removeSelectedItems(), enabled=has_selection))
 
         # combine items
-        n_selected: int = len(self.selectedIndexes())
-        if n_selected > 1:
-            before: QAction = menu._expandSeparatorAction
-            menu.insertSeparator(before)
+        if has_selection and len(self.selectedIndexes()) > 1:
+            menu.addSeparator()
             combine_menu = QMenu('Combine')
-            combine_menu.addAction('Merge').setEnabled(False) # TODO
-            combine_menu.addAction('Concatenate').setEnabled(False) # TODO
-            menu.insertMenu(before, combine_menu)
+            combine_menu.addAction(QAction('Merge', parent=menu, enabled=False))
+            combine_menu.addAction(QAction('Concatenate', parent=menu, enabled=False))
+            menu.addMenu(combine_menu)
         
         # insert new group
         if item.is_group:
-            before: QAction = menu._expandSeparatorAction
-            action = QAction(
-                'New Child Group',
-                icon=self._group_icon,
-                iconVisibleInMenu=True,
-                triggered=lambda checked, parent_item=item: self.appendNewChildGroup(parent_item)
-            )
-            menu.insertSeparator(before)
-            menu.insertAction(before, action)
+            menu.addSeparator()
+            menu.addAction(QAction('New Child Group', parent=menu, icon=self._group_icon, iconVisibleInMenu=True, triggered=lambda checked, parent_item=item: self.appendNewChildGroup(parent_item), enabled=has_selection))
+        
+        # expand/collapse
+        menu.addSeparator()
+        menu.addAction(self._expandAllAction)
+        menu.addAction(self._collapseAllAction)
+        if model.columnCount() > 1:
+            menu.addAction(self._resizeAllColumnsToContentsAction)
+            menu.addAction(self._showAllAction)
 
         # visible types
-        actions = [
-            self._showDataVarsAction,
-            self._showCoordsAction,
-            self._showInheritedCoordsAction,
-            self._showDetailsColumnAction,
-            self._highlightSharedDataAction,
-            self._showDebugInfoAction,
-        ]
-        before: QAction = menu._refreshSeparatorAction
-        menu.insertSeparator(before)
-        for action in actions:
-            menu.insertAction(before, action)
+        menu.addSeparator()
+        menu.addAction(self._showDataVarsAction)
+        menu.addAction(self._showCoordsAction)
+        menu.addAction(self._showInheritedCoordsAction)
+        menu.addAction(self._showDetailsColumnAction)
+        menu.addAction(self._highlightSharedDataAction)
+        menu.addAction(self._showDebugInfoAction)
+
+        # refresh
+        menu.addSeparator()
+        menu.addAction(self._refreshAction)
         
         return menu
     
@@ -339,39 +330,43 @@ class XarrayDataTreeView(TreeView):
         dlg.exec()
     
     def _editAttrs(self, item: XarrayDataTreeItem) -> None:
-        attrs: dict = item.data.attrs.copy()
-        
-        # TODO
-        # root = KeyValueTreeItem(attrs)
-        # kvmodel = KeyValueTreeModel(root)
-        # view = KeyValueTreeView()
-        # view.setAlternatingRowColors(True)
-        # view.setModel(kvmodel)
-        # view.expandAll()
-        # view.resizeAllColumnsToContents()
+        attrs_copy: dict = item.data.attrs.copy()
 
-        # dlg = QDialog(self)
-        # dlg.setWindowTitle(path)
-        # layout = QVBoxLayout(dlg)
-        # layout.setContentsMargins(0, 0, 0, 0)
-        # layout.addWidget(view)
+        model = KeyValueTreeModel()
+        model.setKeyValueMap(attrs_copy)
 
-        # btns = QDialogButtonBox()
-        # btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-        # btns.accepted.connect(dlg.accept)
-        # btns.rejected.connect(dlg.reject)
-        # layout.addWidget(btns)
+        view = KeyValueTreeView()
+        view.setAlternatingRowColors(True)
+        view.setModel(model)
+        view.showAll()
+
+        dlg = QDialog(self)
+        dlg.resize(max(self.width(), 800), self.height())
+        # if self.window_decoration_offset is None:
+        #     self._get_window_decoration_offset()
+        # dlg.move(self.mapToGlobal(self.window_decoration_offset))
+        dlg.move(self.mapToGlobal(QPoint(0, 0)))
+        dlg.setWindowTitle(item.path)
         
-        # dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-        # dlg.setMinimumSize(QSize(400, 400))
-        # if dlg.exec() != QDialog.DialogCode.Accepted:
-        #     return
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(view)
+
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
         
-        # root: KeyValueTreeItem = kvmodel.rootItem()
-        # attrs: dict = root.value()
-        # obj.attrs = attrs
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setMinimumSize(QSize(400, 400))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
         
-        # self.finishedEditingAttrs.emit()
+        attrs: dict = model.keyValueMap()
+        item.data.attrs = attrs
+        
+        self.finishedEditingAttrs.emit()
     
     def cutSelection(self) -> None:
         pass # TODO
@@ -538,7 +533,6 @@ class XarrayDataTreeView(TreeView):
 
 def test_live():
     import numpy as np
-    from xarray_graph import XarrayDataTreeDebugView
 
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
@@ -583,6 +577,7 @@ def test_live():
     view.move(100, 50)
     view.raise_()
 
+    # from xarray_graph.tree import XarrayDataTreeDebugView
     # debug_view = XarrayDataTreeDebugView()
     # debug_view.setDatatree(dt)
     # debug_view.show()

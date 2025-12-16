@@ -21,7 +21,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import xarray_utils
-from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView
+from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeModel, KeyValueTreeView
 from xarray_graph.widgets import IPythonConsole, CollapsibleSectionsSplitter
 
 
@@ -383,6 +383,7 @@ class XarrayDataTreeViewer(QMainWindow):
     
     def onSelectionChanged(self) -> None:
         self._update_info_view()
+        self._update_attrs_view()
     
     def _update_info_view(self) -> None:
         selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
@@ -422,6 +423,17 @@ class XarrayDataTreeViewer(QMainWindow):
                 # # eventually, apply the cursor so that editing actually starts at the end
                 # self.result_text_box.setTextCursor(tc)
     
+    def _update_attrs_view(self) -> None:
+        selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
+        if len(selected_items) == 1:
+            item: XarrayDataTreeItem = selected_items[0]
+            attrs: dict = item.data.attrs
+            model = KeyValueTreeModel()
+            model.setKeyValueMap(attrs)
+            self._attrs_view.storeViewState()
+            self._attrs_view.setModel(model)
+            self._attrs_view.restoreViewState()
+    
     def _init_componenets(self) -> None:
         """ Initialize UI components.
         """
@@ -436,7 +448,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._info_view.setReadOnly(True)
 
         # attrs for selected items
-        self._attrs_view = QTreeView() # TODO
+        self._attrs_view = KeyValueTreeView()
 
         # console
         self._console = IPythonConsole()
