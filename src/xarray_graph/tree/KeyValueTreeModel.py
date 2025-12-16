@@ -4,7 +4,6 @@ TODO:
 """
 
 from __future__ import annotations
-from typing import Any
 import numpy as np
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -15,13 +14,12 @@ from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, AbstractTreeM
 
 class KeyValueTreeItem(AbstractTreeItem):
 
-    def __init__(self, key: str | None, value: dict | list | Any, parent: KeyValueTreeItem = None, sibling_index: int = -1):
+    def __init__(self, data, parent: KeyValueTreeItem = None, sibling_index: int = -1):
         # tree linkage
         super().__init__(parent, sibling_index)
 
-        # item data
-        self.key = key
-        self.value = value
+        # item data (either the root map or a key into the parent map)
+        self.data = data
 
         self.updateSubtree()
     
@@ -30,6 +28,20 @@ class KeyValueTreeItem(AbstractTreeItem):
         if self.parent is None:
             return '/'
         return str(self.key)
+    
+    @property
+    def key(self) -> str | int | None:
+        if self.parent is None:
+            return
+        if self.parent.is_list:
+            return self.row
+        return self.data
+    
+    @property
+    def value(self):
+        if self.parent is None:
+            return self.data
+        return self.parent.value[self.key]
     
     @property
     def is_dict(self) -> bool:
@@ -45,10 +57,10 @@ class KeyValueTreeItem(AbstractTreeItem):
         self.children = []
         if isinstance(self.value, dict):
             for key, val in self.value.items():
-                KeyValueTreeItem(key, val, parent=self)
+                KeyValueTreeItem(key, parent=self)
         elif isinstance(self.value, list):
             for key, val in enumerate(self.value):
-                KeyValueTreeItem(key, val, parent=self)
+                KeyValueTreeItem(key, parent=self)
 
 
 class KeyValueTreeModel(AbstractTreeModel):
@@ -60,7 +72,10 @@ class KeyValueTreeModel(AbstractTreeModel):
 
         # headers
         self._row_labels: list[str] = []
-        self._column_labels: list[str] = ['Key', 'Value']
+        self._column_labels: list[str] = ['Key', 'Value', 'Type']
+
+        # options
+        self._is_types_column_visible: bool = False
 
         # icons
         self._dict_icon: QIcon = qta.icon('ph.folder-thin')
@@ -78,14 +93,32 @@ class KeyValueTreeModel(AbstractTreeModel):
     def setKeyValueMap(self, data: dict | list) -> None:
         """ Reset the model to the input key: value map.
         """
-        root_item = KeyValueTreeItem(None, data)
+        root_item = KeyValueTreeItem(data)
         self.setRootItem(root_item)
     
     def _onReset(self):
         root_item: KeyValueTreeItem = self.rootItem()
         root_item.updateSubtree()
     
+    def isTypesColumnVisible(self) -> bool:
+        return self._is_types_column_visible
+    
+    def setTypesColumnVisible(self, visible: bool) -> None:
+        if visible == self.isTypesColumnVisible():
+            return
+        
+        if visible:
+            self.beginInsertColumns(QModelIndex(), 2, 2)
+            self._is_types_column_visible = visible
+            self.endInsertColumns()
+        else:
+            self.beginRemoveColumns(QModelIndex(), 2, 2)
+            self._is_types_column_visible = visible
+            self.endRemoveColumns()
+    
     def columnCount(self, parent_index: QModelIndex = QModelIndex()) -> int:
+        if self.isTypesColumnVisible():
+            return 3
         return 2
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
@@ -101,7 +134,10 @@ class KeyValueTreeModel(AbstractTreeModel):
             return Qt.ItemFlag.NoItemFlags
         
         item: KeyValueTreeItem = self.itemFromIndex(index)
-        if index.column() == 0 and item.parent and item.parent.is_list:
+        if index.column() == 2:
+            # types column is not editable
+            flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        elif index.column() == 0 and item.parent and item.parent.is_list:
             # list index is not editable
             flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         else:
@@ -124,21 +160,9 @@ class KeyValueTreeModel(AbstractTreeModel):
                 return item.key
             elif index.column() == 1:
                 if item.is_leaf:
-                    value = item.value
-                    if isinstance(value, np.ndarray):
-                        value = self.ndarray_to_tuple(value)
-                    else:
-                        try:
-                            # a numpy value
-                            dtype = value.dtype
-                            if np.issubdtype(dtype, np.floating):
-                                value = float(value)
-                            elif np.issubdtype(dtype, np.integer):
-                                value = int(value)
-                        except:
-                            # not a numpy value
-                            pass
-                    return value
+                    return item.value
+            elif index.column() == 2:
+                return f'{type(item.value)}'
         
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
@@ -174,12 +198,20 @@ class KeyValueTreeModel(AbstractTreeModel):
                     if new_key in parent_dict:
                         return False
                     parent_dict[new_key] = parent_dict.pop(old_key)
-                    item.key = new_key
+                    item.data = new_key
                     self.dataChanged.emit(index, index)
                     return True
             elif index.column() == 1:
                 # edit value
-                # TODO
+                parent_map: dict | list = item.parent.value
+                if item.is_leaf and type(value) not in [list, dict]:
+                    parent_map[item.key] = value
+                    self.dataChanged.emit(index, index)
+                    return True
+                self.beginResetModel()
+                parent_map[item.key] = value
+                item.updateSubtree()
+                self.endResetModel()
                 return True
         
         return False
@@ -211,7 +243,7 @@ def test_tree():
     }
 
     # print(json.dumps(tree, indent='    '))
-    root = KeyValueTreeItem(None, tree)
+    root = KeyValueTreeItem(tree)
     print('-'*82)
     print(root)
     # print(json.dumps(tree, indent='    '))
