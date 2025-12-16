@@ -33,14 +33,14 @@ xarray-tree
 ## Using DataTree model/view components in your own app
 ```python
 import xarray as xr
-from xarray_graph import XarrayDataTreeModel, XarrayDataTreeView
+from xarray_graph.tree import XarrayDataTreeModel, XarrayDataTreeView
 
 dt = xr.DataTree(...)
 
 model = XarrayDataTreeModel()
 model.setDataVarsVisible(True)
-model.setCoordsVisible(False)
-model.setInheritedCoordsVisible(False)
+model.setCoordsVisible(True)
+model.setInheritedCoordsVisible(True)
 model.setDetailsColumnVisible(True)
 model.setDatatree(dt)
 
