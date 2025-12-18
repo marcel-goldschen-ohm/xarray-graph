@@ -248,6 +248,9 @@ class TreeView(QTreeView):
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: AbstractTreeModel = self.model()
         menu = QMenu(self)
+
+        # item that was clicked on
+        # item: AbstractTreeItem = model.itemFromIndex(index)
         
         # selection
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
@@ -268,15 +271,6 @@ class TreeView(QTreeView):
         menu.addAction(self._refreshAction)
         
         return menu
-    
-    @staticmethod
-    def _getWindowDecorationOffset():
-        window = QWidget()
-        window.show()
-        frame: QRect = window.frameGeometry()
-        geo: QRect = window.geometry()
-        window.close()
-        TreeView._window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
     
     def expandAll(self) -> None:
         QTreeView.expandAll(self)
@@ -423,6 +417,15 @@ class TreeView(QTreeView):
     # def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: QModelIndex) -> bool:
     #     print('canDropMimeData...')
     #     return True
+    
+    @staticmethod
+    def _getWindowDecorationOffset():
+        window = QWidget()
+        window.show()
+        frame: QRect = window.frameGeometry()
+        geo: QRect = window.geometry()
+        window.close()
+        TreeView._window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
 
 
 def test_live():
