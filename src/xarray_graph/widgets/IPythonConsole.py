@@ -1,4 +1,7 @@
 """ Embedded IPython console widget.
+
+TODO:
+- fix bug where multiple?? instances of console crash during application exit. Presumably something is not getting cleaned up correctly, but stop_channels() and shutdown_kernel() do not seem to fix this.
 """
 
 # from __future__ import annotations
