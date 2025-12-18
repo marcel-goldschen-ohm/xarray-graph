@@ -532,37 +532,38 @@ class XarrayDataTreeModel(AbstractTreeModel):
         return True
     
     def removeItems(self, items: list[XarrayDataTreeItem]) -> None:
-        if not items:
-            return
+        super().removeItems(items)
+        # if not items:
+        #     return
         
-        # discard items that are descendents of other items to be removed
-        for item in tuple(items):
-            for other_item in items:
-                if other_item is item:
-                    continue
-                if item.has_ancestor(other_item):
-                    # item is a descendent of other_item, so removing other_item will automatically remove item too
-                    items.remove(item)
-                    break
+        # # discard items that are descendents of other items to be removed
+        # for item in tuple(items):
+        #     for other_item in items:
+        #         if other_item is item:
+        #             continue
+        #         if item.has_ancestor(other_item):
+        #             # item is a descendent of other_item, so removing other_item will automatically remove item too
+        #             items.remove(item)
+        #             break
         
-        if len(items) == 1:
-            item: XarrayDataTreeItem = items[0]
-            row: int = item.row
-            parent_index: QModelIndex = self.indexFromItem(item.parent)
-            self.removeRows(row, 1, parent_index)
-            return
+        # if len(items) == 1:
+        #     item: XarrayDataTreeItem = items[0]
+        #     row: int = item.row
+        #     parent_index: QModelIndex = self.indexFromItem(item.parent)
+        #     self.removeRows(row, 1, parent_index)
+        #     return
         
-        # group items into blocks by parent and contiguous rows
-        # note: we don't have to separate items by data type
-        item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items, split_data_types=False)
+        # # group items into blocks by parent and contiguous rows
+        # # note: we don't have to separate items by data type
+        # item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items, split_data_types=False)
         
-        # remove each item block
-        # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
-        for block in reversed(item_blocks):
-            row: int = block[0].row
-            count: int = len(block)
-            parent_index: QModelIndex = self.indexFromItem(block[0].parent)
-            self.removeRows(row, count, parent_index)
+        # # remove each item block
+        # # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
+        # for block in reversed(item_blocks):
+        #     row: int = block[0].row
+        #     count: int = len(block)
+        #     parent_index: QModelIndex = self.indexFromItem(block[0].parent)
+        #     self.removeRows(row, count, parent_index)
         
         # !!! this is not efficient
         if self._highlight_shared_data:
@@ -583,7 +584,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         if not parent_item.is_group:
             parent_widget: QWidget = QApplication.focusWidget()
             title = 'Invalid Insertion'
-            text = f'"Cannot insert items in non-group {parent_item.path}".'
+            text = f'Cannot insert items in non-group "{parent_item.path}".'
             QMessageBox.warning(parent_widget, title, text)
             return False
 
@@ -766,17 +767,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # insert items
             self.beginInsertRows(parent_index, first, last)
 
-            print()
-            print('datatree pre insert:')
-            print(self.datatree())
-            # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
-            #     print('\t' * group.level, group.path + f' <{id(group)}>')
-            print()
+            # print()
+            # print('datatree pre insert:')
+            # print(self.datatree())
+            # # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
+            # #     print('\t' * group.level, group.path + f' <{id(group)}>')
+            # print()
 
-            print()
-            print('itemtree pre insert:')
-            print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
-            print()
+            # print()
+            # print('itemtree pre insert:')
+            # print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
+            # print()
             
             if dtype == GROUP:
                 # order the groups
@@ -839,17 +840,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if (dtype == COORD) and self.isCoordsVisible() and self.isInheritedCoordsVisible():
                 self._updateSubtreeCoordItems(parent_item)
 
-            print()
-            print('datatree post insert:')
-            print(self.datatree())
-            # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
-            #     print('\t' * group.level, group.path + f' <{id(group)}>')
-            print()
+            # print()
+            # print('datatree post insert:')
+            # print(self.datatree())
+            # # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
+            # #     print('\t' * group.level, group.path + f' <{id(group)}>')
+            # print()
 
-            print()
-            print('itemtree post insert:')
-            print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
-            print()
+            # print()
+            # print('itemtree post insert:')
+            # print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
+            # print()
         
         # end for name_item_map in name_item_maps:
         
@@ -1453,7 +1454,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         return XarrayDataTreeMimeData(data.src_model, data.src_items)
 
     @staticmethod
-    def _popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
+    def popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
         QMessageBox.warning(focused_widget, 'Warning', text)
         if system_warn:

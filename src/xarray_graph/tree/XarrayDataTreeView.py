@@ -261,8 +261,8 @@ class XarrayDataTreeView(TreeView):
             menu.addAction(self._clearSelectionAction)
         
         # TODO: cut/copy/paste
-        has_selection = self.selectionModel().hasSelection()
-        has_copy = False # TODO
+        has_selection: bool = self.selectionModel().hasSelection()
+        has_copy: bool = False # TODO
         menu.addSeparator()
         menu.addAction(QAction('Cut', parent=menu, triggered=lambda checked: self.cutSelection(), enabled=has_selection))
         menu.addAction(QAction('Copy', parent=menu, triggered=lambda checked: self.copySelection(), enabled=has_selection))
