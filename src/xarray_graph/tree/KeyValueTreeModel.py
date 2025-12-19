@@ -1,4 +1,7 @@
 """ PyQt tree model interface for a key: value mapping (with any amount of nesting).
+
+TODO:
+- json serialization
 """
 
 from __future__ import annotations
