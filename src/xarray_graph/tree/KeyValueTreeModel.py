@@ -410,16 +410,20 @@ class KeyValueTreeModel(AbstractTreeModel):
         
         if dst_parent_is_dict:
             dst_keys = [str(key) for key in dst_parent_map.keys()]
+        
+        # import json
+        # print('BEFORE', '-'*42)
+        # print(json.dumps(self.keyValueMap(), indent=2))
+        # print(self.rootItem())
 
         self.beginMoveRows(src_parent_index, src_row, src_row + count - 1, dst_parent_index, dst_row)
         
         # remove items from source (store keys to use at destination)
         keys = [item.key for item in items_to_move]
         item: KeyValueTreeItem
-        for i, item in zip(range(dst_row, dst_row + count), items_to_move):
+        for item in reversed(items_to_move):
             item.data = src_parent_map.pop(item.key)
-            item.parent = None
-        del src_parent_item.children[src_row: src_row + count]
+            item.orphan()
         
         # insert items at destination
         if (src_parent_item is dst_parent_item) and (dst_row > src_row):
@@ -448,6 +452,10 @@ class KeyValueTreeModel(AbstractTreeModel):
                 dst_parent_map[key] = value
         
         self.endMoveRows()
+        
+        # print('AFTER', '-'*42)
+        # print(json.dumps(self.keyValueMap(), indent=2))
+        # print(self.rootItem())
 
         return True
     
