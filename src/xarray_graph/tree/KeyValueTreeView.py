@@ -4,6 +4,7 @@ TODO:
 - copy/paste
 - edit numpy 1d/2d arrays in a table?
 - bug fix: resize column to contents not working with custom delegates
+    - !!! move logic out of delegate and into model? This might be the simplest approach.
 """
 
 from __future__ import annotations
