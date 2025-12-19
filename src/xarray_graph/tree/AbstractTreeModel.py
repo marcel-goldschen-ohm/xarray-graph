@@ -224,14 +224,7 @@ class AbstractTreeModel(QAbstractItemModel):
             return
         
         # discard items that are descendents of other items to be removed
-        for item in tuple(items):
-            for other_item in items:
-                if other_item is item:
-                    continue
-                if item.has_ancestor(other_item):
-                    # item is a descendent of other_item, so removing other_item will automatically remove item too
-                    items.remove(item)
-                    break
+        items = self._branchRootItemsOnly(items)
         
         if len(items) == 1:
             item: AbstractTreeItem = items[0]
@@ -329,7 +322,7 @@ class AbstractTreeModel(QAbstractItemModel):
                 return False
         
         self.beginMoveRows(src_parent_index, src_row, src_row + count - 1, dst_parent_index, dst_row)
-        
+
         # remove items from source
         del src_parent_item.children[src_row: src_row + count]
         
@@ -377,6 +370,22 @@ class AbstractTreeModel(QAbstractItemModel):
         name_item_map: dict[str, AbstractTreeItem] = {item.name: item for item in src_items}
         self.removeItems(src_items)
         dst_model.insertItems(name_item_map, dst_row, dst_parent_item)
+    
+    @staticmethod
+    def _branchRootItemsOnly(items: list[AbstractTreeItem]) -> list[AbstractTreeItem]:
+        """ Discard items that are descendents of other items.
+        """
+        items = items.copy()
+        item: AbstractTreeItem
+        for item in tuple(items):
+            for other_item in items:
+                if other_item is item:
+                    continue
+                if item.has_ancestor(other_item):
+                    # item is a descendent of other_item
+                    items.remove(item)
+                    break
+        return items
     
     @staticmethod
     def _itemBlocks(items: list[AbstractTreeItem]) -> list[list[AbstractTreeItem]]:
