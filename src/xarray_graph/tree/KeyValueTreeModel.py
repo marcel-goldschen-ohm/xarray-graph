@@ -1,7 +1,4 @@
 """ PyQt tree model interface for a key: value mapping (with any amount of nesting).
-
-TODO:
-- move/transfer
 """
 
 from __future__ import annotations
@@ -73,6 +70,26 @@ class KeyValueTreeItem(AbstractTreeItem):
         elif isinstance(self.value, list):
             for key, val in enumerate(self.value):
                 KeyValueTreeItem(key, parent=self)
+    
+    def json(self) -> str:
+        value = self.value
+        if isinstance(value, dict):
+            return '{' + ', '.join([f'{item.key}: {item.json()}' for item in self.children]) + '}'
+        elif isinstance(value, list):
+            return '[' + ', '.join([item.json() for item in self.children]) + ']'
+        else:
+            vtype = type(value)
+            if vtype.__module__ == 'builtins':
+                return str(value)
+            return f'{vtype.__module__}.{vtype.__name__}({KeyValueTreeModel.value_to_str(value)})'
+    
+    def setJson(self, text: str) -> None:
+        old_value = self.value
+        old_vtype = type(old_value)
+        new_value = KeyValueTreeModel.str_to_value(text, default_type=old_vtype)
+        self.orphan()
+        self.data = new_value
+        self.updateSubtree()
 
 
 class KeyValueTreeModel(AbstractTreeModel):
@@ -172,9 +189,17 @@ class KeyValueTreeModel(AbstractTreeModel):
                 return item.key
             elif index.column() == 1:
                 if item.is_leaf:
-                    return item.value
+                    return self.value_to_str(item.value)
             elif index.column() == 2:
-                return f'{type(item.value)}'
+                value = item.value
+                vtype = type(value)
+                if vtype.__module__ == 'builtins':
+                    text = vtype.__name__
+                else:
+                    text = f'{vtype.__module__}.{vtype.__name__}'
+                if vtype is np.ndarray:
+                    text += f' of {value.dtype}'
+                return text
         
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
@@ -215,15 +240,35 @@ class KeyValueTreeModel(AbstractTreeModel):
                     return True
             elif index.column() == 1:
                 # edit value
+                old_value = item.value
+                old_vtype = type(old_value)
+                new_value = self.str_to_value(value, default_type=old_vtype)
+
                 parent_map: dict | list = item.parent.value
-                if item.is_leaf and type(value) not in [list, dict]:
-                    parent_map[item.key] = value
+
+                has_old_subtree: bool = len(item.children) > 0
+                has_new_subtree: bool = type(new_value) in [dict, list] and len(new_value) > 0
+                if not has_old_subtree and not has_new_subtree:
+                    # edit single leaf value
+                    parent_map[item.key] = new_value
                     self.dataChanged.emit(index, index)
                     return True
-                self.beginResetModel()
-                parent_map[item.key] = value
-                item.updateSubtree()
-                self.endResetModel()
+                
+                if has_old_subtree:
+                    parent_widget = QApplication.focusWidget()
+                    title = 'Overwrite?'
+                    text = f'Overwrite non-empty key:value map "{item.path}"?'
+                    answer = QMessageBox.question(parent_widget, title, text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                    if answer == QMessageBox.StandardButton.No:
+                        return False
+                
+                row: int = item.row
+                parent_index: QModelIndex = self.parent(index)
+                parent_item: KeyValueTreeItem = self.itemFromIndex(parent_index)
+                name = item.key
+                new_item = KeyValueTreeItem(new_value)
+                self.removeRow(item.row, parent_index)
+                self.insertItems({name: new_item}, row, parent_item)
                 return True
         
         return False
@@ -480,6 +525,115 @@ class KeyValueTreeModel(AbstractTreeModel):
         else:
             return tuple(map(KeyValueTreeModel.ndarray_to_tuple, arr))
     
+    @staticmethod
+    def str_to_value(text: str, default_type = None) -> bool | int | float | str | tuple | list | dict | set | np.ndarray:
+        if text.lower().strip() == 'true':
+            return True
+        if text.lower().strip() == 'false':
+            return False
+        str_to_value = KeyValueTreeModel.str_to_value
+        split_text = KeyValueTreeModel.split_text
+        if text.lstrip().startswith('numpy.array(') and text.rstrip().endswith(')'):
+            # numpy array
+            inner_text = text.strip()[len('numpy.array(['):-2]
+            values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+            return np.array(values)
+        if text.lstrip().startswith('np.array(') and text.rstrip().endswith(')'):
+            # numpy array
+            inner_text = text.strip()[len('np.array(['):-2]
+            values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+            return np.array(values)
+        if text.lstrip().startswith('array(') and text.rstrip().endswith(')'):
+            # numpy array
+            inner_text = text.strip()[len('array(['):-2]
+            values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+            return np.array(values)
+        if text.lstrip().startswith('(') and text.rstrip().endswith(')'):
+            # tuple
+            inner_text = text.strip()[1:-1]
+            values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+            return tuple(values)
+        if text.lstrip().startswith('[') and text.rstrip().endswith(']'):
+            # list or numpy array
+            inner_text = text.strip()[1:-1]
+            values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+            if default_type is np.ndarray:
+                return np.array(values)
+            return values
+        if text.lstrip().startswith('{') and text.rstrip().endswith('}'):
+            # dict or set
+            inner_text = text.strip()[1:-1]
+            items = split_text(inner_text)
+            if not items:
+                # empty dict
+                return {}
+            if ':' in items[0]:
+                # dict
+                values = {}
+                for item in items:
+                    key, value = item.split(':')
+                    values[key.strip()] = str_to_value(value.strip())
+                return values
+            else:
+                # set
+                values = set()
+                for item in items:
+                    values.add(str_to_value(item))
+                return values
+        try:
+            value = int(text)
+            if issubclass(default_type, np.integer):
+                return default_type(value)
+            return value
+        except ValueError:
+            try:
+                value = float(text)
+                if issubclass(default_type, np.floating):
+                    return default_type(value)
+                return value
+            except ValueError:
+                return text
+
+    @staticmethod
+    def value_to_str(value, in_recursion: bool = False) -> str:
+        if isinstance(value, str):
+            return value
+        if type(value) in [bool, int, float]:
+            return str(value)
+        value_to_str = KeyValueTreeModel.value_to_str
+        if isinstance(value, tuple):
+            return '(' + ', '.join([value_to_str(val) for val in value]) + ')'
+        if isinstance(value, list):
+            return '[' + ', '.join([value_to_str(val) for val in value]) + ']'
+        if isinstance(value, set):
+            return '{' + ', '.join([value_to_str(val) for val in value]) + '}'
+        if isinstance(value, dict):
+            return '{' + ', '.join([f'{key}: ' + value_to_str(val) for key, val in value.items()]) + '}'
+        if isinstance(value, np.ndarray):
+            return '[' + ', '.join([value_to_str(val, in_recursion=True) for val in value]) + ']'
+        return str(value)
+
+    @staticmethod
+    def split_text(text: str) -> list[str]:
+        parts: list[str] = ['']
+        grouping: str = ''
+        for char in text:
+            if char == '(' or char == '[' or char == '{':
+                grouping += char
+            elif grouping:
+                if grouping[-1] == '(' and char == ')':
+                    grouping = grouping[:-1]
+                elif grouping[-1] == '[' and char == ']':
+                    grouping = grouping[:-1]
+                elif grouping[-1] == '{' and char == '}':
+                    grouping = grouping[:-1]
+            if char == ',' and not grouping:
+                parts.append('')
+            else:
+                parts[-1] += char
+        parts = [part.strip() for part in parts if part.strip()]
+        return parts
+
 
 def test_tree():
     import json
