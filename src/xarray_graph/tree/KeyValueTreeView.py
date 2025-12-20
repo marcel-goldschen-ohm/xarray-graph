@@ -71,9 +71,6 @@ class KeyValueTreeView(TreeView):
         
         return menu
     
-    def toJson(self, items: list[KeyValueTreeItem]):
-        pass
-    
     def cutSelection(self) -> None:
         self.copySelection()
         self.removeSelectedItems(ask=False)
