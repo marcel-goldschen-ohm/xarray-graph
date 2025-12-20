@@ -1,7 +1,6 @@
 """ Tree view for a `KeyValueTreeModel` with drag-and-drop, context menu, and mouse wheel expand/collapse.
 
 TODO:
-- cut/copy/paste: serialize to clipboard (json?), use custom MIME type?
 - edit numpy 1d/2d arrays in a table?
 """
 
