@@ -6,6 +6,7 @@ TODO:
 """
 
 from __future__ import annotations
+from copy import deepcopy
 import numpy as np
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -16,40 +17,14 @@ from xarray_graph.tree import KeyValueTreeItem, KeyValueTreeModel, TreeView
 
 class KeyValueTreeView(TreeView):
 
+    _copied_key_value_map = {}
+
     def __init__(self, *args, **kwargs) -> None:
         TreeView.__init__(self, *args, **kwargs)
 
         self._cut_icon = qta.icon('mdi.content-cut')
         self._copy_icon = qta.icon('mdi.content-copy')
         self._paste_icon = qta.icon('mdi.content-paste')
-
-        # self._initActions()
-    
-    # def _initActions(self) -> None:
-
-    #     self._cut_action = QAction(
-    #         text = 'Cut',
-    #         icon = self._cut_icon,
-    #         iconVisibleInMenu = True,
-    #         shortcut = QKeySequence.StandardKey.Cut,
-    #         triggered = lambda checked: self.cutSelection()
-    #     )
-        
-    #     self._copy_action = QAction(
-    #         text = 'Copy',
-    #         icon = self._copy_icon,
-    #         iconVisibleInMenu = True,
-    #         shortcut = QKeySequence.StandardKey.Copy,
-    #         triggered = lambda checked: self.copySelection()
-    #     )
-        
-    #     self._paste_action = QAction(
-    #         text = 'Paste',
-    #         icon = self._paste_icon,
-    #         iconVisibleInMenu = True,
-    #         shortcut = QKeySequence.StandardKey.Paste,
-    #         triggered = lambda checked: self.pasteCopy()
-    #     )
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: KeyValueTreeModel = self.model()
@@ -68,9 +43,9 @@ class KeyValueTreeView(TreeView):
         # cut/copy/paste
         has_copy: bool = self.hasCopy()
         menu.addSeparator()
-        menu.addAction(QAction('Cut', parent=menu, icon=self._cut_icon, iconVisibleInMenu=True, triggered=lambda checked: self.cutSelection(), enabeled=has_selection))
-        menu.addAction(QAction('Copy', parent=menu, icon=self._copy_icon, iconVisibleInMenu=True, triggered=lambda checked: self.copySelection(), enabeled=has_selection))
-        menu.addAction(QAction('Paste', parent=menu, icon=self._paste_icon, iconVisibleInMenu=True, triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item), enabeled=has_copy))
+        menu.addAction(QAction('Cut', parent=menu, icon=self._cut_icon, iconVisibleInMenu=True, triggered=lambda checked: self.cutSelection(), enabled=has_selection))
+        menu.addAction(QAction('Copy', parent=menu, icon=self._copy_icon, iconVisibleInMenu=True, triggered=lambda checked: self.copySelection(), enabled=has_selection))
+        menu.addAction(QAction('Paste', parent=menu, icon=self._paste_icon, iconVisibleInMenu=True, triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item), enabled=has_copy))
         
         # remove item(s)
         menu.addSeparator()
@@ -101,30 +76,28 @@ class KeyValueTreeView(TreeView):
         pass
     
     def cutSelection(self) -> None:
-        self.copySelection(deep=False)
+        self.copySelection()
         self.removeSelectedItems(ask=False)
     
-    def copySelection(self, deep: bool = False) -> None:
+    def copySelection(self) -> None:
         items: list[KeyValueTreeItem] = self.selectedItems()
         if not items:
             return
-        import json
-        if deep:
-            from copy import deepcopy
         # only copy the branch roots (this already includes the descendents)
         items = KeyValueTreeModel._branchRootItemsOnly(items)
-        copied_values: dict = {}
+        # copy the values in each branch root subtree
+        copied_key_value_map: dict = {}
         for item in items:
-            name = KeyValueTreeModel.unique_name(item.key, list(self._clipboardCopy.keys()))
-            if deep:
-                copied_values[name] = deepcopy(item.value)
-            else:
-                copied_values[name] = item.value
-        self._clipboardCopy = json.dumps(copied_values)
+            key = KeyValueTreeModel.unique_name(item.key, list(copied_key_value_map.keys()))
+            copied_key_value_map[key] = deepcopy(item.value)
+        KeyValueTreeView._copied_key_value_map = copied_key_value_map
     
     def pasteCopy(self, parent_item: KeyValueTreeItem = None) -> None:
-        name_value_dict: dict = getattr(self, '_clipboardCopy', None)
-        if not name_value_dict:
+        model: KeyValueTreeModel = self.model()
+        if not model:
+            return
+        copied_key_value_map = KeyValueTreeView._copied_key_value_map
+        if not copied_key_value_map:
             return
         if parent_item is None:
             items = self.selectedItems()
@@ -137,11 +110,15 @@ class KeyValueTreeView(TreeView):
                 text = f'Must select a single key:value map item in which to paste.'
                 QMessageBox.warning(parent_widget, title, text)
                 return
-        # TODO: paste items
-        delattr(self, '_clipboardCopy')
+        # paste items
+        name_item_map: dict[str, KeyValueTreeItem] = {key: KeyValueTreeItem(deepcopy(value)) for key, value in copied_key_value_map.items()}
+        row: int = len(parent_item.children)
+        model.insertItems(name_item_map, row, parent_item)
     
     def hasCopy(self) -> bool:
-        return hasattr(self, '_clipboardCopy')
+        if KeyValueTreeView._copied_key_value_map:
+            return True
+        return False
     
     def insertNew(self, parent_item: KeyValueTreeItem, row: int) -> None:
         model: KeyValueTreeModel = self.model()

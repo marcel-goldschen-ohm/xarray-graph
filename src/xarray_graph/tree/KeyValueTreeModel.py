@@ -1,7 +1,7 @@
 """ PyQt tree model interface for a key: value mapping (with any amount of nesting).
 
 TODO:
-- json serialization
+- json serialization. note: this isn't really needed currently.
 """
 
 from __future__ import annotations
@@ -74,25 +74,25 @@ class KeyValueTreeItem(AbstractTreeItem):
             for key, val in enumerate(self.value):
                 KeyValueTreeItem(key, parent=self)
     
-    def json(self) -> str:
-        value = self.value
-        if isinstance(value, dict):
-            return '{' + ', '.join([f'{item.key}: {item.json()}' for item in self.children]) + '}'
-        elif isinstance(value, list):
-            return '[' + ', '.join([item.json() for item in self.children]) + ']'
-        else:
-            vtype = type(value)
-            if vtype.__module__ == 'builtins':
-                return str(value)
-            return f'{vtype.__module__}.{vtype.__name__}({KeyValueTreeModel.value_to_str(value)})'
+    # def json(self) -> str:
+    #     value = self.value
+    #     if isinstance(value, dict):
+    #         return '{' + ', '.join([f'{item.key}: {item.json()}' for item in self.children]) + '}'
+    #     elif isinstance(value, list):
+    #         return '[' + ', '.join([item.json() for item in self.children]) + ']'
+    #     else:
+    #         vtype = type(value)
+    #         if vtype.__module__ == 'builtins':
+    #             return str(value)
+    #         return f'{vtype.__module__}.{vtype.__name__}({KeyValueTreeModel.value_to_str(value)})'
     
-    def setJson(self, text: str) -> None:
-        old_value = self.value
-        old_vtype = type(old_value)
-        new_value = KeyValueTreeModel.str_to_value(text, default_type=old_vtype)
-        self.orphan()
-        self.data = new_value
-        self.updateSubtree()
+    # def setJson(self, text: str) -> None:
+    #     old_value = self.value
+    #     old_vtype = type(old_value)
+    #     new_value = KeyValueTreeModel.str_to_value(text, default_type=old_vtype)
+    #     self.orphan()
+    #     self.data = new_value
+    #     self.updateSubtree()
 
 
 class KeyValueTreeModel(AbstractTreeModel):
