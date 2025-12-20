@@ -529,47 +529,53 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         self.endRemoveRows()
         
-        return True
-    
-    def removeItems(self, items: list[XarrayDataTreeItem]) -> None:
-        super().removeItems(items)
-        # if not items:
-        #     return
-        
-        # # discard items that are descendents of other items to be removed
-        # for item in tuple(items):
-        #     for other_item in items:
-        #         if other_item is item:
-        #             continue
-        #         if item.has_ancestor(other_item):
-        #             # item is a descendent of other_item, so removing other_item will automatically remove item too
-        #             items.remove(item)
-        #             break
-        
-        # if len(items) == 1:
-        #     item: XarrayDataTreeItem = items[0]
-        #     row: int = item.row
-        #     parent_index: QModelIndex = self.indexFromItem(item.parent)
-        #     self.removeRows(row, 1, parent_index)
-        #     return
-        
-        # # group items into blocks by parent and contiguous rows
-        # # note: we don't have to separate items by data type
-        # item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items, split_data_types=False)
-        
-        # # remove each item block
-        # # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
-        # for block in reversed(item_blocks):
-        #     row: int = block[0].row
-        #     count: int = len(block)
-        #     parent_index: QModelIndex = self.indexFromItem(block[0].parent)
-        #     self.removeRows(row, count, parent_index)
-        
         # !!! this is not efficient
-        if self._highlight_shared_data:
+        if self.isSharedDataHighlighted():
             self.beginResetModel()
             self._updateSharedDataColors()
             self.endResetModel()
+        
+        return True
+    
+    # def removeItems(self, items: list[XarrayDataTreeItem]) -> None:
+    #     super().removeItems(items)
+    #     # if not items:
+    #     #     return
+        
+    #     # # discard items that are descendents of other items to be removed
+    #     # for item in tuple(items):
+    #     #     for other_item in items:
+    #     #         if other_item is item:
+    #     #             continue
+    #     #         if item.has_ancestor(other_item):
+    #     #             # item is a descendent of other_item, so removing other_item will automatically remove item too
+    #     #             items.remove(item)
+    #     #             break
+        
+    #     # if len(items) == 1:
+    #     #     item: XarrayDataTreeItem = items[0]
+    #     #     row: int = item.row
+    #     #     parent_index: QModelIndex = self.indexFromItem(item.parent)
+    #     #     self.removeRows(row, 1, parent_index)
+    #     #     return
+        
+    #     # # group items into blocks by parent and contiguous rows
+    #     # # note: we don't have to separate items by data type
+    #     # item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items, split_data_types=False)
+        
+    #     # # remove each item block
+    #     # # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
+    #     # for block in reversed(item_blocks):
+    #     #     row: int = block[0].row
+    #     #     count: int = len(block)
+    #     #     parent_index: QModelIndex = self.indexFromItem(block[0].parent)
+    #     #     self.removeRows(row, count, parent_index)
+        
+    #     # !!! this is not efficient
+    #     if self.isSharedDataHighlighted():
+    #         self.beginResetModel()
+    #         self._updateSharedDataColors()
+    #         self.endResetModel()
     
     def insertRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         """ Defaults to inserting new empty auto-named groups. For anything else, see `insertItems` instead.
@@ -855,7 +861,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         # end for name_item_map in name_item_maps:
         
         # !!! this is not efficient
-        if self._highlight_shared_data:
+        if self.isSharedDataHighlighted():
             self.beginResetModel()
             self._updateSharedDataColors()
             self.endResetModel()
@@ -1204,21 +1210,19 @@ class XarrayDataTreeModel(AbstractTreeModel):
             self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
         
         # !!! this is not efficient
-        if self._highlight_shared_data:
+        # TODO: move this to moveRows()?
+        if self.isSharedDataHighlighted():
             self.beginResetModel()
             self._updateSharedDataColors()
             self.endResetModel()
     
     def transferItems(self, src_items: list[XarrayDataTreeItem], dst_model: XarrayDataTreeModel, dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
         # print(f'transferItems(src_items={[item.name for item in src_items]}, dst_parent_item={dst_parent_item.name}, dst_row={dst_row})...')
-        if dst_model is self:
-            self.moveItems(src_items, dst_parent_item, dst_row)
-            return
-        
-        # TODO: transfer items to dst_model
+        super().transferItems(src_items, dst_model, dst_parent_item, dst_row)
         
         # !!! this is not efficient
-        if self._highlight_shared_data:
+        # TODO: if this is handled by removeRows/insertItems/moveRows, it won't be necessary here?
+        if self.isSharedDataHighlighted():
             self.beginResetModel()
             self._updateSharedDataColors()
             self.endResetModel()

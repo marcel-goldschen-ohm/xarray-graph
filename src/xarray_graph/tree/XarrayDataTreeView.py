@@ -5,6 +5,7 @@ Uses XarrayDataTreeModel for the model interface.
 TODO:
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
 - global rename of variables throughout the entire branch or tree?
+- combine items (e.g., concatenate, merge)
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ class XarrayDataTreeView(TreeView):
 
     finishedEditingAttrs = Signal()
 
+    _copied_key_value_map = {}
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
@@ -28,6 +31,9 @@ class XarrayDataTreeView(TreeView):
         self._group_icon: QIcon = qta.icon('ph.folder-thin')
         self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
         self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
+        self._cut_icon = qta.icon('mdi.content-cut')
+        self._copy_icon = qta.icon('mdi.content-copy')
+        self._paste_icon = qta.icon('mdi.content-paste')
 
         # actions
         self._initActions()
@@ -144,13 +150,6 @@ class XarrayDataTreeView(TreeView):
         model.setDebugInfoVisible(self._showDebugInfoAction.isChecked())
         self.restoreViewState()
     
-    def refresh(self) -> None:
-        model: XarrayDataTreeModel = self.model()
-        self.storeViewState()
-        model.reset()
-        self.restoreViewState()
-        self.wasRefreshed.emit()
-    
     def datatree(self) -> xr.DataTree:
         model: XarrayDataTreeModel = self.model()
         return model.datatree()
@@ -165,62 +164,6 @@ class XarrayDataTreeView(TreeView):
             self.storeViewState()
             model.setDatatree(datatree)
             self.restoreViewState()
-    
-    def forgetViewState(self) -> None:
-        self._view_state = {}
-    
-    def storeViewState(self, items: list[XarrayDataTreeItem] = None) -> None:
-        model: XarrayDataTreeModel = self.model()
-        if items is None:
-            items = list(model._root_item.subtree_depth_first())
-        selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
-        item: XarrayDataTreeItem
-        for item in items:
-            if item.is_root:
-                continue
-            index: QModelIndex = model.indexFromItem(item)
-            if not index.isValid():
-                continue
-            self._view_state[item.path] = {
-                'expanded': self.isExpanded(index),
-                'selected': index in selected_indexes
-            }
-
-    def restoreViewState(self, items: list[XarrayDataTreeItem] = None) -> None:
-        model: XarrayDataTreeModel = self.model()
-        if not self._view_state:
-            return
-        if items is None:
-            items = list(model._root_item.subtree_depth_first())
-        # self.selectionModel().clearSelection()
-        selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
-        to_be_selected: QItemSelection = QItemSelection()
-        to_be_deselected: QItemSelection = QItemSelection()
-        item: XarrayDataTreeItem
-        for item in items:
-            if item.is_root:
-                continue
-            item_view_state: dict = self._view_state.get(item.path, None)
-            if item_view_state is None:
-                continue
-            index: QModelIndex = model.indexFromItem(item)
-            if not index.isValid():
-                continue
-            is_expanded = item_view_state.get('expanded', False)
-            self.setExpanded(index, is_expanded)
-            is_selected = item_view_state.get('selected', False)
-            if is_selected and index not in selected_indexes:
-                to_be_selected.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-            elif not is_selected and index in selected_indexes:
-                to_be_deselected.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
-        #     if is_selected:
-        #         selection.merge(QItemSelection(index, index), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-        # if selection.count():
-        #     self.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-        if to_be_selected.count():
-            self.selectionModel().select(to_be_selected, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-        if to_be_deselected.count():
-            self.selectionModel().select(to_be_deselected, QItemSelectionModel.SelectionFlag.Deselect | QItemSelectionModel.SelectionFlag.Rows)
     
     def appendNewChildGroup(self, parent_item: XarrayDataTreeItem) -> None:
         if not parent_item.is_group:
@@ -243,7 +186,7 @@ class XarrayDataTreeView(TreeView):
             icon: QIcon = self._data_var_icon
         elif item.is_coord:
             icon: QIcon = self._coord_icon
-        menu.addAction(QAction(f'{item.path}:', parent=menu, icon=icon, iconVisibleInMenu=True, enabled=False))
+        menu.addAction(QAction(f'{item.path}:', parent=menu, icon=icon, iconVisibleInMenu=True, enabled=False)) # just a label
         menu.addAction(QAction('Info', parent=menu, triggered=lambda checked, item=item: self._popupInfo(item)))
         menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self._editAttrs(item)))
         if item.is_variable:
@@ -255,18 +198,18 @@ class XarrayDataTreeView(TreeView):
             menu.addMenu(subtree_menu)
         
         # selection
+        has_selection: bool = self.selectionModel().hasSelection()
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
             menu.addSeparator()
             menu.addAction(self._selectAllAction)
             menu.addAction(self._clearSelectionAction)
         
-        # TODO: cut/copy/paste
-        has_selection: bool = self.selectionModel().hasSelection()
-        has_copy: bool = False # TODO
+        # cut/copy/paste
+        has_copy: bool = self.hasCopy()
         menu.addSeparator()
-        menu.addAction(QAction('Cut', parent=menu, triggered=lambda checked: self.cutSelection(), enabled=has_selection))
-        menu.addAction(QAction('Copy', parent=menu, triggered=lambda checked: self.copySelection(), enabled=has_selection))
-        menu.addAction(QAction('Paste', parent=menu, triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item), enabled=has_copy))
+        menu.addAction(QAction('Cut', parent=menu, icon=self._cut_icon, iconVisibleInMenu=True, triggered=lambda checked: self.cutSelection(), enabled=has_selection))
+        menu.addAction(QAction('Copy', parent=menu, icon=self._copy_icon, iconVisibleInMenu=True, triggered=lambda checked: self.copySelection(), enabled=has_selection))
+        menu.addAction(QAction('Paste', parent=menu, icon=self._paste_icon, iconVisibleInMenu=True, triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item), enabled=has_copy))
         
         # remove item(s)
         menu.addSeparator()
@@ -369,151 +312,123 @@ class XarrayDataTreeView(TreeView):
         self.finishedEditingAttrs.emit()
     
     def cutSelection(self) -> None:
-        pass # TODO
+        self.copySelection()
+        self.removeSelectedItems(ask=False)
     
     def copySelection(self) -> None:
-        """ Copy selected items.
-        """
-        model: XarrayDataTreeModel = self.model()
-        dt: xr.DataTree = model.datatree()
-        
-        # TODO
-        # paths: list[str] = self.selectedPaths()
-        # root_paths: list[str] = []
-        # for path in paths:
-        #     ok = True
-        #     for check_path in paths:
-        #         if check_path == path:
-        #             continue
-        #         if path.startswith(check_path):
-        #             # path is a descendant of check_path
-        #             ok = False
-        #             break
-        #     if ok:
-        #         root_paths.append(path)
-        
-        # self._copied_nodes: list[xr.DataTree] = []
-        # self._copied_vars: list[xr.DataArray] = []
-        # self._copied_coords: list[xr.DataArray] = []
-        # for path in root_paths:
-        #     obj: xr.DataTree | xr.DataArray = dt[path]
-        #     copied_obj = obj.copy(deep=True)
-        #     if isinstance(obj, xr.DataTree) and obj.parent is not None:
-        #         # copy inherited coords
-        #         copied_obj.orphan()
-        #         for name in obj._inherited_coords_set():
-        #             coord = obj.coords[name]
-        #             copied_obj.coords[name] = xr.DataArray(data=coord.data.copy(), dims=coord.dims, attrs=deepcopy(coord.attrs))
-        #         self._copied_nodes.append(copied_obj)
-        #     elif isinstance(obj, xr.DataArray):
-        #         parent_path: str = model.parentPath(path)
-        #         parent_node: xr.DataTree = dt[parent_path]
-        #         if obj.name in parent_node.data_vars:
-        #             self._copied_vars.append(copied_obj)
-        #         elif obj.name in parent_node.coords:
-        #             if obj.name in parent_node._inherited_coords_set():
-        #                 # copy inherited coord
-        #                 copied_obj = xr.DataArray(data=copied_obj.data.copy(), name=copied_obj.name, dims=copied_obj.dims, attrs=deepcopy(copied_obj.attrs))
-        #             self._copied_coords.append(copied_obj)
+        items: list[XarrayDataTreeItem] = self.selectedItems()
+        if not items:
+            return
+        # only copy the branch roots (this already includes the descendents)
+        items = XarrayDataTreeModel._branchRootItemsOnly(items)
+        # copy the values in each branch root subtree
+        copied_key_value_map: dict[str, xr.DataTree | xr.DataArray] = {}
+        for item in items:
+            key = xarray_utils.unique_name(item.name, list(copied_key_value_map.keys()))
+            value: xr.DataTree | xr.DataArray = item.data
+            if isinstance(value, xr.DataTree):
+                copied_value: xr.DataTree = value.copy(inherit=True, deep=True)
+                copied_value.orphan()
+            elif isinstance(value, xr.DataArray):
+                copied_value: xr.DataArray = value.copy(deep=True)
+            else:
+                continue
+            copied_key_value_map[key] = copied_value
+        XarrayDataTreeView._copied_key_value_map = copied_key_value_map
     
     def pasteCopy(self, parent_item: XarrayDataTreeItem = None, row: int = -1) -> None:
-        if parent_path is None:
-            selected_paths = self.selectedPaths()
-            if selected_paths:
-                parent_path = selected_paths[0]
-            else:
-                parent_path = '/'
-
-        # TODO
-        # copied_nodes: list[xr.DataTree] = getattr(self, '_copied_nodes', [])
-        # copied_vars: list[xr.DataTree] = getattr(self, '_copied_vars', [])
-        # copied_coords: list[xr.DataTree] = getattr(self, '_copied_coords', [])
+        model: XarrayDataTreeModel = self.model()
+        if not model:
+            return
+        copied_key_value_map = XarrayDataTreeView._copied_key_value_map
+        if not copied_key_value_map:
+            return
+        if parent_item is None:
+            items = self.selectedItems()
+            if not items:
+                return
+            parent_item = items[0]
+            if not parent_item.is_group or len(items) > 1:
+                parent_widget: QWidget = self
+                title = 'Invalid Paste'
+                text = f'Must select a single group item in which to paste.'
+                QMessageBox.warning(parent_widget, title, text)
+                return
+        # paste items
+        name_item_map: dict[str, XarrayDataTreeItem] = {}
+        key: str
+        value: xr.DataTree | xr.DataArray
+        for key, value in copied_key_value_map.items():
+            item = XarrayDataTreeItem(value.copy(deep=True))
+            model._updateItemSubtree(item)
+            name_item_map[key] = item
+        if row == -1:
+            row = len(parent_item.children)
+        model.insertItems(name_item_map, row, parent_item)
+        # in case copied arrays bring coords with them
+        self.refresh()
+    
+    def hasCopy(self) -> bool:
+        if XarrayDataTreeView._copied_key_value_map:
+            return True
+        return False
+    
+    def _TMP_renameDimensions(self, path: str = None) -> None:
+        pass
+        # model: XarrayDataTreeModel = self.model()
+        # if model is None:
+        #     return
+        # dt: xr.DataTree = model.datatree()
+        # if dt is None:
+        #     return
+        # node: xr.DataTree | xr.DataArray = dt[path]
+        # if isinstance(node, xr.DataArray):
+        #     path = model.parentPath(path)
+        #     node: xr.DataTree = dt[path]
         
-        # dt: xr.DataTree = self.datatree()
-        # parent: xr.DataTree | xr.DataArray = dt[parent_path]
-        # if isinstance(parent, xr.DataArray):
-        #     parent_path = self.model().parentPath(parent_path)
-        #     parent = dt[parent_path]
-        # parent_keys = list(parent.data_vars) + list(parent.coords) + list(parent.children)
+        # dims = []
+        # subnode: xr.DataTree
+        # for subnode in node.subtree:
+        #     for dim in subnode.dims:
+        #         if dim not in dims:
+        #             dims.append(dim)
+        # if not dims:
+        #     QMessageBox.warning(self, 'Rename Dimensions', f'No dimensions found in subtree at {path}.')
+        #     return
+        
+        # dim_editors: dict[str, QLineEdit] = {dim: QLineEdit(dim) for dim in dims}
+
+        # dlg = QDialog(self)
+        # dlg.setWindowTitle('Rename Dimensions')
+        # dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        # form = QFormLayout(dlg)
+        # form.setContentsMargins(0, 0, 0, 0)
+        # form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        # form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        # for dim, editor in dim_editors.items():
+        #     form.addRow(f'{dim} ->', editor)
+
+        # btns = QDialogButtonBox()
+        # btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        # btns.accepted.connect(dlg.accept)
+        # btns.rejected.connect(dlg.reject)
+        # form.addRow(btns)
+        # if dlg.exec() != QDialog.DialogCode.Accepted:
+        #     return
         
         # self.storeState()
         # self.model().beginResetModel()
-        # for node in copied_nodes:
-        #     node.name = XarrayDataTreeModel.uniqueName(node.name or '?', parent_keys)
-        #     parent_keys += node.name
-        # if copied_nodes:
-        #     children = {name: child for name, child in parent.children.items()}
-        #     for node in copied_nodes:
-        #         children[node.name] = node
-        #     parent.children = children
-        # vars = {}
-        # for var in copied_vars:
-        #     var.name = XarrayDataTreeModel.uniqueName(var.name or '?', parent_keys)
-        #     vars[var.name] = var
-        #     parent_keys += var.name
-        # if vars:
-        #     parent.dataset = parent.to_dataset().assign(vars)
-        # coords = {coord.name: coord for coord in copied_coords}
-        # if coords:
-        #     parent.dataset = parent.to_dataset().assign_coords(coords)
+        # # print(node)
+        # subnode: xr.DataTree
+        # for subnode in node.subtree:
+        #     old_dims = list(subnode.dims)
+        #     new_dims = [dim_editors[dim].text() if dim in dim_editors else dim for dim in old_dims]
+        #     dim_map = {old: new for old, new in zip(old_dims, new_dims) if old != new}
+        #     if dim_map:
+        #         subnode.dataset = subnode.to_dataset().rename(dim_map)
+        # # print(node)
         # self.model().endResetModel()
         # self.restoreState()
-    
-    # def renameDimensions(self, path: str = None) -> None:
-    #     model: XarrayDataTreeModel = self.model()
-    #     if model is None:
-    #         return
-    #     dt: xr.DataTree = model.datatree()
-    #     if dt is None:
-    #         return
-    #     node: xr.DataTree | xr.DataArray = dt[path]
-    #     if isinstance(node, xr.DataArray):
-    #         path = model.parentPath(path)
-    #         node: xr.DataTree = dt[path]
-        
-    #     dims = []
-    #     subnode: xr.DataTree
-    #     for subnode in node.subtree:
-    #         for dim in subnode.dims:
-    #             if dim not in dims:
-    #                 dims.append(dim)
-    #     if not dims:
-    #         QMessageBox.warning(self, 'Rename Dimensions', f'No dimensions found in subtree at {path}.')
-    #         return
-        
-    #     dim_editors: dict[str, QLineEdit] = {dim: QLineEdit(dim) for dim in dims}
-
-    #     dlg = QDialog(self)
-    #     dlg.setWindowTitle('Rename Dimensions')
-    #     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-    #     form = QFormLayout(dlg)
-    #     form.setContentsMargins(0, 0, 0, 0)
-    #     form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-    #     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-    #     for dim, editor in dim_editors.items():
-    #         form.addRow(f'{dim} ->', editor)
-
-    #     btns = QDialogButtonBox()
-    #     btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-    #     btns.accepted.connect(dlg.accept)
-    #     btns.rejected.connect(dlg.reject)
-    #     form.addRow(btns)
-    #     if dlg.exec() != QDialog.DialogCode.Accepted:
-    #         return
-        
-    #     self.storeState()
-    #     self.model().beginResetModel()
-    #     # print(node)
-    #     subnode: xr.DataTree
-    #     for subnode in node.subtree:
-    #         old_dims = list(subnode.dims)
-    #         new_dims = [dim_editors[dim].text() if dim in dim_editors else dim for dim in old_dims]
-    #         dim_map = {old: new for old, new in zip(old_dims, new_dims) if old != new}
-    #         if dim_map:
-    #             subnode.dataset = subnode.to_dataset().rename(dim_map)
-    #     # print(node)
-    #     self.model().endResetModel()
-    #     self.restoreState()
     
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_C:
