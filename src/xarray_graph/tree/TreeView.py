@@ -1,4 +1,7 @@
 """ Tree view for `AbstractTreeModel` with context menu and mouse wheel expand/collapse.
+
+TODO:
+- store/restore view state currently only works for unique tree paths.
 """
 
 from __future__ import annotations
