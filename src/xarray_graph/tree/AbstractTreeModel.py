@@ -12,6 +12,8 @@ class AbstractTreeModel(QAbstractItemModel):
     """ PyQt tree model interface for `AbstractTreeItem`.
     """
 
+    MIME_TYPE = 'application/x-abstract-tree-model'
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -424,11 +426,11 @@ class AbstractTreeModel(QAbstractItemModel):
         self._supportedDropActions = actions
 
     def mimeTypes(self) -> list[str]:
-        """ Return the MIME types supported by this view for drag-and-drop operations.
+        """ Return the MIME types supported by this model for drag-and-drop operations.
         """
-        return [AbstractTreeMimeData.MIME_TYPE]
+        return [self.MIME_TYPE]
 
-    def mimeData(self, indexes: list[QModelIndex]) -> AbstractTreeMimeData | None:
+    def mimeData(self, indexes: list[QModelIndex]) -> TreeMimeData | None:
         if not indexes:
             return
         
@@ -442,10 +444,10 @@ class AbstractTreeModel(QAbstractItemModel):
         if not items:
             return
         
-        return AbstractTreeMimeData(self, items)
+        return TreeMimeData(self, items, self.MIME_TYPE)
 
-    def dropMimeData(self, data: AbstractTreeMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex) -> bool:
-        if not isinstance(data, AbstractTreeMimeData):
+    def dropMimeData(self, data: TreeMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex) -> bool:
+        if not isinstance(data, TreeMimeData) and not issubclass(data, TreeMimeData):
             return False
         
         src_model: AbstractTreeModel = data.src_model
@@ -462,8 +464,7 @@ class AbstractTreeModel(QAbstractItemModel):
         else:
             raise NotImplementedError(f'Reimplement dropMimeData() to support {action.name} actions.')
 
-        # !? If we return True, the model will attempt to remove rows.
-        # As we already completely handled the drop action above, this will corrupt our model, so return False.
+        # !? If we return True, the model will attempt to remove rows. As we already completely handled the drop action above, this will corrupt our model, so return False.
         return False
     
     @staticmethod
@@ -475,19 +476,15 @@ class AbstractTreeModel(QAbstractItemModel):
             warn(text)
 
 
-class AbstractTreeMimeData(QMimeData):
-    """ Custom MIME data class for `AbstractTreeModel`.
+class TreeMimeData(QMimeData):
+    """ Custom MIME data class for `AbstractTreeModel` and subclasses.
 
     Used to transfer `AbstractTreeItem`s within and between `AbstractTreeModel`s.
 
-    Note:
-    This approach probably won't work if you need to pass items between `AbstractTreeModel`s in separate programs/processes.
-    If you really need to do this, you need to somehow serialize the `AbstractTreeItem`s, pass the serialized bytes in the drag MIME data, then deserialize back to `AbstractTreeItem`s on drop.
+    Note: This approach only enables drag-n-drop within a program/process. If you need to pass items between `AbstractTreeModel`s in separate programs/processes, you'll need to somehow serialize the `AbstractTreeItem`s, pass the serialized bytes in the drag MIME data, then deserialize back to `AbstractTreeItem`s on drop.
     """
 
-    MIME_TYPE = 'application/x-abstract-tree-model'
-
-    def __init__(self, src_model: AbstractTreeModel, src_items: list[AbstractTreeItem]):
+    def __init__(self, src_model: AbstractTreeModel, src_items: list[AbstractTreeItem], mime_type: str = AbstractTreeModel.MIME_TYPE):
         QMimeData.__init__(self)
 
         # these define the datatree items being dragged
@@ -499,14 +496,7 @@ class AbstractTreeMimeData(QMimeData):
         self.dst_parent_item: AbstractTreeItem = None
         self.dst_row: int = -1
 
-        # Ensure that the MIME type self.MIME_TYPE is set.
+        # Ensure that the input MIME type is set.
         # The actual value of the data here is not important, as we won't use it.
         # Instead, we will use the above attributes to handle drag-and-drop.
-        self.setData(self.MIME_TYPE, self.MIME_TYPE.encode('utf-8'))
-    
-    def hasFormat(self, mime_type: str) -> bool:
-        """ Check if the MIME data has the specified format.
-        
-        Overrides the default method to check for self.MIME_TYPE.
-        """
-        return mime_type == self.MIME_TYPE or super().hasFormat(mime_type)
+        self.setData(mime_type, mime_type.encode('utf-8'))

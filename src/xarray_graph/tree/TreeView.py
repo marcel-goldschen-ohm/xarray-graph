@@ -9,7 +9,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
+from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, TreeMimeData
 
 
 class TreeView(QTreeView):
@@ -47,10 +47,6 @@ class TreeView(QTreeView):
         self._view_state: dict[str, dict] = {}
 
         # actions
-        self._initActions()
-    
-    def _initActions(self) -> None:
-
         self._refreshAction = QAction(
             text = 'Refresh',
             icon = qta.icon('msc.refresh'),
@@ -338,7 +334,8 @@ class TreeView(QTreeView):
         self.setDropIndicatorShown(enabled)
     
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        data: AbstractTreeMimeData = event.mimeData()
+        data: TreeMimeData = event.mimeData()
+        # print('dragEnterEvent', data.formats())
 
         # gather all items being dragged (includes descendents in subtrees)
         dragged_items: list[AbstractTreeItem] = []
@@ -361,8 +358,9 @@ class TreeView(QTreeView):
         QTreeView.dragEnterEvent(self, event)
     
     def dropEvent(self, event: QDropEvent) -> None:
-        data: AbstractTreeMimeData = event.mimeData()
-        if not isinstance(data, AbstractTreeMimeData):
+        data: TreeMimeData = event.mimeData()
+        # print('dropEvent', data.formats())
+        if not isinstance(data, TreeMimeData) and not issubclass(data, TreeMimeData):
             event.ignore()
             return
 

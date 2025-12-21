@@ -3,12 +3,8 @@
 TODO:
 - setData: rename index coord -> rename dimension
 - moveRows: merge items?
-- transferItems
-- moved inherited coords currently become regular coords but share the same underlying data as before. should we copy the data?
 - should we ask before removing inherited coords in descendents when moving a coord?
-- enforce coord order? note: this currently happens when refreshing the tree, but not otherwise.
-- test all tree manipulations
-- test all conflict handling
+- enforce coord order at all times? note: this currently happens when refreshing the tree, but not otherwise.
 """
 
 from __future__ import annotations
@@ -21,7 +17,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import xarray_utils
-from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
+from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, TreeMimeData
 import cmap
 
 
@@ -108,6 +104,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
     """ PyQt tree model interface for a Xarray DataTree.
     """
 
+    MIME_TYPE = 'application/x-xarray-datatree-model'
+
     _data_type_order: tuple[XarrayDataTreeType] = (COORD, DATA_VAR, GROUP)
 
     def __init__(self, *args, **kwargs):
@@ -129,6 +127,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._group_icon: QIcon = qta.icon('ph.folder-thin')
         self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
         self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
+        self._unknown_icon: QIcon = qta.icon('fa6s.question')
 
         # colors
         self._shared_data_colormap: dict[int, QColor] = {}
@@ -374,6 +373,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return self._data_var_icon
                 elif item.is_coord:
                     return self._coord_icon
+                else:
+                    # should never happen
+                    return self._unknown_icon
         
         elif role == Qt.ItemDataRole.ForegroundRole:
             item: XarrayDataTreeItem = self.itemFromIndex(index)
@@ -489,6 +491,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         group_items: list[XarrayDataTreeItem] = [item for item in items if item.is_group]
         data_var_items: list[XarrayDataTreeItem] = [item for item in items if item.is_data_var]
         coord_items: list[XarrayDataTreeItem] = [item for item in items if item.is_coord and not item.is_inherited_coord]
+        inherited_coord_items: list[XarrayDataTreeItem] = [item for item in items if item.is_inherited_coord]
         var_items: list[XarrayDataTreeItem] = data_var_items + coord_items
 
         parent_node: xr.DataTree = parent_item.data
@@ -514,8 +517,11 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         # update datatree
         item: XarrayDataTreeItem
+        for item in inherited_coord_items:
+            item.data = item.data.copy(deep=True)
+            item.data_type = COORD
         for item in group_items:
-            group: xr.DataTree = item.data
+            group: xr.DataTree = item.data.copy(inherit=True)
             group.orphan()
         if var_items:
             var_names: list[str] = [item.name for item in var_items]
@@ -529,53 +535,11 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         self.endRemoveRows()
         
-        # !!! this is not efficient
+        # in case shared data changed
         if self.isSharedDataHighlighted():
-            self.beginResetModel()
-            self._updateSharedDataColors()
-            self.endResetModel()
+            self._onSharedDataChanged()
         
         return True
-    
-    # def removeItems(self, items: list[XarrayDataTreeItem]) -> None:
-    #     super().removeItems(items)
-    #     # if not items:
-    #     #     return
-        
-    #     # # discard items that are descendents of other items to be removed
-    #     # for item in tuple(items):
-    #     #     for other_item in items:
-    #     #         if other_item is item:
-    #     #             continue
-    #     #         if item.has_ancestor(other_item):
-    #     #             # item is a descendent of other_item, so removing other_item will automatically remove item too
-    #     #             items.remove(item)
-    #     #             break
-        
-    #     # if len(items) == 1:
-    #     #     item: XarrayDataTreeItem = items[0]
-    #     #     row: int = item.row
-    #     #     parent_index: QModelIndex = self.indexFromItem(item.parent)
-    #     #     self.removeRows(row, 1, parent_index)
-    #     #     return
-        
-    #     # # group items into blocks by parent and contiguous rows
-    #     # # note: we don't have to separate items by data type
-    #     # item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(items, split_data_types=False)
-        
-    #     # # remove each item block
-    #     # # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
-    #     # for block in reversed(item_blocks):
-    #     #     row: int = block[0].row
-    #     #     count: int = len(block)
-    #     #     parent_index: QModelIndex = self.indexFromItem(block[0].parent)
-    #     #     self.removeRows(row, count, parent_index)
-        
-    #     # !!! this is not efficient
-    #     if self.isSharedDataHighlighted():
-    #         self.beginResetModel()
-    #         self._updateSharedDataColors()
-    #         self.endResetModel()
     
     def insertRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         """ Defaults to inserting new empty auto-named groups. For anything else, see `insertItems` instead.
@@ -624,17 +588,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # if all good, then update the datatree and itemtree
             self.beginInsertRows(parent_index, first, last)
 
-            print()
-            print('datatree pre insert empty groups:')
-            print(self.datatree())
-            # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
-            #     print('\t' * group.level, group.path + f' <{id(group)}>')
-            print()
+            # print()
+            # print('datatree pre insert empty groups:')
+            # print(self.datatree())
+            # # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
+            # #     print('\t' * group.level, group.path + f' <{id(group)}>')
+            # print()
 
-            print()
-            print('itemtree pre insert empty groups:')
-            print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
-            print()
+            # print()
+            # print('itemtree pre insert empty groups:')
+            # print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
+            # print()
                 
             # update datatree
             if not parent_group.is_root:
@@ -661,17 +625,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 elif item.is_coord:
                     item.data = parent_group.coords[item.name]
 
-            print()
-            print('datatree post insert empty groups:')
-            print(self.datatree())
-            # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
-            #     print('\t' * group.level, group.path + f' <{id(group)}>')
-            print()
+            # print()
+            # print('datatree post insert empty groups:')
+            # print(self.datatree())
+            # # for group in xarray_utils.subtree_depth_first_iter(self.datatree()):
+            # #     print('\t' * group.level, group.path + f' <{id(group)}>')
+            # print()
 
-            print()
-            print('itemtree post insert empty groups:')
-            print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
-            print()
+            # print()
+            # print('itemtree post insert empty groups:')
+            # print(self._root_item._tree_repr(lambda item: item.path + f' <{id(item.data)}>'))
+            # print()
             
             self.endInsertRows()
 
@@ -685,6 +649,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
             text = f'"ERROR: Failed to insert new GROUP items in {parent_item.path}" with error: "{error}". This should never happen!'
             warn(text)
             return False
+        
+        # in case shared data changed
+        if self.isSharedDataHighlighted():
+            self._onSharedDataChanged()
         
         return True
     
@@ -860,11 +828,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         # end for name_item_map in name_item_maps:
         
-        # !!! this is not efficient
+        # in case shared data changed
         if self.isSharedDataHighlighted():
-            self.beginResetModel()
-            self._updateSharedDataColors()
-            self.endResetModel()
+            self._onSharedDataChanged()
     
     def moveRows(self, src_parent_index: QModelIndex, src_row: int, count: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
         # print(f'moveRows(src_row={src_row}, count={count}, dst_row={dst_row})...')
@@ -1016,14 +982,34 @@ class XarrayDataTreeModel(AbstractTreeModel):
             original_names: list[str] = [item.name for item in name_item_map.values()]
             try:
                 if dtype == GROUP:
+                    # copy any inherited coords
+                    group_inherited_coords_map: dict[str, dict[str, xr.DataArray]] = {}
+                    for group_name, group in name_data_map.items():
+                        inherited_coords_map: dict[str, xr.DataArray] = {}
+                        for coord_name in group._inherited_coords_set():
+                            inherited_coords_map[coord_name] = group.coords[coord_name].copy(deep=True)
+                        if inherited_coords_map:
+                            group_inherited_coords_map[group_name] = inherited_coords_map
+                    
                     new_dst_parent_group: xr.DataTree = dst_parent_group.assign(name_data_map)
                     new_src_parent_group: xr.DataTree = src_parent_group.drop_nodes(original_names)
+
+                    # assign copied inherited coords
+                    if group_inherited_coords_map:
+                        for group_name, inherited_coords_map in group_inherited_coords_map.items():
+                            group: xr.DataTree = new_dst_parent_group[group_name]
+                            group.dataset = group.to_dataset().assign_coords(inherited_coords_map)
             
                 elif dtype == DATA_VAR:
                     new_dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset().assign(name_data_map)
                     new_src_parent_dataset: xr.Dataset = src_parent_group.to_dataset().drop_vars(original_names)
                 
                 elif dtype == COORD:
+                    # copy any inherited coords being moved
+                    for name, item in name_item_map.items():
+                        if item.is_inherited_coord:
+                            name_data_map[name] = item.data.copy(deep=True)
+                    
                     new_dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset().assign_coords(name_data_map)
                     new_src_parent_dataset: xr.Dataset = src_parent_group.to_dataset().drop_vars(original_names)
 
@@ -1182,54 +1168,12 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # print()
         
         # end for name_item_map in name_item_maps:
+        
+        # in case shared data changed
+        if self.isSharedDataHighlighted():
+            self._onSharedDataChanged()
 
         return True
-    
-    def moveItems(self, src_items: list[XarrayDataTreeItem], dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
-        if not src_items or not dst_parent_item:
-            return
-        
-        dst_parent_index: QModelIndex = self.indexFromItem(dst_parent_item)
-        
-        if len(src_items) == 1:
-            src_item: XarrayDataTreeItem = src_items[0]
-            src_parent_index: QModelIndex = self.indexFromItem(src_item.parent)
-            src_row: int = src_item.row
-            self.moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row)
-            return
-        
-        # group items into blocks by data type, parent, and contiguous rows
-        src_item_blocks: list[list[XarrayDataTreeItem]] = self._itemBlocks(src_items)
-        
-        # move each item block
-        # note: blocks are in depth-first order, so move in reverse order to ensure row indices remain valid after moving each block
-        for block in reversed(src_item_blocks):
-            src_parent_index: QModelIndex = self.indexFromItem(block[0].parent)
-            src_row: int = block[0].row
-            count: int = len(block)
-            self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
-        
-        # !!! this is not efficient
-        # TODO: move this to moveRows()?
-        if self.isSharedDataHighlighted():
-            self.beginResetModel()
-            self._updateSharedDataColors()
-            self.endResetModel()
-    
-    def transferItems(self, src_items: list[XarrayDataTreeItem], dst_model: XarrayDataTreeModel, dst_parent_item: XarrayDataTreeItem, dst_row: int = -1) -> None:
-        # print(f'transferItems(src_items={[item.name for item in src_items]}, dst_parent_item={dst_parent_item.name}, dst_row={dst_row})...')
-        super().transferItems(src_items, dst_model, dst_parent_item, dst_row)
-        
-        # !!! this is not efficient
-        # TODO: if this is handled by removeRows/insertItems/moveRows, it won't be necessary here?
-        if self.isSharedDataHighlighted():
-            self.beginResetModel()
-            self._updateSharedDataColors()
-            self.endResetModel()
-
-            dst_model.beginResetModel()
-            dst_model._updateSharedDataColors()
-            dst_model.endResetModel()
     
     def _updateSubtreeCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
         item: XarrayDataTreeItem
@@ -1446,17 +1390,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
         colors = cm(np.linspace(0, 1, len(shared_ids)))
         self._shared_data_colormap: dict[int, QColor] = {id_: QColor(*[int(255*c) for c in color[:3]]) for id_, color in zip(shared_ids, colors)}
     
-    def mimeTypes(self) -> list[str]:
-        """ Return the MIME types supported by this view for drag-and-drop operations.
-        """
-        return [XarrayDataTreeMimeData.MIME_TYPE]
+    def _onSharedDataChanged(self) -> None:
+        self._updateSharedDataColors()
 
-    def mimeData(self, indexes: list[QModelIndex]) -> XarrayDataTreeMimeData | None:
-        data: AbstractTreeMimeData = super().mimeData(indexes)
-        if data is None:
-            return
-        return XarrayDataTreeMimeData(data.src_model, data.src_items)
-
+        item: XarrayDataTreeItem
+        for item in self.rootItem().subtree_depth_first():
+            if item.is_variable:
+                mem = id(item.data.data)
+                if mem in self._shared_data_colormap:
+                    index: QModelIndex = self.indexFromItem(item)
+                    self.dataChanged.emit(index, index)
+    
     @staticmethod
     def popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
@@ -1464,28 +1408,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         if system_warn:
             from warnings import warn
             warn(text)
-
-
-class XarrayDataTreeMimeData(AbstractTreeMimeData):
-    """ Custom MIME data class for Xarray DataTree objects.
-    """
-
-    MIME_TYPE = 'application/x-xarray-datatree-model'
-
-    def __init__(self, src_model: XarrayDataTreeModel, src_items: list[XarrayDataTreeItem]):
-        super().__init__(self, src_model, src_items)
-
-        # Ensure that the MIME type self.MIME_TYPE is set.
-        # The actual value of the data here is not important, as we won't use it.
-        # Instead, we will use the above attributes to handle drag-and-drop.
-        self.setData(self.MIME_TYPE, self.MIME_TYPE.encode('utf-8'))
-    
-    def hasFormat(self, mime_type: str) -> bool:
-        """ Check if the MIME data has the specified format.
-        
-        Overrides the default method to check for self.MIME_TYPE.
-        """
-        return mime_type == self.MIME_TYPE or super().hasFormat(mime_type)
 
 
 class ConflictDialog(QDialog):

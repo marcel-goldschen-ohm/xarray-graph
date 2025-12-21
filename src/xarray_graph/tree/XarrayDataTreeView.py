@@ -15,7 +15,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import xarray_utils
-from xarray_graph.tree import TreeView, XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeMimeData, KeyValueTreeModel, KeyValueTreeView
+from xarray_graph.tree import TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeModel, KeyValueTreeView
 
 
 class XarrayDataTreeView(TreeView):
@@ -31,20 +31,15 @@ class XarrayDataTreeView(TreeView):
         self._group_icon: QIcon = qta.icon('ph.folder-thin')
         self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
         self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
+        self._unknown_icon: QIcon = qta.icon('fa6s.question')
         self._cut_icon = qta.icon('mdi.content-cut')
         self._copy_icon = qta.icon('mdi.content-copy')
         self._paste_icon = qta.icon('mdi.content-paste')
 
         # actions
-        self._initActions()
-    
-    def _initActions(self) -> None:
-        super()._initActions()
-
-        # optionally show vars and coords
         self._showDataVarsAction = QAction(
             text = 'Show Variables',
-            icon = qta.icon('ph.cube-thin'),
+            icon = self._data_var_icon,
             iconVisibleInMenu=True,
             checkable = True,
             checked = True,
@@ -54,7 +49,7 @@ class XarrayDataTreeView(TreeView):
 
         self._showCoordsAction = QAction(
             text = 'Show Coordinates',
-            icon = qta.icon('ph.list-numbers-thin'),
+            icon = self._coord_icon,
             iconVisibleInMenu=True,
             checkable = True,
             checked = False,
@@ -64,7 +59,7 @@ class XarrayDataTreeView(TreeView):
 
         self._showInheritedCoordsAction = QAction(
             text = 'Show Inherited Coordinates',
-            icon = qta.icon('ph.list-numbers-thin'),
+            icon = self._coord_icon,
             iconVisibleInMenu=True,
             checkable = True,
             checked = True,
@@ -72,7 +67,6 @@ class XarrayDataTreeView(TreeView):
             triggered = lambda checked: self._updateModelFromViewOptions()
         )
 
-        # optional details column
         self._showDetailsColumnAction = QAction(
             text = 'Show Details Column',
             icon = qta.icon('fa6s.info'),
@@ -83,7 +77,6 @@ class XarrayDataTreeView(TreeView):
             triggered = lambda checked: self._updateModelFromViewOptions()
         )
 
-        # optionally highlight shared data arrays
         self._highlightSharedDataAction = QAction(
             text = 'Highlight Shared Data',
             icon = qta.icon('mdi6.format-color-highlight'),
@@ -94,7 +87,6 @@ class XarrayDataTreeView(TreeView):
             triggered = lambda checked: self._updateModelFromViewOptions()
         )
 
-        # optionally show data array IDs (for debugging)
         self._showDebugInfoAction = QAction(
             text = 'Show Data IDs (For Debugging)',
             icon = qta.icon('ph.bug-thin'),
@@ -186,6 +178,9 @@ class XarrayDataTreeView(TreeView):
             icon: QIcon = self._data_var_icon
         elif item.is_coord:
             icon: QIcon = self._coord_icon
+        else:
+            # should never happen
+            icon: QIcon = self._unknown_icon
         menu.addAction(QAction(f'{item.path}:', parent=menu, icon=icon, iconVisibleInMenu=True, enabled=False)) # just a label
         menu.addAction(QAction('Info', parent=menu, triggered=lambda checked, item=item: self._popupInfo(item)))
         menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self._editAttrs(item)))
@@ -343,6 +338,7 @@ class XarrayDataTreeView(TreeView):
         copied_key_value_map = XarrayDataTreeView._copied_key_value_map
         if not copied_key_value_map:
             return
+        
         if parent_item is None:
             items = self.selectedItems()
             if not items:
@@ -354,6 +350,7 @@ class XarrayDataTreeView(TreeView):
                 text = f'Must select a single group item in which to paste.'
                 QMessageBox.warning(parent_widget, title, text)
                 return
+        
         # paste items
         name_item_map: dict[str, XarrayDataTreeItem] = {}
         key: str
@@ -364,9 +361,11 @@ class XarrayDataTreeView(TreeView):
             name_item_map[key] = item
         if row == -1:
             row = len(parent_item.children)
+        
+        self.storeViewState()
         model.insertItems(name_item_map, row, parent_item)
-        # in case copied arrays bring coords with them
-        self.refresh()
+        self.reset() # in case copied arrays bring coords with them
+        self.restoreViewState()
     
     def hasCopy(self) -> bool:
         if XarrayDataTreeView._copied_key_value_map:
@@ -467,6 +466,7 @@ def test_live():
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
     model.setDetailsColumnVisible(True)
+    model.setSharedDataHighlighted(True)
     model.setDatatree(dt)
 
     # parent_item = model._root_item.children[0]
@@ -489,19 +489,31 @@ def test_live():
     view.show()
     view.resize(800, 1000)
     view.showAll()
-    view.move(100, 50)
+    view.move(50, 50)
     view.raise_()
 
-    # from xarray_graph.tree import XarrayDataTreeDebugView
-    # debug_view = XarrayDataTreeDebugView()
-    # debug_view.setDatatree(dt)
-    # debug_view.show()
-    # debug_view.resize(800, 800)
-    # debug_view.move(900, 100)
-    # debug_view.raise_()
+    dt2 = dt.copy(deep=True)
+
+    model2 = XarrayDataTreeModel()
+    model2.setDataVarsVisible(True)
+    model2.setCoordsVisible(True)
+    model2.setInheritedCoordsVisible(True)
+    model2.setDetailsColumnVisible(True)
+    model2.setSharedDataHighlighted(True)
+    model2.setDatatree(dt2)
+
+    view2 = XarrayDataTreeView()
+    view2.setModel(model2)
+    view2.show()
+    view2.resize(800, 1000)
+    view2.showAll()
+    view2.move(900, 50)
+    view2.raise_()
 
     app.exec()
+
     # print(dt)
+    # print(dt2)
 
 
 if __name__ == '__main__':

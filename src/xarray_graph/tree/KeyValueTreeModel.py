@@ -10,7 +10,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, AbstractTreeMimeData
+from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel
 
 
 class KeyValueTreeItem(AbstractTreeItem):
@@ -98,6 +98,8 @@ class KeyValueTreeItem(AbstractTreeItem):
 class KeyValueTreeModel(AbstractTreeModel):
     """ PyQt tree model interface for a key: value mapping.
     """
+
+    MIME_TYPE = 'application/x-key-value-tree-model'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
