@@ -213,8 +213,8 @@ class XarrayDataTreeView(TreeView):
         if has_selection and len(self.selectedIndexes()) > 1:
             menu.addSeparator()
             combine_menu = QMenu('Combine')
-            combine_menu.addAction(QAction('Merge', parent=menu, enabled=False))
-            combine_menu.addAction(QAction('Concatenate', parent=menu, enabled=False))
+            combine_menu.addAction(QAction('Merge', parent=menu, triggered=lambda checked: self._mergeSelection(), enabled=False))
+            combine_menu.addAction(QAction('Concatenate', parent=menu, triggered=lambda checked: self._concatenateSelectedGroups()))
             menu.addMenu(combine_menu)
         
         # insert new group
@@ -518,62 +518,32 @@ class XarrayDataTreeView(TreeView):
             return True
         return False
     
-    def _TMP_renameDimensions(self, path: str = None) -> None:
-        pass
-        # model: XarrayDataTreeModel = self.model()
-        # if model is None:
-        #     return
-        # dt: xr.DataTree = model.datatree()
-        # if dt is None:
-        #     return
-        # node: xr.DataTree | xr.DataArray = dt[path]
-        # if isinstance(node, xr.DataArray):
-        #     path = model.parentPath(path)
-        #     node: xr.DataTree = dt[path]
-        
-        # dims = []
-        # subnode: xr.DataTree
-        # for subnode in node.subtree:
-        #     for dim in subnode.dims:
-        #         if dim not in dims:
-        #             dims.append(dim)
-        # if not dims:
-        #     QMessageBox.warning(self, 'Rename Dimensions', f'No dimensions found in subtree at {path}.')
-        #     return
-        
-        # dim_editors: dict[str, QLineEdit] = {dim: QLineEdit(dim) for dim in dims}
-
-        # dlg = QDialog(self)
-        # dlg.setWindowTitle('Rename Dimensions')
-        # dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-        # form = QFormLayout(dlg)
-        # form.setContentsMargins(0, 0, 0, 0)
-        # form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        # form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        # for dim, editor in dim_editors.items():
-        #     form.addRow(f'{dim} ->', editor)
-
-        # btns = QDialogButtonBox()
-        # btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-        # btns.accepted.connect(dlg.accept)
-        # btns.rejected.connect(dlg.reject)
-        # form.addRow(btns)
-        # if dlg.exec() != QDialog.DialogCode.Accepted:
-        #     return
-        
-        # self.storeState()
-        # self.model().beginResetModel()
-        # # print(node)
-        # subnode: xr.DataTree
-        # for subnode in node.subtree:
-        #     old_dims = list(subnode.dims)
-        #     new_dims = [dim_editors[dim].text() if dim in dim_editors else dim for dim in old_dims]
-        #     dim_map = {old: new for old, new in zip(old_dims, new_dims) if old != new}
-        #     if dim_map:
-        #         subnode.dataset = subnode.to_dataset().rename(dim_map)
-        # # print(node)
-        # self.model().endResetModel()
-        # self.restoreState()
+    def _mergeSelection(self) -> None:
+        pass # TODO
+    
+    def _concatenateSelectedGroups(self, dim: str = None) -> None:
+        model: XarrayDataTreeModel = self.model()
+        if not model:
+            return
+        items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if item.is_group]
+        if not items or len(items) < 2:
+            return
+        if dim is None:
+            title = 'Concatenate'
+            label = 'Concatenate along dim:'
+            dim, ok = QInputDialog.getText(self, title, label)
+            if not ok:
+                return
+            dim = dim.strip()
+            if not dim:
+                return
+        datasets: list[xr.Dataset] = [item.data.to_dataset() for item in items]
+        concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
+        parent_item: XarrayDataTreeItem = items[0].parent
+        parent_group: xr.DataTree = parent_item.data
+        name = xarray_utils.unique_name('Concat', list(parent_group.keys()))
+        parent_group[name] = concatenated_dataset
+        self.refresh()
     
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_C:
