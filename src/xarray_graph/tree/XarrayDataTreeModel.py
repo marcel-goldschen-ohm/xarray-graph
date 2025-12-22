@@ -522,7 +522,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
             item.data_type = COORD
         for item in group_items:
             group: xr.DataTree = item.data.copy(inherit=True)
+            item.data.orphan()
             group.orphan()
+            item.data = group
         if var_items:
             var_names: list[str] = [item.name for item in var_items]
             parent_node.dataset = parent_node.to_dataset().drop_vars(var_names)
