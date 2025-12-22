@@ -4,7 +4,6 @@ Uses XarrayDataTreeModel for the model interface.
 
 TODO:
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
-- global rename of variables throughout the entire branch or tree?
 - combine items (e.g., concatenate, merge)
 """
 
@@ -188,8 +187,8 @@ class XarrayDataTreeView(TreeView):
             menu.addAction(QAction('Data', parent=menu, enabled=False))
         elif item.is_group:
             subtree_menu = QMenu('Subtree', parent=menu)
-            subtree_menu.addAction(QAction('Rename Dimensions', parent=menu, enabled=False))
-            subtree_menu.addAction(QAction('Rename Variables', parent=menu, enabled=False))
+            subtree_menu.addAction(QAction('Rename Dimensions', parent=menu, triggered=lambda checked, item=item: self._renameDimensions(item)))
+            subtree_menu.addAction(QAction('Rename Variables', parent=menu, triggered=lambda checked, item=item: self._renameVariables(item)))
             menu.addMenu(subtree_menu)
         
         # selection
@@ -305,6 +304,153 @@ class XarrayDataTreeView(TreeView):
         item.data.attrs = attrs
         
         self.finishedEditingAttrs.emit()
+    
+    def _renameDimensions(self, root_item: XarrayDataTreeItem) -> None:
+        model: XarrayDataTreeModel = self.model()
+        if not model:
+            return
+        if not root_item.is_group:
+            root_item = root_item.parent
+        root_group: xr.DataTree = root_item.data
+        root_group: xr.DataTree = xarray_utils._branch_root(root_group)
+        while root_item.parent and root_item.data is not root_group:
+            root_item = root_item.parent
+        
+        dims: list[str] = []
+        for group in root_group.subtree:
+            for dim in list(group.dims):
+                if dim not in dims:
+                    dims.append(dim)
+        
+        dim_lineedits: dict[str, QLineEdit] = {}
+        for dim in dims:
+            dim_lineedits[dim] = QLineEdit()
+            dim_lineedits[dim].setPlaceholderText(dim)
+        
+        dlg = QDialog(self)
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setWindowTitle('Rename Dimensions')
+        vbox = QVBoxLayout(dlg)
+        for dim in dims:
+            vbox.addWidget(dim_lineedits[dim])
+        
+        buttons = QDialogButtonBox(standardButtons=QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        vbox.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        
+        renamed_dims = {}
+        for dim in dims:
+            new_dim = dim_lineedits[dim].text().strip()
+            if new_dim and new_dim != dim:
+                renamed_dims[dim] = new_dim
+        if not renamed_dims:
+            return
+        
+        # rename in copy of branch root subtree
+        root_path = root_group.path
+        n_root_path = len(root_path)
+        for group in root_group.subtree:
+            group_renamed_dims = {dim: new_dim for dim, new_dim in renamed_dims.items() if dim in list(group.dims)}
+            if not group_renamed_dims:
+                continue
+            old_dataset: xr.Dataset = group.to_dataset()
+            new_dataset: xr.Dataset = old_dataset.rename_dims(group_renamed_dims)
+            # rename index coords
+            coord_renames = {name: group_renamed_dims[name] for name in list(new_dataset.coords) if name in group_renamed_dims}
+            if coord_renames:
+                new_dataset = new_dataset.assign_coords({new_name: new_dataset.coords[old_name] for old_name, new_name in coord_renames.items()}).drop_vars(list(coord_renames))
+                coords: dict[str, xr.DataArray] = {}
+                for name in old_dataset.coords:
+                    if name in coord_renames:
+                        name = coord_renames[name]
+                    coords[name] = new_dataset.coords[name]
+                new_dataset = xr.Dataset(
+                    data_vars=new_dataset.data_vars,
+                    coords=coords,
+                    attrs=new_dataset.attrs
+                )
+            if group is root_group:
+                new_root_group = xr.DataTree(dataset=new_dataset)
+            else:
+                rel_path = group.path[n_root_path:].lstrip('/')
+                new_root_group[rel_path] = xr.DataTree(dataset=new_dataset)
+
+        # insert renamed copy of branch into datatree
+        dt: xr.DataTree = model.datatree()
+        if root_group is dt:
+            self.setDatatree(new_root_group)
+        else:
+            dt[root_path] = new_root_group
+            self.refresh()
+    
+    def _renameVariables(self, root_item: XarrayDataTreeItem) -> None:
+        model: XarrayDataTreeModel = self.model()
+        if not model:
+            return
+        if not root_item.is_group:
+            root_item = root_item.parent
+        root_group: xr.DataTree = root_item.data
+        
+        var_names: list[str] = []
+        for group in root_group.subtree:
+            for name in group.variables:
+                if name not in var_names:
+                    var_names.append(name)
+        
+        lineedits: dict[str, QLineEdit] = {}
+        for name in var_names:
+            lineedits[name] = QLineEdit()
+            lineedits[name].setPlaceholderText(name)
+        
+        dlg = QDialog(self)
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setWindowTitle('Rename Variables')
+        vbox = QVBoxLayout(dlg)
+        for name in var_names:
+            vbox.addWidget(lineedits[name])
+        
+        buttons = QDialogButtonBox(standardButtons=QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        vbox.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        
+        var_renames = {}
+        for name in var_names:
+            new_name = lineedits[name].text().strip()
+            if new_name and new_name != name:
+                var_renames[name] = new_name
+        if not var_renames:
+            return
+        
+        # rename in copy of branch root subtree
+        root_path = root_group.path
+        n_root_path = len(root_path)
+        for group in root_group.subtree:
+            group_var_renames = {old_name: new_name for old_name, new_name in var_renames.items() if old_name in list(group.data_vars)}
+            if not group_var_renames:
+                continue
+            old_dataset: xr.Dataset = group.to_dataset()
+            new_dataset: xr.Dataset = old_dataset.rename_vars(group_var_renames)
+            if group is root_group:
+                new_root_group = xr.DataTree(dataset=new_dataset)
+            else:
+                rel_path = group.path[n_root_path:].lstrip('/')
+                new_root_group[rel_path] = xr.DataTree(dataset=new_dataset)
+
+        # insert renamed copy of branch into datatree
+        dt: xr.DataTree = model.datatree()
+        if root_group is dt:
+            self.setDatatree(new_root_group)
+        else:
+            dt[root_path] = new_root_group
+            self.refresh()
     
     def cutSelection(self) -> None:
         self.copySelection()
@@ -487,7 +633,7 @@ def test_live():
     view = XarrayDataTreeView()
     view.setModel(model)
     view.show()
-    view.resize(800, 1000)
+    view.resize(800, 700)
     view.showAll()
     view.move(50, 50)
     view.raise_()
@@ -505,7 +651,7 @@ def test_live():
     view2 = XarrayDataTreeView()
     view2.setModel(model2)
     view2.show()
-    view2.resize(800, 1000)
+    view2.resize(800, 700)
     view2.showAll()
     view2.move(900, 50)
     view2.raise_()

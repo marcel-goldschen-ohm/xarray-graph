@@ -1,7 +1,6 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
-- setData: rename index coord -> rename dimension
 - moveRows: merge items?
 - should we ask before removing inherited coords in descendents when moving a coord?
 - enforce coord order at all times? note: this currently happens when refreshing the tree, but not otherwise.
@@ -452,6 +451,39 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     from warnings import warn
                     warn(err)
                     return False
+            # elif item.is_inherited_coord:
+            #     # not allowed
+            #     return False
+            # elif item.is_index_coord:
+            #     # rename dimension along with coord
+            #     try:
+            #         parent_dataset: xr.Dataset = parent_group.to_dataset()
+            #         new_parent_dataset: xr.Dataset = parent_dataset.rename_dims({old_name: new_name})
+            #         # new_parent_dataset = new_parent_dataset.assign_coords({new_name: parent_dataset.coords[old_name]}).drop_vars([old_name])
+            #         # new_coord_names = [name if name != old_name else new_name for name in parent_dataset.coords]
+            #         # renamed_coords = {name: new_parent_dataset.coords[name] for name in new_coord_names}
+            #         # new_parent_dataset = xr.Dataset(
+            #         #     data_vars=new_parent_dataset.data_vars,
+            #         #     coords=renamed_coords,
+            #         #     attrs=parent_dataset.attrs,
+            #         # )
+            #         parent_group.dataset = new_parent_dataset
+            #         item.data = new_parent_dataset.coords[new_name]
+            #         for item in parent_item.children:
+            #             if item.is_data_var:
+            #                 item.data = new_parent_dataset.data_vars[item.name]
+            #             elif item.is_coord:
+            #                 item.data = new_parent_dataset.coords[item.name]
+            #         for aitem in parent_item.subtree_depth_first():
+            #             index0: QModelIndex = self.indexFromItem(aitem, column=0)
+            #             index1: QModelIndex = self.indexFromItem(aitem, column=1)
+            #             self.dataChanged.emit(index0, index1)
+            #         self._updateSubtreeCoordItems(parent_item)
+            #         return True
+            #     except Exception as err:
+            #         from warnings import warn
+            #         warn(err)
+            #         return False
             elif item.is_coord:
                 # rename coord
                 try:
@@ -469,9 +501,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     for item in parent_item.children:
                         if item.is_data_var:
                             item.data = new_parent_dataset.data_vars[item.name]
+                        elif item.is_coord:
+                            item.data = new_parent_dataset.coords[item.name]
                     self.dataChanged.emit(index, index)
                     self._updateSubtreeCoordItems(parent_item)
-                    # TODO: rename coord and also dimension if coord is an index coord
                     return True
                 except Exception as err:
                     from warnings import warn
@@ -1191,9 +1224,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # remove invalid coord items (no need to touch datatree)
             # note: invalid coord items may have a data_type of None after tree manipulation
             coord_items_to_remove: list[XarrayDataTreeItem] = [child for child in item.children if (child.is_coord and child.name not in group.coords) or (child.data_type is None) or (not self.isInheritedCoordsVisible() and child.is_inherited_coord)]
-            for item in reversed(coord_items_to_remove):
-                self.beginRemoveRows(index, item.row, item.row)
-                item.orphan()
+            for coord_item in reversed(coord_items_to_remove):
+                self.beginRemoveRows(index, coord_item.row, coord_item.row)
+                coord_item.orphan()
                 self.endRemoveRows()
             
             if not self.isCoordsVisible():
