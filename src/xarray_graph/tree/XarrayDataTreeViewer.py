@@ -647,10 +647,33 @@ def test_live():
     app = QApplication()
     # app.setQuitOnLastWindowClosed(False)
 
-    window = XarrayDataTreeViewer.open('examples/ERPdata.nc')
-    dt = window.datatree()
-    dt['eggs'] = dt['EEG'] * 10
+    # window = XarrayDataTreeViewer.open('examples/ERPdata.nc')
+    # dt = window.datatree()
+    # dt['eggs'] = dt['EEG'] * 10
+
+    dt = xr.DataTree()
+    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
+    dt['air_temperature/inherits'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature/inherits/again'] = xr.tutorial.load_dataset('air_temperature')
+    dt['child2'] = xr.DataTree()
+    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
+    # dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
+    dt['rasm'] = xr.tutorial.load_dataset('rasm')
+    dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    
+    window = XarrayDataTreeViewer()
+    model: XarrayDataTreeModel = window._datatree_view.model()
+    model.setCoordsVisible(True)
+    model.setInheritedCoordsVisible(True)
+    model.setDetailsColumnVisible(True)
+    model.setSharedDataHighlighted(True)
+    model.setDebugInfoVisible(True)
+    window.setDatatree(dt)
+    window._datatree_view.showAll()
     window.refresh()
+    window.show()
+    window.raise_()
 
     app.exec()
 

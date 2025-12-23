@@ -3,8 +3,12 @@
 
 # import numpy as np
 import xarray as xr
-import pint
+# import pint
 from collections.abc import Iterator
+
+
+_ATTRS_KEY_FOR_ORDERED_DATA_VARS = '_ORDERED_DATA_VARS'
+_ATTRS_KEY_FOR_INHERITED_DATA_VARS = '_INHERITED_DATA_VARS'
 
 
 def get_ordered_dims(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> list[str]:
@@ -39,27 +43,38 @@ def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
 
     !!! This updates the input tree inplace.
     """
-    for dim, new_dim in dims_dict.items():
-        # rename dim along with coord of same name in aligned branch
-        # branch starts from furthest ancestor that contains the dim as an index coord
-        root = node
-        for ancestor in node.parents:
-            if dim in ancestor.xindexes:
-                root = ancestor
-            else:
-                break
-        root.dataset = root.to_dataset().rename_dims({dim: new_dim})
-        # rename coord to match dim
-        root.dataset = root.to_dataset().rename_vars({dim: new_dim})
-        # the above does not rename dims in data_vars of child nodes, so do that here
-        for child in root.subtree:
-            if child is root:
-                # already handled above
-                continue
-            for name, data_var in child.data_vars.items():
-                if dim in data_var.dims:
-                    new_data_var = data_var.swap_dims({dim: new_dim})
-                    child.dataset = child.to_dataset().assign({name: new_data_var})
+    branch_root: xr.DataTree = _branch_root(node)
+    branch_root.dataset = branch_root.to_dataset().rename_dims({dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.dims})
+    # rename coords to match dims
+    coord_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.coords}
+    if coord_renames:
+        branch_root.dataset = branch_root.to_dataset().rename_vars(coord_renames)
+    
+    for node in branch_root.subtree:
+        if node is branch_root:
+            # already handled above
+            continue
+        new_data_vars: dict[str, xr.DataArray] = {}
+        for name, data_var in node.data_vars.items():
+            dim_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in data_var.dims}
+            if dim_renames:
+                data_var = data_var.swap_dims(dim_renames)
+            new_data_vars[name] = data_var
+        node.dataset = node.to_dataset().assign(new_data_vars)
+
+
+def rename_vars(node: xr.DataTree, vars_dict: dict[str, str]) -> None:
+    """ Rename variables in the input tree branch.
+
+    Renames are applied to node's entire subtree.
+
+    !!! This updates the input tree inplace.
+    """
+    anode: xr.DataTree
+    for anode in node.subtree:
+        anode_vars_dict = {name: new_name for name, new_name in vars_dict.items() if name in anode.variables}
+        if anode_vars_dict:
+            anode.dataset = anode.to_dataset().rename_vars(anode_vars_dict)
 
 
 def subtree_depth_first_iter(node: xr.DataTree) -> Iterator[xr.DataTree]:
@@ -300,33 +315,29 @@ def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> s
     return name
 
 
-# ----------------------------------------------------------
+def prepare_datatree_for_serialization(dt: xr.DataTree) -> xr.DataTree:
+    """ Returns a new datatree ready for serialization.
+    """
+    dt = store_ordered_data_vars(dt)
+    dt = store_inherited_data_vars(dt)
+    dt = remove_inherited_data_vars(dt)
+    return dt
 
 
-ORDERED_DATA_VARS_KEY = '_XG_ordered_data_vars_'
-INHERITED_DATA_VARS_KEY = '_XG_inherited_data_vars_'
+def recover_datatree_post_serialization(dt: xr.DataTree) -> xr.DataTree:
+    """ Returns a new datatree ready for use post serialization.
+    """
+    dt = restore_inherited_data_vars(dt)
+    dt = restore_ordered_data_vars(dt)
+    return dt
 
 
-def prepare_datatree_for_serialization(dt: xr.DataTree) -> None:
-    store_ordered_data_vars(dt)
-    store_inherited_data_vars(dt)
-    remove_inherited_data_vars(dt)
-
-
-def recover_datatree_post_serialization(dt: xr.DataTree) -> None:
-    restore_inherited_data_vars(dt)
-    restore_ordered_data_vars(dt)
-
-
-def inherit_missing_data_vars(dt: xr.DataTree) -> None:
+def inherit_missing_data_vars(dt: xr.DataTree) -> xr.DataTree:
     """ All tree nodes inherit references (not copies) to any parent data_vars not already existing in the node.
 
-    This updates the input tree inplace.
+    Returns a new datatree with all inherited data_vars.
     """
-    # # copy tree but not underlying data
-    # dt = dt.copy(deep=False)
-
-    # inherit missing data_vars from parent
+    dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
         parent: xr.DataTree = node.parent
@@ -338,20 +349,15 @@ def inherit_missing_data_vars(dt: xr.DataTree) -> None:
                 to_inherit[name] = var
         if to_inherit:
             node.dataset = node.to_dataset().assign(to_inherit)
-    
-    # # return new tree with inherited data_vars
-    # return dt
+    return dt
 
 
-def remove_inherited_data_vars(dt: xr.DataTree) -> None:
+def remove_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
     """ Remove any data_vars in each tree node that are references to data_vars in the parent node.
 
-    This updates the input tree inplace.
+    Returns a new datatree without any inherited data_vars.
     """
-    # # copy tree but not underlying data
-    # dt = dt.copy(deep=False)
-
-    # remove inherited data_vars from parent
+    dt = dt.copy(deep=False)
     # iterate in reverse to ensure reference chains are properly removed
     node: xr.DataTree
     for node in reversed(list(dt.subtree)):
@@ -359,23 +365,22 @@ def remove_inherited_data_vars(dt: xr.DataTree) -> None:
         if not parent:
             continue
         to_remove = []
-        for name, var in parent.data_vars.items():
+        for name, data_var in parent.data_vars.items():
             if name in node.data_vars:
-                if node.data_vars[name].values is var.values:
+                if node.data_vars[name].data is data_var.data:
                     to_remove.append(name)
         if to_remove:
             node.dataset = node.to_dataset().drop_vars(to_remove)
-    
-    # # return new tree without any inherited data_vars
-    # return dt
+    return dt
 
 
-def store_inherited_data_vars(dt: xr.DataTree) -> None:
-    """ For all tree nodes, store the names of data_vars inherited from the parent node in the node.attrs.
+def store_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
+    """ For all tree nodes, store the names of data_vars inherited from the parent node in the node attrs.
 
     Inherited means the underlying data is a reference to the date in the parent node.
-    This updates the input tree inplace.
+    Returns a new datatree with inherited data_vars defined in the node attrs.
     """
+    dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
         parent: xr.DataTree = node.parent
@@ -383,93 +388,121 @@ def store_inherited_data_vars(dt: xr.DataTree) -> None:
             continue
         inherited = []
         for name, var in node.data_vars.items():
-            if (name in parent.data_vars) and (var.values is parent.data_vars[name].values):
+            if (name in parent.data_vars) and (var.data is parent.data_vars[name].data):
                 inherited.append(name)
         if inherited:
-            node.attrs[INHERITED_DATA_VARS_KEY] = inherited
-        elif INHERITED_DATA_VARS_KEY in node.attrs:
-            del node.attrs[INHERITED_DATA_VARS_KEY]
+            node.attrs[_ATTRS_KEY_FOR_INHERITED_DATA_VARS] = inherited
+        elif _ATTRS_KEY_FOR_INHERITED_DATA_VARS in node.attrs:
+            del node.attrs[_ATTRS_KEY_FOR_INHERITED_DATA_VARS]
+    return dt
 
 
-def restore_inherited_data_vars(dt: xr.DataTree) -> None:
+def restore_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
     """ Inherit data_vars from parent nodes as specified in the each node's metadata.
 
-    This updates the input tree inplace.
+    Returns a new datatree with inherited data_vars.
     """
+    dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
         parent: xr.DataTree = node.parent
         if not parent:
             continue
-        inherited = node.attrs.get(INHERITED_DATA_VARS_KEY, None)
+        inherited = node.attrs.get(_ATTRS_KEY_FOR_INHERITED_DATA_VARS, None)
         if inherited is None:
             continue
         to_inherit = {name: parent.data_vars[name] for name in inherited if name in parent.data_vars and name not in node.data_vars}
         if to_inherit:
             node.dataset = node.to_dataset().assign(to_inherit)
+    return dt
 
 
-def store_ordered_data_vars(dt: xr.DataTree) -> None:
+def store_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     """ Store the current data_var order in each node's metadata.
 
-    This updates the input tree inplace.
+    Returns a new datatree with data_var order defined in the node attrs.
     """
+    dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
         ordered_data_vars: tuple[str] = tuple(node.data_vars)
         if ordered_data_vars:
-            node.attrs[ORDERED_DATA_VARS_KEY] = ordered_data_vars
-        elif ORDERED_DATA_VARS_KEY in node.attrs:
-            del node.attrs[ORDERED_DATA_VARS_KEY]
+            node.attrs[_ATTRS_KEY_FOR_ORDERED_DATA_VARS] = ordered_data_vars
+        elif _ATTRS_KEY_FOR_ORDERED_DATA_VARS in node.attrs:
+            del node.attrs[_ATTRS_KEY_FOR_ORDERED_DATA_VARS]
+    return dt
 
 
-def restore_ordered_data_vars(dt: xr.DataTree) -> None:
+def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     """ Reorder data_vars in each node according to the order specified in the node's metadata.
 
-    This updates the input tree inplace.
+    Returns a new datatree with data_var order set as defined in the node attrs.
     """
+    dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
-        ordered_data_vars = node.attrs.get(ORDERED_DATA_VARS_KEY, None)
+        ordered_data_vars = node.attrs.get(_ATTRS_KEY_FOR_ORDERED_DATA_VARS, None)
         if ordered_data_vars is None:
             continue
         ds = node.to_dataset()
-        node.dataset = xr.Dataset(
-            data_vars={key: ds.data_vars[key] for key in ordered_data_vars if key in ds.data_vars},
-            coords=ds.coords,
-            attrs=ds.attrs,
-        )
+        new_data_vars = {name: ds.data_vars[name] for name in ordered_data_vars if name in ds.data_vars}
+        for name in ds.data_vars:
+            if name not in new_data_vars:
+                new_data_vars[name] = ds.data_vars[name]
+        if tuple(ds.data_vars) != tuple(new_data_vars):
+            node.dataset = xr.Dataset(
+                data_vars=new_data_vars,
+                coords=ds.coords,
+                attrs=ds.attrs,
+            )
+    return dt
     
 
-def get_copy_of_inherited_coords(node: xr.DataTree) -> dict[str, xr.DataArray]:
-    """ Get a deep copy of all inherited coordinates.
-    """
-    if not node.parent:
-        return {}
+# def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: pint.UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
+#     """ Use pint to convert input data into base units.
+#     """
+#     if isinstance(data, xr.DataArray):
+#         if 'units' not in data.attrs:
+#             return data
+#         quantity: pint.Quantity = data.values * ureg(data.attrs['units'])
+#         quantity = quantity.to_base_units()
+#         da = data.copy(data=quantity.magnitude)
+#         da.attrs['units'] = str(quantity.units)
+#         return da
+#     elif isinstance(data, xr.Dataset):
+#         return xr.Dataset(
+#             data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
+#             coords={name: to_base_units(coord) for name, coord in data.coords.items()},
+#             attrs=data.attrs,
+#         )
+#     elif isinstance(data, xr.DataTree):
+#         dt: xr.DataTree = data.copy(deep=False)
+#         node: xr.DataTree
+#         for node in dt.subtree:
+#             node.dataset = to_base_units(node.to_dataset())
+#         return dt
 
-    return {name: node.parent.coords[name].copy(deep=True) for name in node._inherited_coords_set()}
+
+def test():
+    dt = xr.DataTree()
+    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
+    dt['air_temperature/inherits'] = xr.tutorial.load_dataset('air_temperature')
+    dt['air_temperature/inherits/again'] = xr.tutorial.load_dataset('air_temperature')
+    dt['child2'] = xr.DataTree()
+    # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
+    # dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
+    # dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
+    # dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    print()
+    print()
+    print(dt)
+
+    rename_dims(dt['air_temperature/inherits'], {'time': 't'})
+    print()
+    print()
+    print(dt)
 
 
-def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: pint.UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
-    """ Use pint to convert input data into base units.
-    """
-    if isinstance(data, xr.DataArray):
-        if 'units' not in data.attrs:
-            return data
-        quantity: pint.Quantity = data.values * ureg(data.attrs['units'])
-        quantity = quantity.to_base_units()
-        da = data.copy(data=quantity.magnitude)
-        da.attrs['units'] = str(quantity.units)
-        return da
-    elif isinstance(data, xr.Dataset):
-        return xr.Dataset(
-            data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
-            coords={name: to_base_units(coord) for name, coord in data.coords.items()},
-            attrs=data.attrs,
-        )
-    elif isinstance(data, xr.DataTree):
-        dt: xr.DataTree = data.copy(deep=False)
-        node: xr.DataTree
-        for node in dt.subtree:
-            node.dataset = to_base_units(node.to_dataset())
-        return dt
+if __name__ == '__main__':
+    test()

@@ -551,10 +551,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
         # update datatree
         item: XarrayDataTreeItem
         for item in inherited_coord_items:
-            item.data = item.data.copy(deep=True)
+            item.data = item.data.copy(deep=True, data=item.data.data.copy())
             item.data_type = COORD
         for item in group_items:
             group: xr.DataTree = item.data.copy(inherit=True)
+            inherited_coords_copy = {}
+            for name in item.data._inherited_coords_set():
+                coord = item.data.coords[name]
+                coord_copy = coord.copy(deep=True, data=coord.data.copy())
+                inherited_coords_copy[name] = coord_copy
+            if inherited_coords_copy:
+                group.dataset = group.to_dataset().assign_coords(inherited_coords_copy)
             item.data.orphan()
             group.orphan()
             item.data = group
@@ -1022,7 +1029,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     for group_name, group in name_data_map.items():
                         inherited_coords_map: dict[str, xr.DataArray] = {}
                         for coord_name in group._inherited_coords_set():
-                            inherited_coords_map[coord_name] = group.coords[coord_name].copy(deep=True)
+                            coord: xr.DataArray = group.coords[coord_name]
+                            # !? WTF !? copy(deep=True) without also copying the data explicitely assigns each copy to the same memory?
+                            inherited_coords_map[coord_name] = coord.copy(deep=True, data=coord.data.copy())
                         if inherited_coords_map:
                             group_inherited_coords_map[group_name] = inherited_coords_map
                     
@@ -1041,9 +1050,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 
                 elif dtype == COORD:
                     # copy any inherited coords being moved
-                    for name, item in name_item_map.items():
+                    for coord_name, item in name_item_map.items():
                         if item.is_inherited_coord:
-                            name_data_map[name] = item.data.copy(deep=True)
+                            name_data_map[coord_name] = item.data.copy(deep=True)
                     
                     new_dst_parent_dataset: xr.Dataset = dst_parent_group.to_dataset().assign_coords(name_data_map)
                     new_src_parent_dataset: xr.Dataset = src_parent_group.to_dataset().drop_vars(original_names)
@@ -1119,11 +1128,11 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 dst_parent_item.data = new_dst_parent_group
                 src_parent_item.data = new_src_parent_group
                 # update moved items
-                name: str
+                coord_name: str
                 item: XarrayDataTreeItem
-                for i, (name, item) in enumerate(name_item_map.items()):
+                for i, (coord_name, item) in enumerate(name_item_map.items()):
                     item.orphan()
-                    item.data = new_dst_parent_group.children[name]
+                    item.data = new_dst_parent_group.children[coord_name]
                     dst_parent_item.insert_child(dst_first + i, item)
                 # update subtree data refs
                 branch_root_items: list[XarrayDataTreeItem] = []
@@ -1159,9 +1168,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 dst_parent_group.dataset = new_dst_parent_dataset
                 
                 # update itemtree
-                for i, (name, item) in enumerate(name_item_map.items()):
+                for i, (coord_name, item) in enumerate(name_item_map.items()):
                     item.orphan()
-                    item.data = dst_parent_group.data_vars[name]
+                    item.data = dst_parent_group.data_vars[coord_name]
                     dst_parent_item.insert_child(dst_first + i, item)
             
             elif dtype == COORD:
@@ -1173,9 +1182,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 dst_parent_group.dataset = new_dst_parent_dataset
                 
                 # update itemtree
-                for i, (name, item) in enumerate(name_item_map.items()):
+                for i, (coord_name, item) in enumerate(name_item_map.items()):
                     item.orphan()
-                    item.data = dst_parent_group.coords[name]
+                    item.data = dst_parent_group.coords[coord_name]
                     dst_parent_item.insert_child(dst_first + i, item)
             
             self.endMoveRows()

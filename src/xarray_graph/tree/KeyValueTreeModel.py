@@ -309,7 +309,7 @@ class KeyValueTreeModel(AbstractTreeModel):
         parent_keys = [str(key) for key in parent_map.keys()]
         name_item_map = {}
         for _ in range(row, row + count):
-            name = self.unique_name('New', parent_keys)
+            name = self.uniqueName('New', parent_keys)
             name_item_map[name] = KeyValueTreeItem('')
             parent_keys.append(name)
         return self.insertItems(name_item_map, row, parent_item)
@@ -343,7 +343,7 @@ class KeyValueTreeModel(AbstractTreeModel):
         for i in range(row, row + count):
             new_data = ''
             if parent_is_dict:
-                new_key = self.unique_name('New', keys)
+                new_key = self.uniqueName('New', keys)
                 parent_map[new_key] = new_data
                 keys.append(new_key)
             elif parent_is_list:
@@ -396,7 +396,7 @@ class KeyValueTreeModel(AbstractTreeModel):
         item: KeyValueTreeItem
         for i, (name, item) in zip(range(row, row + count), name_item_map.items()):
             if parent_is_dict:
-                new_key = self.unique_name(name, keys)
+                new_key = self.uniqueName(name, keys)
                 parent_map[new_key] = item.value
                 keys.append(new_key)
             elif parent_is_list:
@@ -486,7 +486,7 @@ class KeyValueTreeModel(AbstractTreeModel):
         item: AbstractTreeItem
         for i, key, item in zip(range(dst_row, dst_row + count), keys, items_to_move):
             if dst_parent_is_dict:
-                key = self.unique_name(key, dst_keys)
+                key = self.uniqueName(key, dst_keys)
                 dst_parent_map[key] = item.value
                 dst_keys.append(key)
             elif dst_parent_is_list:
@@ -508,27 +508,6 @@ class KeyValueTreeModel(AbstractTreeModel):
         # print(self.rootItem())
 
         return True
-    
-    @staticmethod
-    def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> str:
-        """ Return name_1, or name_2, etc. until a unique name is found that does not exist in names.
-        """
-        if name not in names:
-            return name
-        base_name = name
-        i = unique_counter_start
-        name = f'{base_name}_{i}'
-        while name in names:
-            i += 1
-            name = f'{base_name}_{i}'
-        return name
-
-    @staticmethod
-    def ndarray_to_tuple(arr: np.ndarray):
-        if arr.shape == ():
-            return arr.item()
-        else:
-            return tuple(map(KeyValueTreeModel.ndarray_to_tuple, arr))
     
     @staticmethod
     def str_to_value(text: str, default_type = None) -> bool | int | float | str | tuple | list | dict | set | np.ndarray:

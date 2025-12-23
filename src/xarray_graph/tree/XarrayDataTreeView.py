@@ -350,42 +350,8 @@ class XarrayDataTreeView(TreeView):
         if not renamed_dims:
             return
         
-        # rename in copy of branch root subtree
-        root_path = root_group.path
-        n_root_path = len(root_path)
-        for group in root_group.subtree:
-            group_renamed_dims = {dim: new_dim for dim, new_dim in renamed_dims.items() if dim in list(group.dims)}
-            if not group_renamed_dims:
-                continue
-            old_dataset: xr.Dataset = group.to_dataset()
-            new_dataset: xr.Dataset = old_dataset.rename_dims(group_renamed_dims)
-            # rename index coords
-            coord_renames = {name: group_renamed_dims[name] for name in list(new_dataset.coords) if name in group_renamed_dims}
-            if coord_renames:
-                new_dataset = new_dataset.assign_coords({new_name: new_dataset.coords[old_name] for old_name, new_name in coord_renames.items()}).drop_vars(list(coord_renames))
-                coords: dict[str, xr.DataArray] = {}
-                for name in old_dataset.coords:
-                    if name in coord_renames:
-                        name = coord_renames[name]
-                    coords[name] = new_dataset.coords[name]
-                new_dataset = xr.Dataset(
-                    data_vars=new_dataset.data_vars,
-                    coords=coords,
-                    attrs=new_dataset.attrs
-                )
-            if group is root_group:
-                new_root_group = xr.DataTree(dataset=new_dataset)
-            else:
-                rel_path = group.path[n_root_path:].lstrip('/')
-                new_root_group[rel_path] = xr.DataTree(dataset=new_dataset)
-
-        # insert renamed copy of branch into datatree
-        dt: xr.DataTree = model.datatree()
-        if root_group is dt:
-            self.setDatatree(new_root_group)
-        else:
-            dt[root_path] = new_root_group
-            self.refresh()
+        xarray_utils.rename_dims(root_group, renamed_dims)
+        self.refresh()
     
     def _renameVariables(self, root_item: XarrayDataTreeItem) -> None:
         model: XarrayDataTreeModel = self.model()
@@ -429,28 +395,8 @@ class XarrayDataTreeView(TreeView):
         if not var_renames:
             return
         
-        # rename in copy of branch root subtree
-        root_path = root_group.path
-        n_root_path = len(root_path)
-        for group in root_group.subtree:
-            group_var_renames = {old_name: new_name for old_name, new_name in var_renames.items() if old_name in list(group.data_vars)}
-            if not group_var_renames:
-                continue
-            old_dataset: xr.Dataset = group.to_dataset()
-            new_dataset: xr.Dataset = old_dataset.rename_vars(group_var_renames)
-            if group is root_group:
-                new_root_group = xr.DataTree(dataset=new_dataset)
-            else:
-                rel_path = group.path[n_root_path:].lstrip('/')
-                new_root_group[rel_path] = xr.DataTree(dataset=new_dataset)
-
-        # insert renamed copy of branch into datatree
-        dt: xr.DataTree = model.datatree()
-        if root_group is dt:
-            self.setDatatree(new_root_group)
-        else:
-            dt[root_path] = new_root_group
-            self.refresh()
+        xarray_utils.rename_vars(root_group, var_renames)
+        self.refresh()
     
     def cutSelection(self) -> None:
         self.copySelection()
@@ -537,13 +483,16 @@ class XarrayDataTreeView(TreeView):
             dim = dim.strip()
             if not dim:
                 return
-        datasets: list[xr.Dataset] = [item.data.to_dataset() for item in items]
-        concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
-        parent_item: XarrayDataTreeItem = items[0].parent
-        parent_group: xr.DataTree = parent_item.data
-        name = xarray_utils.unique_name('Concat', list(parent_group.keys()))
-        parent_group[name] = concatenated_dataset
-        self.refresh()
+        try:
+            datasets: list[xr.Dataset] = [item.data.to_dataset() for item in items]
+            concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
+            parent_item: XarrayDataTreeItem = items[0].parent
+            parent_group: xr.DataTree = parent_item.data
+            name = xarray_utils.unique_name('Concat', list(parent_group.keys()))
+            parent_group[name] = concatenated_dataset
+            self.refresh()
+        except Exception as err:
+            model.popupWarningDialog(str(err))
     
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_C:
@@ -562,8 +511,6 @@ class XarrayDataTreeView(TreeView):
 
 
 def test_live():
-    import numpy as np
-
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
@@ -572,7 +519,7 @@ def test_live():
     dt['child2'] = xr.DataTree()
     # dt['child3/grandchild1/greatgrandchild1'] = xr.DataTree()
     # dt['child3/grandchild1/tiny'] = xr.tutorial.load_dataset('tiny')
-    # dt['child3/rasm'] = xr.tutorial.load_dataset('rasm')
+    # dt['rasm'] = xr.tutorial.load_dataset('rasm')
     # dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
 
     app = QApplication()
@@ -583,22 +530,8 @@ def test_live():
     model.setInheritedCoordsVisible(True)
     model.setDetailsColumnVisible(True)
     model.setSharedDataHighlighted(True)
+    model.setDebugInfoVisible(True)
     model.setDatatree(dt)
-
-    # parent_item = model._root_item.children[0]
-    # half_air = dt['air_temperature/air'] / 2
-    # data_var_item = XarrayDataTreeItem(half_air, XarrayDataTreeType.DATA_VAR)
-    # model.insertItems({'half air': data_var_item}, 0, parent_item)
-
-    # parent_item = model._root_item.children[0]
-    # twice_lat = xr.DataArray(data=dt['air_temperature/lat'].values * 2, dims=('twice lat',))
-    # coord_item = XarrayDataTreeItem(twice_lat, XarrayDataTreeType.COORD)
-    # model.insertItems({'twice lat': coord_item}, 0, parent_item)
-
-    # dt['air_temperature/inherits/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-    # dt['air_temperature/inherits/again/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-    # dt['air_temperature/laty'] = xr.DataArray(np.arange(25), dims=('twice lat',))
-    # model.reset()
 
     view = XarrayDataTreeView()
     view.setModel(model)
@@ -616,6 +549,7 @@ def test_live():
     model2.setInheritedCoordsVisible(True)
     model2.setDetailsColumnVisible(True)
     model2.setSharedDataHighlighted(True)
+    model2.setDebugInfoVisible(True)
     model2.setDatatree(dt2)
 
     view2 = XarrayDataTreeView()

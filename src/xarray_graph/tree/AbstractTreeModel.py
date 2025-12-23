@@ -466,7 +466,7 @@ class AbstractTreeModel(QAbstractItemModel):
 
         # !? If we return True, the model will attempt to remove rows. As we already completely handled the drop action above, this will corrupt our model, so return False.
         return False
-    
+
     @staticmethod
     def popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
@@ -474,6 +474,22 @@ class AbstractTreeModel(QAbstractItemModel):
         if system_warn:
             from warnings import warn
             warn(text)
+    
+    @staticmethod
+    def uniqueName(name: str, names: list[str], unique_counter_start: int = 1) -> str:
+        """ Return name_1, or name_2, etc. until a unique name is found that does not exist in names.
+
+        This is useful for managing trees that require unique paths.
+        """
+        if name not in names:
+            return name
+        base_name = name
+        i = unique_counter_start
+        name = f'{base_name}_{i}'
+        while name in names:
+            i += 1
+            name = f'{base_name}_{i}'
+        return name
 
 
 class TreeMimeData(QMimeData):

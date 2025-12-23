@@ -84,7 +84,7 @@ class KeyValueTreeView(TreeView):
         # copy the values in each branch root subtree
         copied_key_value_map: dict = {}
         for item in items:
-            key = KeyValueTreeModel.unique_name(item.key, list(copied_key_value_map.keys()))
+            key = KeyValueTreeModel.uniqueName(item.key, list(copied_key_value_map.keys()))
             copied_key_value_map[key] = deepcopy(item.value)
         KeyValueTreeView._copied_key_value_map = copied_key_value_map
     
@@ -119,7 +119,7 @@ class KeyValueTreeView(TreeView):
     def insertNew(self, parent_item: KeyValueTreeItem, row: int) -> None:
         model: KeyValueTreeModel = self.model()
         names = [item.name for item in parent_item.children]
-        name = model.unique_name('New', names)
+        name = model.uniqueName('New', names)
         new_item = KeyValueTreeItem('')
         model.insertItems({name: new_item}, row, parent_item)
 
