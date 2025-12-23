@@ -4,7 +4,7 @@ Uses XarrayDataTreeModel for the model interface.
 
 TODO:
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
-- combine items (e.g., concatenate, merge)
+- merge items?
 """
 
 from __future__ import annotations
