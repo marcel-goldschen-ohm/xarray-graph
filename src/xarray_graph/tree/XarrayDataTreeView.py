@@ -61,7 +61,7 @@ class XarrayDataTreeView(TreeView):
             icon = self._coord_icon,
             iconVisibleInMenu=True,
             checkable = True,
-            checked = True,
+            checked = False,
             toolTip = 'Show/hide inherited coords in the tree view.',
             triggered = lambda checked: self._updateModelFromViewOptions()
         )

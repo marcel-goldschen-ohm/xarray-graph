@@ -420,7 +420,7 @@ class TreeView(QTreeView):
     #     return True
     
     @staticmethod
-    def _getWindowDecorationOffset():
+    def _determineWindowDecorationOffset():
         window = QWidget()
         window.show()
         frame: QRect = window.frameGeometry()

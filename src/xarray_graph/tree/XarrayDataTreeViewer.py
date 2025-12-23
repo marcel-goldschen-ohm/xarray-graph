@@ -103,10 +103,13 @@ class XarrayDataTreeViewer(QMainWindow):
     def refresh(self) -> None:
         self._datatree_view.refresh()
     
-    def about(self) -> None:
+    @staticmethod
+    def about() -> None:
         """ Popup about message dialog.
         """
         import textwrap
+
+        focus_widget: QWidget = QApplication.instance().focusWidget()
 
         text = f"""
         XarrayGraph
@@ -120,7 +123,7 @@ class XarrayDataTreeViewer(QMainWindow):
         """
         text = textwrap.dedent(text).strip()
         
-        QMessageBox.about(self, 'About XarrayGraph', text)
+        QMessageBox.about(focus_widget, 'About XarrayGraph', text)
 
     def settings(self) -> None:
         print('settings') # TODO
@@ -152,10 +155,17 @@ class XarrayDataTreeViewer(QMainWindow):
         
         # handle sequence of multiple filepaths
         if isinstance(filepath, list):
+            title = 'Combine Files?'
+            text = 'Combine files as first-level groups in single datatree?'
+            combine: QMessageBox.StandardButton = QMessageBox.question(focus_widget, title, text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, defaultButton=QMessageBox.StandardButton.No)
+
             windows: list[XarrayDataTreeViewer] = []
             for path in filepath:
                 window = XarrayDataTreeViewer.open(path, filetype)
                 windows.append(window)
+            
+            if combine == QMessageBox.StandardButton.Yes:
+                return XarrayDataTreeViewer._combineWindows(windows)
             return windows
         
         # ensure Path filepath object
@@ -202,7 +212,7 @@ class XarrayDataTreeViewer(QMainWindow):
             return
         
         # restore datatree from serialization
-        # TODO
+        datatree = xarray_utils.recover_datatree_post_serialization(datatree)
 
         # new window
         window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
@@ -262,6 +272,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # prepare datatree for serilazation
         datatree: xr.DataTree = self.datatree()
+        datatree = xarray_utils.prepare_datatree_for_serialization(datatree)
 
         # write datatree to filesystem
         if filetype == 'Zarr Directory':
@@ -271,11 +282,9 @@ class XarrayDataTreeViewer(QMainWindow):
             with zarr.storage.ZipStore(filepath, mode='w') as store:
                 datatree.to_zarr(store)
         elif filetype == 'NetCDF':
-            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
-            return
+            datatree.to_netcdf(filepath, mode='w')
         elif filetype == 'HDF5':
-            QMessageBox.warning(self, 'Under Construction', f'{filetype} support is in the works.')
-            return
+            datatree.to_netcdf(filepath, mode='w')
         else:
             QMessageBox.warning(self, 'Invalid File Type', f'Saving to {filetype} format is not supported.')
             return
@@ -297,28 +306,36 @@ class XarrayDataTreeViewer(QMainWindow):
         return windows
     
     @staticmethod
-    def _combineAllWindows() -> None:
-        """ Combine all open windows into one window with multiple top-level groups.
+    def _combineWindows(windows: list[XarrayDataTreeViewer] = None) -> XarrayDataTreeViewer:
+        """ Combine windows into one window with multiple top-level groups.
         """
-        if not XarrayDataTreeViewer._windows:
-            QStyleHintReturn
+        if windows is None:
+            windows = XarrayDataTreeViewer._windows
+        if not windows:
+            return
         
         # combined datatree
         combined_datatree = xr.DataTree()
         window: XarrayDataTreeViewer
-        for window in XarrayDataTreeViewer._windows:
+        for window in windows:
             title = window.windowTitle()
             combined_datatree[title] = window.datatree()
+        
+        noncombined_windows: list[XarrayDataTreeViewer] = [window for window in XarrayDataTreeViewer._windows if window not in windows]
+        noncombined_window_titles: list[str] = [window.windowTitle() for window in noncombined_windows]
 
         # new combined window
         combined_window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
-        combined_window.setWindowTitle('Combined')
+        combined_window_title: str = xarray_utils.unique_name('Combined', noncombined_window_titles)
+        combined_window.setWindowTitle(combined_window_title)
         combined_window.setDatatree(combined_datatree)
 
         # close old windows
-        for window in tuple(XarrayDataTreeViewer._windows):
+        for window in tuple(windows):
             if window is not combined_window:
                 window.close()
+        
+        return combined_window
     
     def _separateFirstLevelGroups(self) -> None:
         """ Separate first level groups into multiple windows.
@@ -469,7 +486,6 @@ class XarrayDataTreeViewer(QMainWindow):
         """
 
         self._refresh_action = QAction(
-            parent=self,
             icon=qta.icon('msc.refresh', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Refresh',
@@ -478,14 +494,12 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda checked: self.refresh())
 
         self._about_action = QAction(
-            parent=self,
             iconVisibleInMenu=False,
             text=f'About {self.__class__.__name__}',
             toolTip=f'About {self.__class__.__name__}',
-            triggered=lambda checked: self.about())
+            triggered=lambda checked: XarrayDataTreeViewer.about())
 
         self._settings_action = QAction(
-            parent=self,
             icon=qta.icon('msc.gear', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Settings',
@@ -505,7 +519,6 @@ class XarrayDataTreeViewer(QMainWindow):
         #     triggered=lambda checked: self._toolbar.setVisible(checked))
 
         self._toggle_console_action = QAction(
-            parent=self,
             icon=qta.icon('mdi.console', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Console',
@@ -516,26 +529,23 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda checked: self.setConsoleVisible(checked))
 
         self._new_action = QAction(
-            parent=self,
             iconVisibleInMenu=False,
             text='New',
             toolTip='New Window',
             checkable=False,
             shortcut=QKeySequence.StandardKey.New,
-            triggered=lambda: self.new())
+            triggered=lambda: XarrayDataTreeViewer.new())
 
         self._open_action = QAction(
-            parent=self,
             icon=qta.icon('fa5.folder-open', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Open',
             toolTip='Open',
             checkable=False,
             shortcut=QKeySequence.StandardKey.Open,
-            triggered=lambda: self.open())
+            triggered=lambda: XarrayDataTreeViewer.open())
 
         self._save_action = QAction(
-            parent=self,
             icon=qta.icon('fa5.save', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Save',
@@ -545,7 +555,6 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: self.save())
 
         self._save_as_action = QAction(
-            parent=self,
             icon=qta.icon('fa5.save', options=[{'opacity': 1.0}]),
             iconVisibleInMenu=False,
             text='Save As',
@@ -592,7 +601,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._view_menu.addAction(self._refresh_action)
 
         self._window_menu = menubar.addMenu('Window')
-        self._window_menu.addAction('Combine All', XarrayDataTreeViewer._combineAllWindows)
+        self._window_menu.addAction('Combine All', XarrayDataTreeViewer._combineWindows)
         self._window_menu.addAction('Separate First Level Groups', self._separateFirstLevelGroups)
         self._window_menu.addSeparator()
         self._window_menu.addAction('Bring All to Front')
@@ -650,6 +659,7 @@ def test_live():
     # window = XarrayDataTreeViewer.open('examples/ERPdata.nc')
     # dt = window.datatree()
     # dt['eggs'] = dt['EEG'] * 10
+    # window.refresh()
 
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
@@ -663,17 +673,19 @@ def test_live():
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     
     window = XarrayDataTreeViewer()
+    window.setDatatree(dt)
+
     model: XarrayDataTreeModel = window._datatree_view.model()
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
     model.setDetailsColumnVisible(True)
     model.setSharedDataHighlighted(True)
     model.setDebugInfoVisible(True)
-    window.setDatatree(dt)
+    window._datatree_view._updateViewOptionsFromModel()
     window._datatree_view.showAll()
-    window.refresh()
+    
     window.show()
-    window.raise_()
+    # window.raise_() # !? this cuases havoc with MacOS native menubar (have to click out of app and back in again to get menubar working again)
 
     app.exec()
 
