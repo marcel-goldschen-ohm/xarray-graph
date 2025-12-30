@@ -18,7 +18,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph import xarray_utils
-from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeModel, KeyValueTreeView
+from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeView
 from xarray_graph.widgets import IPythonConsole, CollapsibleSectionsSplitter
 
 
@@ -96,6 +96,7 @@ class XarrayDataTreeViewer(QMainWindow):
     def setDatatree(self, datatree: xr.DataTree) -> None:
         self._datatree_view.setDatatree(datatree)
         self._console.addVariable('dt', datatree)
+        self.onSelectionChanged()
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
@@ -407,46 +408,23 @@ class XarrayDataTreeViewer(QMainWindow):
             except:
                 self._info_view.clear()
                 return
-        
-        self._info_view.clear()
-        sep = False
-        item: XarrayDataTreeItem
-        for item in self._datatree_view.model().rootItem().subtree_depth_first():
-            if item in selected_items:
-                data: xr.DataTree | xr.DataArray = item.data
-                if isinstance(data, xr.DataTree):
-                    data = data.dataset
-                if sep:
-                    # TODO: check if this works on Windows (see https://stackoverflow.com/questions/76710833/how-do-i-add-a-full-width-horizontal-line-in-qtextedit)
-                    self._info_view.insertHtml('<br><hr><br>')
-                else:
-                    sep = True
-                self._info_view.insertPlainText(f'{item.path}:\n{data}')
-
-                # tc = self.result_text_box.textCursor()
-                # # move the cursor to the end of the document
-                # tc.movePosition(tc.End)
-                # # insert an arbitrary QTextBlock that will inherit the previous format
-                # tc.insertBlock()
-                # # get the block format
-                # fmt = tc.blockFormat()
-                # # remove the horizontal ruler property from the block
-                # fmt.clearProperty(fmt.BlockTrailingHorizontalRulerWidth)
-                # # set (not merge!) the block format
-                # tc.setBlockFormat(fmt)
-                # # eventually, apply the cursor so that editing actually starts at the end
-                # self.result_text_box.setTextCursor(tc)
+            
+        XarrayDataTreeView.updateInfoTextEdit(selected_items, self._info_view)
     
     def _update_attrs_view(self) -> None:
         selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
+        if not selected_items:
+            model: XarrayDataTreeModel = self._datatree_view.model()
+            item: XarrayDataTreeItem = model.rootItem()
+            if item:
+                selected_items = [item]
         if len(selected_items) == 1:
             item: XarrayDataTreeItem = selected_items[0]
             attrs: dict = item.data.attrs
-            model = KeyValueTreeModel()
-            model.setKeyValueMap(attrs)
-            self._attrs_view.storeViewState()
-            self._attrs_view.setModel(model)
-            self._attrs_view.restoreViewState()
+            self._attrs_view.setKeyValueMap(attrs)
+            self._attrs_view.show()
+        else:
+            self._attrs_view.hide()
     
     def _init_componenets(self) -> None:
         """ Initialize UI components.

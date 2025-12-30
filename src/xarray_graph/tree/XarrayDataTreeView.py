@@ -181,14 +181,14 @@ class XarrayDataTreeView(TreeView):
             # should never happen
             icon: QIcon = self._unknown_icon
         menu.addAction(QAction(f'{item.path}:', parent=menu, icon=icon, iconVisibleInMenu=True, enabled=False)) # just a label
-        menu.addAction(QAction('Info', parent=menu, triggered=lambda checked, item=item: self._popupInfo(item)))
-        menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self._editAttrs(item)))
+        menu.addAction(QAction('Info', parent=menu, triggered=lambda checked, item=item: self.infoDialog(item)))
+        menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self.attrsDialog(item)))
         if item.is_variable:
             menu.addAction(QAction('Data', parent=menu, enabled=False))
         elif item.is_group:
             subtree_menu = QMenu('Subtree', parent=menu)
-            subtree_menu.addAction(QAction('Rename Dimensions', parent=menu, triggered=lambda checked, item=item: self._renameDimensions(item)))
-            subtree_menu.addAction(QAction('Rename Variables', parent=menu, triggered=lambda checked, item=item: self._renameVariables(item)))
+            subtree_menu.addAction(QAction('Rename Dimensions', parent=menu, triggered=lambda checked, item=item: self.renameDimensions(item)))
+            subtree_menu.addAction(QAction('Rename Variables', parent=menu, triggered=lambda checked, item=item: self.renameVariables(item)))
             menu.addMenu(subtree_menu)
         
         # selection
@@ -213,8 +213,8 @@ class XarrayDataTreeView(TreeView):
         if has_selection and len(self.selectedIndexes()) > 1:
             menu.addSeparator()
             combine_menu = QMenu('Combine')
-            combine_menu.addAction(QAction('Merge', parent=menu, triggered=lambda checked: self._mergeSelection(), enabled=False))
-            combine_menu.addAction(QAction('Concatenate', parent=menu, triggered=lambda checked: self._concatenateSelectedGroups()))
+            combine_menu.addAction(QAction('Merge', parent=menu, triggered=lambda checked: self.mergeSelection(), enabled=False))
+            combine_menu.addAction(QAction('Concatenate', parent=menu, triggered=lambda checked: self.concatenateSelectedGroups()))
             menu.addMenu(combine_menu)
         
         # insert new group
@@ -245,7 +245,7 @@ class XarrayDataTreeView(TreeView):
         
         return menu
     
-    def _popupInfo(self, item: XarrayDataTreeItem) -> None:
+    def infoDialog(self, item: XarrayDataTreeItem) -> None:
         info = str(item.data)
         
         textEdit = QTextEdit()
@@ -266,7 +266,71 @@ class XarrayDataTreeView(TreeView):
 
         dlg.exec()
     
-    def _editAttrs(self, item: XarrayDataTreeItem) -> None:
+    def selectionInfoDialog(self) -> None:
+        items: list[XarrayDataTreeItem] = self.selectedItems()
+        if not items:
+            return
+        
+        textEdit: QTextEdit = self.updateInfoTextEdit(items)
+
+        if len(items) == 1:
+            title = items[0].path
+        else:
+            title = 'Selected'
+
+        dlg = QDialog(self)
+        dlg.resize(max(self.width(), 800), self.height())
+        # if self.window_decoration_offset is None:
+        #     self._get_window_decoration_offset()
+        # dlg.move(self.mapToGlobal(self.window_decoration_offset))
+        dlg.move(self.mapToGlobal(QPoint(0, 0)))
+        dlg.setWindowTitle(title)
+        
+        vbox = QVBoxLayout(dlg)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.addWidget(textEdit)
+
+        dlg.exec()
+    
+    @staticmethod
+    def updateInfoTextEdit(items: list[XarrayDataTreeItem], text_edit: QTextEdit = None) -> QTextEdit:
+        if not items:
+            return
+        if text_edit is None:
+            text_edit = QTextEdit()
+        
+        text_edit.clear()
+        text_edit.setReadOnly(True)
+        sep = False
+        item: XarrayDataTreeItem
+        for item in items:
+            data: xr.DataTree | xr.DataArray = item.data
+            if isinstance(data, xr.DataTree):
+                data = data.dataset
+            if sep:
+                # TODO: check if this works on Windows (see https://stackoverflow.com/questions/76710833/how-do-i-add-a-full-width-horizontal-line-in-qtextedit)
+                text_edit.insertHtml('<br><hr><br>')
+            else:
+                sep = True
+            text_edit.insertPlainText(f'{item.path}:\n{data}')
+
+            # tc = self.result_text_box.textCursor()
+            # # move the cursor to the end of the document
+            # tc.movePosition(tc.End)
+            # # insert an arbitrary QTextBlock that will inherit the previous format
+            # tc.insertBlock()
+            # # get the block format
+            # fmt = tc.blockFormat()
+            # # remove the horizontal ruler property from the block
+            # fmt.clearProperty(fmt.BlockTrailingHorizontalRulerWidth)
+            # # set (not merge!) the block format
+            # tc.setBlockFormat(fmt)
+            # # eventually, apply the cursor so that editing actually starts at the end
+            # self.result_text_box.setTextCursor(tc)
+        
+        return text_edit
+    
+    def attrsDialog(self, item: XarrayDataTreeItem) -> None:
         attrs_copy: dict = item.data.attrs.copy()
 
         model = KeyValueTreeModel()
@@ -305,7 +369,21 @@ class XarrayDataTreeView(TreeView):
         
         self.finishedEditingAttrs.emit()
     
-    def _renameDimensions(self, root_item: XarrayDataTreeItem) -> None:
+    @staticmethod
+    def updateAttrsTree(item: XarrayDataTreeItem, kv_view: KeyValueTreeView = None) -> KeyValueTreeView:
+        if item is None:
+            if kv_view:
+                kv_view.setKeyValueMap({})
+                return kv_view
+            return
+        
+        if kv_view is None:
+            kv_view = KeyValueTreeView()
+
+        kv_view.setKeyValueMap(item.data.attrs)
+        return kv_view
+    
+    def renameDimensions(self, root_item: XarrayDataTreeItem) -> None:
         model: XarrayDataTreeModel = self.model()
         if not model:
             return
@@ -353,7 +431,7 @@ class XarrayDataTreeView(TreeView):
         xarray_utils.rename_dims(root_group, renamed_dims)
         self.refresh()
     
-    def _renameVariables(self, root_item: XarrayDataTreeItem) -> None:
+    def renameVariables(self, root_item: XarrayDataTreeItem) -> None:
         model: XarrayDataTreeModel = self.model()
         if not model:
             return
@@ -464,10 +542,10 @@ class XarrayDataTreeView(TreeView):
             return True
         return False
     
-    def _mergeSelection(self) -> None:
+    def mergeSelection(self) -> None:
         pass # TODO
     
-    def _concatenateSelectedGroups(self, dim: str = None) -> None:
+    def concatenateSelectedGroups(self, dim: str = None) -> None:
         model: XarrayDataTreeModel = self.model()
         if not model:
             return

@@ -1190,7 +1190,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             self.endMoveRows()
 
             # for any moved coords, update inherited coord items in descendents of src and dst parent items
-            if self.isCoordsVisible() and self.isInheritedCoordsVisible():
+            if self.isCoordsVisible() and (self.isInheritedCoordsVisible() or (dtype == GROUP and group_inherited_coords_map)):
                 if src_parent_in_dst_parent_subtree:
                     self._updateSubtreeCoordItems(dst_parent_item)
                 elif dst_parent_in_src_parent_subtree:

@@ -24,6 +24,51 @@ class KeyValueTreeView(TreeView):
         self._cut_icon = qta.icon('mdi.content-cut')
         self._copy_icon = qta.icon('mdi.content-copy')
         self._paste_icon = qta.icon('mdi.content-paste')
+
+        self._showTypeColumnAction = QAction(
+            text = 'Show Type Column',
+            icon = qta.icon('fa6s.info'),
+            iconVisibleInMenu=True,
+            checkable = True,
+            checked = False,
+            toolTip = 'Show data type column in the tree view. Uncheck to hide column.',
+            triggered = lambda checked: self._updateModelFromViewOptions()
+        )
+    
+    def setModel(self, model: KeyValueTreeModel, updateViewOptionsFromModel: bool = True) -> None:
+        super().setModel(model)
+        if updateViewOptionsFromModel:
+            self._updateViewOptionsFromModel()
+        else:
+            self._updateModelFromViewOptions()
+
+    def _updateViewOptionsFromModel(self):
+        model: KeyValueTreeModel = self.model()
+        
+        self._showTypeColumnAction.blockSignals(True)
+        self._showTypeColumnAction.setChecked(model.isTypesColumnVisible())
+        self._showTypeColumnAction.blockSignals(False)
+
+    def _updateModelFromViewOptions(self):
+        model: KeyValueTreeModel = self.model()
+        self.storeViewState()
+        model.setTypesColumnVisible(self._showTypeColumnAction.isChecked())
+        self.restoreViewState()
+    
+    def keyValueMap(self) -> dict | list:
+        model: KeyValueTreeModel = self.model()
+        return model.keyValueMap()
+    
+    def setKeyValueMap(self, data: dict | list) -> None:
+        model: KeyValueTreeModel = self.model()
+        if model is None:
+            model = KeyValueTreeModel()
+            model.setKeyValueMap(data)
+            self.setModel(model)
+        else:
+            self.storeViewState()
+            model.setKeyValueMap(data)
+            self.restoreViewState()
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: KeyValueTreeModel = self.model()
@@ -64,6 +109,10 @@ class KeyValueTreeView(TreeView):
         if model.columnCount() > 1:
             menu.addAction(self._resizeAllColumnsToContentsAction)
             menu.addAction(self._showAllAction)
+        
+        # Options
+        menu.addSeparator()
+        menu.addAction(self._showTypeColumnAction)
 
         # refresh
         menu.addSeparator()
