@@ -17,9 +17,11 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils
+from qtconsole.rich_jupyter_widget import RichJupyterWidget
+from qtconsole.inprocess import QtInProcessKernelManager
+from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeView
-from xarray_graph.widgets import IPythonConsole, CollapsibleSectionsSplitter
+from xarray_graph.widgets import CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeViewer(QMainWindow):
@@ -28,6 +30,10 @@ class XarrayDataTreeViewer(QMainWindow):
 
     # global list of all XarrayDataTreeViewer top level windows
     _windows: list[XarrayDataTreeViewer] = []
+    _windows_dict: dict[str, XarrayDataTreeViewer] = {} # for access by window title
+
+    # global console (will be initialized with kernel in first instance, see _init_componenets)
+    console = None
 
     _filetype_extensions_map: dict[str, list[str]] = {
         'Zarr Directory': [''],
@@ -47,6 +53,7 @@ class XarrayDataTreeViewer(QMainWindow):
         title = xarray_utils.unique_name('Untitled', [w.windowTitle() for w in XarrayDataTreeViewer._windows])
         self.setWindowTitle(title)
 
+        self._init_global_console()
         self._init_componenets()
         self._init_actions()
         self._init_menubar()
@@ -68,19 +75,13 @@ class XarrayDataTreeViewer(QMainWindow):
         self._inner_splitter.addWidget(self._datatree_view)
         self._inner_splitter.addWidget(self._selection_splitter_wrapper)
 
-        self._outer_splitter = CollapsibleSectionsSplitter()
-        self._outer_splitter.addSection('DataTree', self._inner_splitter)
-        self._outer_splitter.addSection('Console', self._console)
-        self._outer_splitter.setFirstSectionHeaderVisible(False)
-        self._outer_splitter.sectionIsExpandedChanged.connect(self.onOuterSplitterSectionIsExpandedChanged)
+        # self._outer_splitter = CollapsibleSectionsSplitter()
+        # self._outer_splitter.addSection('DataTree', self._inner_splitter)
+        # self._outer_splitter.addSection('Console', self._console)
+        # self._outer_splitter.setFirstSectionHeaderVisible(False)
+        # self._outer_splitter.sectionIsExpandedChanged.connect(self.onOuterSplitterSectionIsExpandedChanged)
 
-        self.setCentralWidget(self._outer_splitter)
-
-        msg = self._console._one_time_message_on_show
-        QTimer.singleShot(300, lambda msg=msg: self._console.printMessage(msg))
-
-        # initial state
-        self.setConsoleVisible(False)
+        self.setCentralWidget(self._inner_splitter)
 
         # for testing only
         dt = xr.open_datatree('examples/ERPdata.nc', engine='h5netcdf')
@@ -89,18 +90,53 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # register with global windows list
         XarrayDataTreeViewer._windows.append(self)
+        XarrayDataTreeViewer._windows_dict[self.windowTitle()] = self
+        self.windowTitleChanged.connect(XarrayDataTreeViewer._updateWindowsDict)
+    
+    @staticmethod
+    def isConsoleVisible() -> bool:
+        return XarrayDataTreeViewer.console.isVisible()
+    
+    @staticmethod
+    def setConsoleVisible(visible: bool) -> None:
+        old_visible = XarrayDataTreeViewer.isConsoleVisible()
+        XarrayDataTreeViewer.console.setVisible(visible)
+        if visible and not old_visible:
+            XarrayDataTreeViewer.console.kernel_manager.kernel.shell.push({'windows': XarrayDataTreeViewer._windows_dict})
+            import textwrap
+            msg = """
+            ----------------------------------------------------
+            Modules loaded at startup:
+              numpy as np
+              xarray as xr
+            
+            Variables:
+              windows -> Dict of all XarrayDataTreeViewer windows keyed on window titles.
+
+            e.g., To access the datatree for the window titled 'MyData':
+              windows['MyData'].datatree()
+            ----------------------------------------------------
+            """
+            msg = textwrap.dedent(msg).strip()
+            XarrayDataTreeViewer.console._append_plain_text(msg + '\n', before_prompt=True)
+        if visible and old_visible:
+            XarrayDataTreeViewer.console.raise_()
     
     def datatree(self) -> xr.DataTree:
         return self._datatree_view.datatree()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
         self._datatree_view.setDatatree(datatree)
-        self._console.addVariable('dt', datatree)
         self.onSelectionChanged()
     
     def sizeHint(self) -> QSize:
         return QSize(1000, 800)
 
+    @staticmethod
+    def refreshAllWindows():
+        for window in XarrayDataTreeViewer._windows:
+            window.refresh()
+    
     def refresh(self) -> None:
         self._datatree_view.refresh()
     
@@ -384,17 +420,10 @@ class XarrayDataTreeViewer(QMainWindow):
                 window._windows_list_action_group.addAction(action)
                 window._window_menu.addAction(action)
     
-    def isConsoleVisible(self) -> bool:
-        index: int = self._outer_splitter.indexOfSection('Console')
-        return self._outer_splitter.isSectionExpanded(index)
-    
-    def setConsoleVisible(self, visible: bool) -> None:
-        index: int = self._outer_splitter.indexOfSection('Console')
-        return self._outer_splitter.setSectionExpanded(index, visible)
-    
-    def onOuterSplitterSectionIsExpandedChanged(self, index: int, expanded: bool) -> None:
-        if index == self._outer_splitter.indexOfSection('Console'):
-            self._toggle_console_action.setChecked(expanded)
+    @staticmethod
+    def _updateWindowsDict() -> None:
+        XarrayDataTreeViewer._windows_dict = {win.windowTitle(): win for win in XarrayDataTreeViewer._windows}
+        XarrayDataTreeViewer.console.kernel_manager.kernel.shell.push({'windows': XarrayDataTreeViewer._windows_dict})
     
     def onSelectionChanged(self) -> None:
         self._update_info_view()
@@ -426,6 +455,25 @@ class XarrayDataTreeViewer(QMainWindow):
         else:
             self._attrs_view.hide()
     
+    def _init_global_console(self) -> None:
+        """ Initialize UI components.
+        """
+
+        # global console with kernel (shared across all windows)
+        if XarrayDataTreeViewer.console is None:
+            kernel_manager = QtInProcessKernelManager()
+            kernel_manager.start_kernel()
+            kernel_client = kernel_manager.client()
+            kernel_client.start_channels()
+            console = RichJupyterWidget()
+            console.setWindowTitle(self.__class__.__name__)
+            console.kernel_manager = kernel_manager
+            console.kernel_client = kernel_client
+            console.execute('import numpy as np', hidden=True)
+            console.execute('import xarray as xr', hidden=True)
+            console.executed.connect(XarrayDataTreeViewer.refreshAllWindows)
+            XarrayDataTreeViewer.console = console
+    
     def _init_componenets(self) -> None:
         """ Initialize UI components.
         """
@@ -441,31 +489,14 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # attrs for selected items
         self._attrs_view = KeyValueTreeView()
-
-        # console
-        self._console = IPythonConsole()
-        self._console.execute('import numpy as np', hidden=True)
-        self._console.execute('import xarray as xr', hidden=True)
-        self._console.addVariable('ui', self) # mostly for debugging
-        self._console.executed.connect(self._datatree_view.refresh)
-        self._console._one_time_message_on_show = """
-        ----------------------------------------------------
-        Variables:
-          dt -> The Xarray DataTree
-          ui -> This app widget
-        Modules loaded at startup:
-          numpy as np
-          xarray as xr
-        ----------------------------------------------------
-        """
     
     def _init_actions(self) -> None:
         """ Actions.
         """
 
         self._refresh_action = QAction(
-            icon=qta.icon('msc.refresh', options=[{'opacity': 1.0}]),
-            iconVisibleInMenu=False,
+            icon=qta.icon('msc.refresh'),
+            iconVisibleInMenu=True,
             text='Refresh',
             toolTip='Refresh UI',
             shortcut = QKeySequence.StandardKey.Refresh,
@@ -478,7 +509,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda checked: XarrayDataTreeViewer.about())
 
         self._settings_action = QAction(
-            icon=qta.icon('msc.gear', options=[{'opacity': 1.0}]),
+            icon=qta.icon('msc.gear'),
             iconVisibleInMenu=False,
             text='Settings',
             toolTip='Settings',
@@ -496,15 +527,14 @@ class XarrayDataTreeViewer(QMainWindow):
         #     # shortcut=QKeySequence('`'),
         #     triggered=lambda checked: self._toolbar.setVisible(checked))
 
-        self._toggle_console_action = QAction(
-            icon=qta.icon('mdi.console', options=[{'opacity': 1.0}]),
-            iconVisibleInMenu=False,
+        self._console_action = QAction(
+            icon=qta.icon('mdi.console'),
+            iconVisibleInMenu=True,
             text='Console',
             toolTip='Console',
-            checkable=True,
-            checked=True,
+            checkable=False,
             shortcut=QKeySequence('`'),
-            triggered=lambda checked: self.setConsoleVisible(checked))
+            triggered=lambda checked: self.setConsoleVisible(True))
 
         self._new_action = QAction(
             iconVisibleInMenu=False,
@@ -515,7 +545,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: XarrayDataTreeViewer.new())
 
         self._open_action = QAction(
-            icon=qta.icon('fa5.folder-open', options=[{'opacity': 1.0}]),
+            icon=qta.icon('fa5.folder-open'),
             iconVisibleInMenu=False,
             text='Open',
             toolTip='Open',
@@ -524,7 +554,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: XarrayDataTreeViewer.open())
 
         self._save_action = QAction(
-            icon=qta.icon('fa5.save', options=[{'opacity': 1.0}]),
+            icon=qta.icon('fa5.save'),
             iconVisibleInMenu=False,
             text='Save',
             toolTip='Save',
@@ -533,7 +563,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: self.save())
 
         self._save_as_action = QAction(
-            icon=qta.icon('fa5.save', options=[{'opacity': 1.0}]),
+            icon=qta.icon('fa5.save'),
             iconVisibleInMenu=False,
             text='Save As',
             toolTip='Save As',
@@ -572,7 +602,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         self._view_menu = menubar.addMenu('View')
         # self._view_menu.addAction(self._toggle_toolbar_action)
-        self._view_menu.addAction(self._toggle_console_action)
+        self._view_menu.addAction(self._console_action)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._about_action)
         self._view_menu.addAction(self._settings_action)

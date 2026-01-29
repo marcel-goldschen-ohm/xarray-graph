@@ -15,8 +15,8 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils
-from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, TreeMimeData
+from xarray_graph.utils import xarray_utils
+from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel
 import cmap
 
 

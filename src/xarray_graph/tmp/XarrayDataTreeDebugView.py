@@ -7,7 +7,7 @@ import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
-from xarray_graph import xarray_utils
+from xarray_graph.utils import xarray_utils
 import cmap
 
 

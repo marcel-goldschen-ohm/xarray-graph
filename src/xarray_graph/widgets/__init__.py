@@ -1,3 +1,4 @@
 from xarray_graph.widgets.CollapsibleSectionsSplitter import CollapsibleSectionsSplitter
-from xarray_graph.widgets.IPythonConsole import IPythonConsole
+from xarray_graph.widgets.ColorButton import ColorButton
+from xarray_graph.widgets.MultiValueSpinBox import MultiValueSpinBox
 from xarray_graph.widgets.TableWidgetWithCopyPaste import TableWidgetWithCopyPaste

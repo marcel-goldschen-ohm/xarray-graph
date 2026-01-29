@@ -67,17 +67,35 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._titles.pop(index)
         self._spacers.pop(index)
     
-    def indexOfSection(self, title: str) -> int:
-        return self._titles.index(title)
+    def sectionIndex(self, index_or_title_or_widget: int | str | QWidget) -> int:
+        if isinstance(index_or_title_or_widget, int):
+            index: int = index_or_title_or_widget
+            return index
+        elif isinstance(index_or_title_or_widget, str):
+            title: str = index_or_title_or_widget
+            return self._titles.index(title)
+        elif isinstance(index_or_title_or_widget, QWidget):
+            widget: QWidget = index_or_title_or_widget
+            return self._widgets.index(widget)
     
-    def isSectionExpanded(self, index: int) -> bool:
+    def sectionTitle(self, index_or_widget: int | QWidget) -> QWidget:
+        index: int = self.sectionIndex(index_or_widget)
+        return self._titles[index]
+    
+    def sectionWidget(self, index_or_title: int | str) -> QWidget:
+        index: int = self.sectionIndex(index_or_title)
+        return self._widgets[index]
+    
+    def isSectionExpanded(self, index_or_title_or_widget: int | str | QWidget) -> bool:
+        index: int = self.sectionIndex(index_or_title_or_widget)
         if index < 1:
             raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
         
         current_widget: QWidget = self.widget(index)
         return current_widget is self._widgets[index]
     
-    def setSectionExpanded(self, index: int, expanded: bool):
+    def setSectionExpanded(self, index_or_title_or_widget: int | str | QWidget, expanded: bool):
+        index: int = self.sectionIndex(index_or_title_or_widget)
         if index < 1:
             raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
         
@@ -95,10 +113,24 @@ class CollapsibleSectionsSplitter(QSplitter):
                 self.insertWidget(index, self._spacers[index])
                 self.sectionIsExpandedChanged.emit(index, False)
     
-    def toggleSectionExpanded(self, index: int):
-        self.setSectionExpanded(index, not self.isSectionExpanded(index))
+    def isSectionVisible(self, index_or_title_or_widget: int | str | QWidget) -> bool:
+        index: int = self.sectionIndex(index_or_title_or_widget)
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
+        widget: QWidget = self.widget(index)
+        return widget.isVisible()
     
-    def focusSection(self, index: int):
+    def setSectionVisible(self, index_or_title_or_widget: int | str | QWidget, visible: bool):
+        index: int = self.sectionIndex(index_or_title_or_widget)
+        if index < 1:
+            raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
+        
+        widget: QWidget = self.widget(index)
+        widget.setVisible(visible)
+    
+    def focusSection(self, index_or_title_or_widget: int | str | QWidget):
+        index: int = self.sectionIndex(index_or_title_or_widget)
         if index < 1:
             raise IndexError('The first section has index 1 (index 0 is reserved for the initial spacer).')
         
@@ -122,6 +154,9 @@ class CollapsibleSectionsSplitter(QSplitter):
             self.setSectionExpanded(i, self._expanded_state[i])
         self._focused_index = None
         self.update() # force repaint of handles (primarily for first handle which otherwise may not repaint)
+    
+    def firstSectionHeaderVisible(self) -> bool:
+        return self._begin_spacer.isVisible()
     
     def setFirstSectionHeaderVisible(self, visible: bool):
         self._begin_spacer.setVisible(visible)
@@ -189,13 +224,15 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     # treat as click => toggle section
                     splitter: CollapsibleSectionsSplitter = self.splitter()
                     index: int = splitter.indexOf(self)
-                    splitter.toggleSectionExpanded(index)
+                    expanded: bool = not splitter.isSectionExpanded(index)
+                    splitter.setSectionExpanded(index, expanded)
                     # if we collapsed the focused section, unfocus it
                     if splitter.isSectionExpanded(index) == False:
                         focused_index: int =  getattr(splitter, '_focused_index', None)
                         if index == focused_index:
                             splitter._expanded_state[index] = False
                             splitter.unfocusSection()
+                    splitter.sectionIsExpandedChanged.emit(index, expanded)
     
     def paintEvent(self, event: QPaintEvent):
         splitter: CollapsibleSectionsSplitter = self.splitter()

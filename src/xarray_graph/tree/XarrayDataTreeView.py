@@ -13,7 +13,7 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph import xarray_utils
+from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeModel, KeyValueTreeView
 
 
@@ -34,6 +34,18 @@ class XarrayDataTreeView(TreeView):
         self._cut_icon = qta.icon('mdi.content-cut')
         self._copy_icon = qta.icon('mdi.content-copy')
         self._paste_icon = qta.icon('mdi.content-paste')
+
+        self._cut_shortcut = QShortcut(QKeySequence.StandardKey.Cut, self)
+        self._cut_shortcut.activated.connect(self.cutSelection)
+
+        self._copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
+        self._copy_shortcut.activated.connect(self.copySelection)
+
+        self._paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self)
+        self._paste_shortcut.activated.connect(lambda: self.pasteCopy())
+
+        self._info_shortcut = QShortcut(QKeySequence.StandardKey.Italic, self)
+        self._info_shortcut.activated.connect(lambda: self.infoDialog())
 
         # actions
         self._showDataVarsAction = QAction(
@@ -245,7 +257,13 @@ class XarrayDataTreeView(TreeView):
         
         return menu
     
-    def infoDialog(self, item: XarrayDataTreeItem) -> None:
+    def infoDialog(self, item: XarrayDataTreeItem = None) -> None:
+        if item is None:
+            items = self.selectedItems()
+            if not items:
+                return
+            item = items[0]
+        
         info = str(item.data)
         
         textEdit = QTextEdit()

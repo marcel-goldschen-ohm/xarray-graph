@@ -1,6 +1,6 @@
 import xarray as xr
 from qtpy.QtWidgets import QApplication, QMessageBox
-from xarray_graph.XarrayGraph import XarrayGraph
+from xarray_graph.graph.XarrayGraph_OLD import XarrayGraph
 
 
 def tree_app():

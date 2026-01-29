@@ -6,13 +6,16 @@ TODO:
 
 # from __future__ import annotations
 # from qtpy.QtGui import QCloseEvent#, QShowEvent
-# from qtpy.QtWidgets import QApplication
+from qtpy.QtWidgets import QApplication
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.inprocess import QtInProcessKernelManager
+# from qtconsole.manager import QtKernelManager
 
 
 class IPythonConsole(RichJupyterWidget):
     """ Embedded IPython console widget.
+
+    !!! The console is designed as a singleton, so you should only create one instance of this class. If you need to show the console in multiple places, consider creating a wrapper class that contains an instance of this console and shows/hides it as needed.
     
     To update another UI element when code is executed in the console,
     connect to the `executed` signal:
@@ -22,15 +25,18 @@ class IPythonConsole(RichJupyterWidget):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        self.kernel_manager = QtInProcessKernelManager()
         self.start()
         # self.exit_requested.connect(self.stop)
-        # QApplication.instance().aboutToQuit.connect(self.stop)
+        QApplication.instance().aboutToQuit.connect(self.stop)
     
     def start(self) -> None:
-        self.kernel_manager.start_kernel(show_banner=False)
-        self.kernel_client = self.kernel_manager.client()
-        self.kernel_client.start_channels()
+        manager = QtInProcessKernelManager()
+        # manager = QtKernelManager()
+        manager.start_kernel()
+        client = manager.client()
+        client.start_channels()
+        self.kernel_manager = manager
+        self.kernel_client = client
     
     def stop(self) -> None:
         self.kernel_client.stop_channels()
