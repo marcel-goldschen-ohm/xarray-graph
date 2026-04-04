@@ -5,7 +5,6 @@ TODO:
 """
 
 from __future__ import annotations
-from copy import deepcopy
 import numpy as np
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -15,8 +14,8 @@ from xarray_graph.tree import KeyValueTreeItem, KeyValueTreeModel, TreeView
 
 
 class KeyValueTreeView(TreeView):
-
-    _copied_key_value_map = {}
+    """ Tree view for a `KeyValueTreeModel` with drag-and-drop, context menu, and mouse wheel expand/collapse.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         TreeView.__init__(self, *args, **kwargs)
@@ -26,14 +25,35 @@ class KeyValueTreeView(TreeView):
         self._paste_icon = qta.icon('mdi.content-paste')
 
         self._showTypeColumnAction = QAction(
-            text = 'Show Type Column',
-            icon = qta.icon('fa6s.info'),
+            text='Show Type Column',
+            icon=qta.icon('fa6s.info'),
             iconVisibleInMenu=True,
-            checkable = True,
-            checked = False,
-            toolTip = 'Show data type column in the tree view. Uncheck to hide column.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
+            checkable=True,
+            checked=False,
+            toolTip='Show data type column in the tree view. Uncheck to hide column.',
+            triggered=lambda checked: self._updateModelFromViewOptions(),
         )
+    
+    def treeData(self) -> dict | list:
+        """ Get the root key:value map.
+        """
+        model: KeyValueTreeModel = self.model()
+        root_item: KeyValueTreeItem = model.rootItem()
+        return root_item.value()
+    
+    def setTreeData(self, data: dict | list) -> None:
+        """ Set the root key:value map.
+        """
+        model: KeyValueTreeModel = self.model()
+        new_root_item = KeyValueTreeItem(None, data)
+        if model is None:
+            model = KeyValueTreeModel()
+            model.setRootItem(new_root_item)
+            self.setModel(model)
+        else:
+            self.storeViewState()
+            model.setRootItem(new_root_item)
+            self.restoreViewState()
     
     def setModel(self, model: KeyValueTreeModel, updateViewOptionsFromModel: bool = True) -> None:
         super().setModel(model)
@@ -44,7 +64,6 @@ class KeyValueTreeView(TreeView):
 
     def _updateViewOptionsFromModel(self):
         model: KeyValueTreeModel = self.model()
-        
         self._showTypeColumnAction.blockSignals(True)
         self._showTypeColumnAction.setChecked(model.isTypesColumnVisible())
         self._showTypeColumnAction.blockSignals(False)
@@ -55,21 +74,6 @@ class KeyValueTreeView(TreeView):
         model.setTypesColumnVisible(self._showTypeColumnAction.isChecked())
         self.restoreViewState()
     
-    def keyValueMap(self) -> dict | list:
-        model: KeyValueTreeModel = self.model()
-        return model.keyValueMap()
-    
-    def setKeyValueMap(self, data: dict | list) -> None:
-        model: KeyValueTreeModel = self.model()
-        if model is None:
-            model = KeyValueTreeModel()
-            model.setKeyValueMap(data)
-            self.setModel(model)
-        else:
-            self.storeViewState()
-            model.setKeyValueMap(data)
-            self.restoreViewState()
-    
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: KeyValueTreeModel = self.model()
         menu = QMenu(self)
@@ -79,6 +83,7 @@ class KeyValueTreeView(TreeView):
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
+        self._clearSelectionAction.setEnabled(has_selection)
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
             menu.addSeparator()
             menu.addAction(self._selectAllAction)
@@ -86,21 +91,33 @@ class KeyValueTreeView(TreeView):
         
         # cut/copy/paste
         has_copy: bool = self.hasCopy()
+        self._cutSelectionAction.setEnabled(has_selection)
+        self._copySelectionAction.setEnabled(has_selection)
+        self._pasteAction.setEnabled(has_copy)
         menu.addSeparator()
-        menu.addAction(QAction('Cut', parent=menu, icon=self._cut_icon, iconVisibleInMenu=True, triggered=lambda checked: self.cutSelection(), enabled=has_selection))
-        menu.addAction(QAction('Copy', parent=menu, icon=self._copy_icon, iconVisibleInMenu=True, triggered=lambda checked: self.copySelection(), enabled=has_selection))
-        menu.addAction(QAction('Paste', parent=menu, icon=self._paste_icon, iconVisibleInMenu=True, triggered=lambda checked, parent_item=item: self.pasteCopy(parent_item), enabled=has_copy))
-        
+        menu.addAction(self._cutSelectionAction)
+        menu.addAction(self._copySelectionAction)
+        menu.addAction(self._pasteAction)
+
         # remove item(s)
+        self._removeSelectedAction.setEnabled(has_selection)
         menu.addSeparator()
-        menu.addAction(QAction('Remove', parent=menu, triggered=lambda checked: self.removeSelectedItems(), enabled=has_selection))
+        menu.addAction(self._removeSelectedAction)
         
         # insert new item
         menu.addSeparator()
-        if item is model.rootItem():
-            menu.addAction(QAction('Add New', parent=menu, triggered=lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row)))
-        else:
-            menu.addAction(QAction('Insert New', parent=menu, triggered=lambda checked, parent_item=item.parent, row=item.row: self.insertNew(parent_item, row)))
+        if item is not model.rootItem():
+            menu.addAction(QAction(
+                text='Insert New',
+                parent=menu,
+                triggered=lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row),
+            ))
+        if item.isContainer():
+            menu.addAction(QAction(
+                text='Append New Child',
+                parent=menu,
+                triggered=lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row),
+            ))
         
         # expand/collapse
         menu.addSeparator()
@@ -120,57 +137,49 @@ class KeyValueTreeView(TreeView):
         
         return menu
     
-    def cutSelection(self) -> None:
-        self.copySelection()
-        self.removeSelectedItems(ask=False)
-    
-    def copySelection(self) -> None:
-        items: list[KeyValueTreeItem] = self.selectedItems()
-        if not items:
+    def pasteCopy(self, parent_item: KeyValueTreeModel = None, row: int = None) -> None:
+        if not self.hasCopy():
             return
-        # only copy the branch roots (this already includes the descendents)
-        items = KeyValueTreeModel._branchRootItemsOnly(items)
-        # copy the values in each branch root subtree
-        copied_key_value_map: dict = {}
-        for item in items:
-            key = KeyValueTreeModel.uniqueName(item.key, list(copied_key_value_map.keys()))
-            copied_key_value_map[key] = deepcopy(item.value)
-        KeyValueTreeView._copied_key_value_map = copied_key_value_map
-    
-    def pasteCopy(self, parent_item: KeyValueTreeItem = None) -> None:
         model: KeyValueTreeModel = self.model()
         if not model:
             return
-        copied_key_value_map = KeyValueTreeView._copied_key_value_map
-        if not copied_key_value_map:
+        if parent_item is None:
+            selected_items = self.selectedItems()
+            if selected_items:
+                parent_item = selected_items[0]
+            else:
+                parent_item = model.rootItem()
+        if row is None or row == -1:
+            row = len(parent_item.children)
+        # ----------------------------------------------------------
+        # KeyValueTreeView specific logic
+        if not parent_item.isContainer() and not parent_item.isRoot():
+            row = parent_item.siblingIndex()
+            parent_item = parent_item.parent
+        # ----------------------------------------------------------
+        items_to_paste = [item.copy() for item in TreeView._copied_items]
+        model.insertItems(items_to_paste, row, parent_item)
+    
+    def insertNew(self, parent_item: KeyValueTreeItem, row: int = None) -> None:
+        model: KeyValueTreeModel = self.model()
+        if not model:
             return
         if parent_item is None:
-            items = self.selectedItems()
-            if not items:
-                return
-            parent_item = items[0]
-            if not parent_item.is_map or len(items) > 1:
-                parent_widget: QWidget = self
-                title = 'Invalid Paste'
-                text = f'Must select a single key:value map item in which to paste.'
-                QMessageBox.warning(parent_widget, title, text)
-                return
-        # paste items
-        name_item_map: dict[str, KeyValueTreeItem] = {key: KeyValueTreeItem(deepcopy(value)) for key, value in copied_key_value_map.items()}
-        row: int = len(parent_item.children)
-        model.insertItems(name_item_map, row, parent_item)
-    
-    def hasCopy(self) -> bool:
-        if KeyValueTreeView._copied_key_value_map:
-            return True
-        return False
-    
-    def insertNew(self, parent_item: KeyValueTreeItem, row: int) -> None:
-        model: KeyValueTreeModel = self.model()
-        names = [item.name for item in parent_item.children]
+            selected_items = self.selectedItems()
+            if selected_items:
+                parent_item = selected_items[0]
+            else:
+                parent_item = model.rootItem()
+        if row is None or row == -1:
+            row = len(parent_item.children)
+        if not parent_item.isContainer() and not parent_item.isRoot():
+            row = parent_item.siblingIndex()
+            parent_item = parent_item.parent
+        
+        names = [item.name() for item in parent_item.children]
         name = model.uniqueName('New', names)
-        new_item = KeyValueTreeItem('')
-        model.insertItems({name: new_item}, row, parent_item)
+        new_item = KeyValueTreeItem(name, None)
+        model.insertItems([new_item], row, parent_item)
 
 
 def test_live():
@@ -193,7 +202,7 @@ def test_live():
 
     app = QApplication()
 
-    root = KeyValueTreeItem(data)
+    root = KeyValueTreeItem(None, data)
 
     model = KeyValueTreeModel()
     model.setTypesColumnVisible(True)
@@ -203,14 +212,14 @@ def test_live():
     view.setModel(model)
     view.show()
     view.resize(QSize(800, 800))
-    view.move(QPoint(100, 100))
+    view.move(QPoint(50, 50))
     view.showAll()
     view.raise_()
 
     from copy import deepcopy
     data2 = deepcopy(data)
 
-    root2 = KeyValueTreeItem(data2)
+    root2 = KeyValueTreeItem(None, data2)
 
     model2 = KeyValueTreeModel()
     model2.setTypesColumnVisible(True)
@@ -220,7 +229,7 @@ def test_live():
     view2.setModel(model2)
     view2.show()
     view2.resize(QSize(800, 800))
-    view2.move(QPoint(950, 100))
+    view2.move(QPoint(900, 50))
     view2.showAll()
     view2.raise_()
 

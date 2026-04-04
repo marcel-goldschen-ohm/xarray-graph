@@ -2,10 +2,12 @@ from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel, TreeMimeData
 from xarray_graph.tree.TreeView import TreeView
 
-from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeItem, KeyValueTreeModel
+from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
+from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeModel
 from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
 
-from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeType, XarrayDataTreeItem, XarrayDataTreeModel
+from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeType, XarrayDataTreeItem
+from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 from xarray_graph.tree.XarrayDataTreeView import XarrayDataTreeView
 from xarray_graph.tree.XarrayDataTreeViewer import XarrayDataTreeViewer
 
