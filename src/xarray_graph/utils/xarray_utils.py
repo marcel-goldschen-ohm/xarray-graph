@@ -5,10 +5,6 @@ from collections.abc import Iterator
 # import numpy as np
 import xarray as xr
 # import pint
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
-# import qtawesome as qta
 
 
 # metadata for serialization/deserialization
@@ -330,78 +326,6 @@ def recover_post_deserialization(dt: xr.DataTree) -> xr.DataTree:
 #         for node in dt.subtree:
 #             node.dataset = to_base_units(node.to_dataset())
 #         return dt
-
-
-
-# GUI functions
-
-
-def infoDialog(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None, font_size: int = None) -> None:
-    text_edit = infoTextEdit(data, font_size=font_size)
-
-    dlg = QDialog(parent)
-    if size is not None:
-        dlg.resize(size)
-    if pos is not None:
-        if parent:
-            dlg.move(parent.mapToGlobal(pos))
-        else:
-            dlg.move(pos)
-    if title is not None:
-        dlg.setWindowTitle(title)
-    
-    layout = QVBoxLayout(dlg)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(text_edit)
-
-    dlg.exec()
-
-
-def infoTextEdit(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], text_edit_to_update: QTextEdit = None, font_size: int = None) -> QTextEdit:
-    text_edit = text_edit_to_update
-    if not isinstance(text_edit, QTextEdit):
-        text_edit = QTextEdit()
-        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        if font_size is None:
-            # font_size = QFont().pointSize()
-            font_size = QFontDatabase.systemFont(QFontDatabase.SmallestReadableFont).pointSize() + 2
-        font.setPointSize(font_size)
-        text_edit.setFont(font)
-    else:
-        text_edit.clear()
-        if font_size is not None:
-            font = text_edit.font()
-            font.setPointSize(font_size)
-            text_edit.setFont(font)
-
-    if isinstance(data, (xr.DataTree, xr.Dataset, xr.DataArray)):
-        text_edit.setPlainText(str(data))
-    elif isinstance(data, (list, tuple)):
-        sep = False
-        for obj in data:
-            if sep:
-                # TODO: check if this works on Windows (see https://stackoverflow.com/questions/76710833/how-do-i-add-a-full-width-horizontal-line-in-qtextedit)
-                text_edit.insertHtml('<br><hr><br>')
-            else:
-                sep = True
-            text_edit.insertPlainText(str(obj))
-
-            # tc = self.result_text_box.textCursor()
-            # # move the cursor to the end of the document
-            # tc.movePosition(tc.End)
-            # # insert an arbitrary QTextBlock that will inherit the previous format
-            # tc.insertBlock()
-            # # get the block format
-            # fmt = tc.blockFormat()
-            # # remove the horizontal ruler property from the block
-            # fmt.clearProperty(fmt.BlockTrailingHorizontalRulerWidth)
-            # # set (not merge!) the block format
-            # tc.setBlockFormat(fmt)
-            # # eventually, apply the cursor so that editing actually starts at the end
-            # self.result_text_box.setTextCursor(tc)
-    
-    text_edit.setReadOnly(True)
-    return text_edit
 
 
 def test():

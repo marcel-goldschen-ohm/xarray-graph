@@ -81,7 +81,7 @@ class TreeView(QTreeView):
         )
 
         self._removeSelectedAction = QAction(
-            text='Remove',
+            text='Remove Selection',
             toolTip='Remove selected',
             shortcut=QKeySequence.StandardKey.Delete,
             shortcutVisibleInContextMenu=True,

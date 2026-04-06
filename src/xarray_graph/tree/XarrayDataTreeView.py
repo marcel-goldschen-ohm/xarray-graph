@@ -8,6 +8,7 @@ TODO:
 """
 
 from __future__ import annotations
+from copy import deepcopy
 import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -19,7 +20,7 @@ from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, Xa
 
 class XarrayDataTreeView(TreeView):
 
-    # finishedEditingAttrs = Signal()
+    finishedEditingAttrs = Signal(XarrayDataTreeItem)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -146,7 +147,8 @@ class XarrayDataTreeView(TreeView):
             text=f'{item.path()}:',
             parent=menu,
             icon=icon,
-            iconVisibleInMenu=True, enabled=False
+            iconVisibleInMenu=True,
+            enabled=False
         ))
         # item-specific actions
         menu.addAction(QAction(
@@ -154,16 +156,32 @@ class XarrayDataTreeView(TreeView):
             parent=menu,
             shortcut=QKeySequence('Ctrl+I'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked, item=item: xarray_utils.infoDialog(item.data, parent=self, size=self.size(), pos=QPoint(0, 0), title=item.path())
+            triggered=lambda checked, item=item: self.infoDialog(item)
         ))
-        # menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self.attrsDialog(item)))
-        # if item.isVariable():
-        #     menu.addAction(QAction('Data', parent=menu, enabled=False))
-        # elif item.isNode():
-        #     subtree_menu = QMenu('Subtree', parent=menu)
-        #     subtree_menu.addAction(QAction('Rename Dimensions', parent=menu, triggered=lambda checked, item=item: self.renameDimensions(item)))
-        #     subtree_menu.addAction(QAction('Rename Variables', parent=menu, triggered=lambda checked, item=item: self.renameVariables(item)))
-        #     menu.addMenu(subtree_menu)
+        if not item.isInheritedCoord():
+            menu.addAction(QAction(
+                text='Attrs',
+                parent=menu,
+                triggered=lambda checked, item=item: self.attrsDialog(item)
+            ))
+            if item.isVariable():
+                menu.addAction(QAction(
+                    text='Data',
+                    parent=menu,
+                    enabled=False # TODO
+                ))
+            menu.addAction(QAction(
+                text='Rename Dimensions',
+                parent=menu,
+                # triggered=lambda checked, item=item: self.renameDimensions(item),
+                enabled=False # TODO
+            ))
+            if item.isNode():
+                menu.addAction(QAction(
+                    text='New Child Node',
+                    parent=menu,
+                    triggered=lambda checked, parent_item=item: self.insertNewChildNode(parent_item),
+                ))
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -187,19 +205,22 @@ class XarrayDataTreeView(TreeView):
         self._removeSelectedAction.setEnabled(has_selection)
         menu.addSeparator()
         menu.addAction(self._removeSelectedAction)
-
-        # # combine items
-        # if has_selection and len(self.selectedIndexes()) > 1:
-        #     menu.addSeparator()
-        #     combine_menu = QMenu('Combine')
-        #     combine_menu.addAction(QAction('Merge', parent=menu, triggered=lambda checked: self.mergeSelection(), enabled=False))
-        #     combine_menu.addAction(QAction('Concatenate', parent=menu, triggered=lambda checked: self.concatenateSelectedGroups()))
-        #     menu.addMenu(combine_menu)
         
-        # # insert new node
-        # if item.isNode():
-        #     menu.addSeparator()
-        #     menu.addAction(QAction('New Child Node', parent=menu, icon=self._node_icon, iconVisibleInMenu=True, triggered=lambda checked, parent_item=item: self.appendNewChildNode(parent_item), enabled=has_selection))
+        # combine items
+        if has_selection and len(self.selectedIndexes()) > 1:
+            menu.addSeparator()
+            menu.addAction(QAction(
+                text='Merge Selection',
+                parent=menu,
+                # triggered=lambda checked: self.mergeSelection(),
+                enabled=False # TODO
+            ))
+            menu.addAction(QAction(
+                text='Concatenate Selection',
+                parent=menu,
+                # triggered=lambda checked: self.concatenateSelectedGroups(),
+                enabled=False # TODO
+            ))
         
         # expand/collapse
         menu.addSeparator()
@@ -222,67 +243,46 @@ class XarrayDataTreeView(TreeView):
         
         return menu
     
-    # def appendNewChildNode(self, parent_item: XarrayDataTreeItem) -> None:
-    #     if not parent_item.is_group:
-    #         return
-    #     model: XarrayDataTreeModel = self.model()
-    #     row: int = len(parent_item.children)
-    #     count: int = 1
-    #     parent_index: QModelIndex = model.indexFromItem(parent_item)
-    #     model.insertRows(row, count, parent_index)
-    
-    # def attrsDialog(self, item: XarrayDataTreeItem) -> None:
-    #     attrs_copy: dict = item.data.attrs.copy()
-
-    #     model = KeyValueTreeModel()
-    #     model.setRootData(attrs_copy)
-
-    #     view = KeyValueTreeView()
-    #     view.setAlternatingRowColors(True)
-    #     view.setModel(model)
-    #     view.showAll()
-
-    #     dlg = QDialog(self)
-    #     dlg.resize(max(self.width(), 800), self.height())
-    #     # if self.window_decoration_offset is None:
-    #     #     self._get_window_decoration_offset()
-    #     # dlg.move(self.mapToGlobal(self.window_decoration_offset))
-    #     dlg.move(self.mapToGlobal(QPoint(0, 0)))
-    #     dlg.setWindowTitle(item.path)
+    def infoDialog(self, items: XarrayDataTreeItem | list[XarrayDataTreeItem] = None, font_size: int = None) -> None:
+        if isinstance(items, XarrayDataTreeItem):
+            item = items
+            data = item.data
+            title = item.path()
+        elif items is None:
+            items: list[XarrayDataTreeItem] = self.selectedItems()
+            if not items:
+                return
+            # ensure items are in tree order
+            items = AbstractTreeItem.orderedItems(items)
+            data = [item.data for item in items]
+            title = 'Selected'
+        elif len(items) == 1:
+            item = items[0]
+            data = item.data
+            title = item.path()
+        else:
+            data = [item.data for item in items]
+            title = None
+        infoDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title, font_size=font_size)
         
-    #     layout = QVBoxLayout(dlg)
-    #     layout.setContentsMargins(0, 0, 0, 0)
-    #     layout.addWidget(view)
-
-    #     btns = QDialogButtonBox()
-    #     btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-    #     btns.accepted.connect(dlg.accept)
-    #     btns.rejected.connect(dlg.reject)
-    #     layout.addWidget(btns)
+    def attrsDialog(self, item: XarrayDataTreeItem) -> None:
+        data = item.data
+        title = item.path()
+        status = attrsDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title)
+        if status == QDialog.DialogCode.Accepted:
+            self.finishedEditingAttrs.emit(item)
         
-    #     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-    #     dlg.setMinimumSize(QSize(400, 400))
-    #     if dlg.exec() != QDialog.DialogCode.Accepted:
-    #         return
-        
-    #     attrs: dict = model.rootData()
-    #     item.data.attrs = attrs
-        
-    #     self.finishedEditingAttrs.emit()
-    
-    # @staticmethod
-    # def updateAttrsTree(item: XarrayDataTreeItem, kv_view: KeyValueTreeView = None) -> KeyValueTreeView:
-    #     if item is None:
-    #         if kv_view:
-    #             kv_view.setKeyValueMap({})
-    #             return kv_view
-    #         return
-        
-    #     if kv_view is None:
-    #         kv_view = KeyValueTreeView()
-
-    #     kv_view.setKeyValueMap(item.data.attrs)
-    #     return kv_view
+    def insertNewChildNode(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
+        if not parent_item.isNode():
+            return
+        model: XarrayDataTreeModel = self.model()
+        if not self.model:
+            return
+        if row is None or row == -1:
+            row = len(parent_item.children)
+        new_node = xr.DataTree()
+        new_node_item = XarrayDataTreeItem(new_node)
+        model.insertItems([new_node_item], row, parent_item)
     
     # def renameDimensions(self, root_item: XarrayDataTreeItem) -> None:
     #     model: XarrayDataTreeModel = self.model()
@@ -422,6 +422,101 @@ class XarrayDataTreeView(TreeView):
                 xarray_utils.infoDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title)
             return
         return super().keyPressEvent(event)
+
+
+def makeDialog(parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None) -> QDialog:
+    dlg = QDialog(parent)
+    if size is not None:
+        dlg.resize(size)
+    if pos is not None:
+        if parent:
+            dlg.move(parent.mapToGlobal(pos))
+        else:
+            dlg.move(pos)
+    if title is not None:
+        dlg.setWindowTitle(title)
+    return dlg
+
+
+def infoDialog(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None, font_size: int = None) -> int:
+    text_edit = infoTextEdit(data, font_size=font_size)
+    dlg = makeDialog(parent, size, pos, title)
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(text_edit)
+    return dlg.exec()
+
+
+def infoTextEdit(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], text_edit_to_update: QTextEdit = None, font_size: int = None) -> QTextEdit:
+    text_edit = text_edit_to_update
+    if not isinstance(text_edit, QTextEdit):
+        text_edit = QTextEdit()
+        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        if font_size is None:
+            # font_size = QFont().pointSize()
+            font_size = QFontDatabase.systemFont(QFontDatabase.SmallestReadableFont).pointSize() + 2
+        font.setPointSize(font_size)
+        text_edit.setFont(font)
+    else:
+        text_edit.clear()
+        if font_size is not None:
+            font = text_edit.font()
+            font.setPointSize(font_size)
+            text_edit.setFont(font)
+
+    if isinstance(data, (xr.DataTree, xr.Dataset, xr.DataArray)):
+        text_edit.setPlainText(str(data))
+    elif isinstance(data, (list, tuple)):
+        sep = False
+        for obj in data:
+            if sep:
+                # TODO: check if this works on Windows (see https://stackoverflow.com/questions/76710833/how-do-i-add-a-full-width-horizontal-line-in-qtextedit)
+                text_edit.insertHtml('<br><hr><br>')
+            else:
+                sep = True
+            text_edit.insertPlainText(str(obj))
+
+            # tc = self.result_text_box.textCursor()
+            # # move the cursor to the end of the document
+            # tc.movePosition(tc.End)
+            # # insert an arbitrary QTextBlock that will inherit the previous format
+            # tc.insertBlock()
+            # # get the block format
+            # fmt = tc.blockFormat()
+            # # remove the horizontal ruler property from the block
+            # fmt.clearProperty(fmt.BlockTrailingHorizontalRulerWidth)
+            # # set (not merge!) the block format
+            # tc.setBlockFormat(fmt)
+            # # eventually, apply the cursor so that editing actually starts at the end
+            # self.result_text_box.setTextCursor(tc)
+    
+    text_edit.setReadOnly(True)
+    return text_edit
+
+
+def attrsDialog(data: xr.DataTree | xr.Dataset | xr.DataArray, parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None) -> int:
+    attrs_copy: dict = deepcopy(data.attrs)
+
+    view = KeyValueTreeView()
+    view.setAlternatingRowColors(True)
+    view.setTreeData(attrs_copy)
+    view.showAll()
+
+    dlg = makeDialog(parent, size, pos, title)
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(view)
+
+    btns = QDialogButtonBox()
+    btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+    btns.accepted.connect(dlg.accept)
+    btns.rejected.connect(dlg.reject)
+    layout.addWidget(btns)
+    
+    status = dlg.exec()
+    if status == QDialog.DialogCode.Accepted:
+        data.attrs = attrs_copy
+    return status
 
 
 def test_live():

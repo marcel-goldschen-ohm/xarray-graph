@@ -20,10 +20,11 @@ class KeyValueTreeView(TreeView):
     def __init__(self, *args, **kwargs) -> None:
         TreeView.__init__(self, *args, **kwargs)
 
-        self._cut_icon = qta.icon('mdi.content-cut')
-        self._copy_icon = qta.icon('mdi.content-copy')
-        self._paste_icon = qta.icon('mdi.content-paste')
+        # icons
+        self._dict_icon: QIcon = qta.icon('ph.folder-thin')
+        self._list_icon: QIcon = qta.icon('ph.list-numbers-thin')
 
+        # actions
         self._showTypeColumnAction = QAction(
             text='Show Type Column',
             icon=qta.icon('fa6s.info'),
@@ -78,6 +79,41 @@ class KeyValueTreeView(TreeView):
 
         # item that was clicked on
         item: KeyValueTreeItem = model.itemFromIndex(index)
+        if item.isDict():
+            icon: QIcon = self._dict_icon
+        elif item.isList():
+            icon: QIcon = self._list_icon
+        else:
+            icon: QIcon = None
+        
+        # disabled action acts as a label for the item that was right-clicked on
+        if icon:
+            menu.addAction(QAction(
+                text=f'{item.path()}:',
+                parent=menu,
+                icon=icon,
+                iconVisibleInMenu=True,
+                enabled=False
+            ))
+        else:
+            menu.addAction(QAction(
+                text=f'{item.path()}:',
+                parent=menu,
+                enabled=False
+            ))
+        # item-specific actions
+        if item is not model.rootItem():
+            menu.addAction(QAction(
+                text='Insert New',
+                parent=menu,
+                triggered=lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row),
+            ))
+        if item.isContainer():
+            menu.addAction(QAction(
+                text='Append New Child',
+                parent=menu,
+                triggered=lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row),
+            ))
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -101,21 +137,6 @@ class KeyValueTreeView(TreeView):
         self._removeSelectedAction.setEnabled(has_selection)
         menu.addSeparator()
         menu.addAction(self._removeSelectedAction)
-        
-        # insert new item
-        menu.addSeparator()
-        if item is not model.rootItem():
-            menu.addAction(QAction(
-                text='Insert New',
-                parent=menu,
-                triggered=lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row),
-            ))
-        if item.isContainer():
-            menu.addAction(QAction(
-                text='Append New Child',
-                parent=menu,
-                triggered=lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row),
-            ))
         
         # expand/collapse
         menu.addSeparator()
