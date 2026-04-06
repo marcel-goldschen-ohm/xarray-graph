@@ -123,10 +123,10 @@ class XarrayDataTreeViewer(QMainWindow):
             XarrayDataTreeViewer.console.raise_()
     
     def datatree(self) -> xr.DataTree:
-        return self._datatree_view.datatree()
+        return self._datatree_view.treeData()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
-        self._datatree_view.setDatatree(datatree)
+        self._datatree_view.setTreeData(datatree)
         self.onSelectionChanged()
     
     def sizeHint(self) -> QSize:
@@ -480,7 +480,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # tree view
         self._datatree_view = XarrayDataTreeView()
-        self._datatree_view.setDatatree(xr.DataTree())
+        self._datatree_view.setTreeData(xr.DataTree())
         self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
 
         # info for selected items

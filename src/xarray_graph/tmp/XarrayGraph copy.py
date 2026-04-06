@@ -97,7 +97,7 @@ class XarrayGraph(QMainWindow):
 
         # datatree view
         self._datatree_view = XarrayDataTreeView()
-        self._datatree_view.setDatatree(xr.DataTree())
+        self._datatree_view.setTreeData(xr.DataTree())
         self._datatree_view.selectionWasChanged.connect(self._onSelectionChanged)
 
         # ROIs view
@@ -444,10 +444,10 @@ class XarrayGraph(QMainWindow):
                 last_visible_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
     
     def datatree(self) -> xr.DataTree:
-        return self._datatree_view.datatree()
+        return self._datatree_view.treeData()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
-        self._datatree_view.setDatatree(datatree)
+        self._datatree_view.setTreeData(datatree)
         self.refresh()
     
     def sizeHint(self) -> QSize:
