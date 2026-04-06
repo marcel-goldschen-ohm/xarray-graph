@@ -568,7 +568,7 @@ def test_live():
 
     app.exec()
 
-    # print(dt)
+    print(dt)
     # print(dt2)
 
 
