@@ -121,7 +121,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
             elif data_type == NODE:
                 for child in node.children.values():
                     child = XarrayDataTreeItem(child, NODE, parent=self)
-                    child.updateSubtree()
+                    child.updateSubtree(include_data_vars, include_coords, include_inherited_coords, data_type_order)
     
     def name(self) -> str:
         name = self.data.name
