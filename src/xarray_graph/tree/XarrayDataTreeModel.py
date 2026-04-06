@@ -1406,8 +1406,10 @@ def test_model():
     view = QTreeView()
     view.setModel(model)
     view.expandAll()
-    view.resizeColumnToContents(0)
-    view.resize(800, 800)
+    for col in range(model.columnCount()):
+        view.resizeColumnToContents(col)
+    view.resize(800, 1000)
+    view.move(50, 50)
     view.show()
 
     app.exec()
