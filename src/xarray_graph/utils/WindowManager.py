@@ -1,6 +1,8 @@
 """ PyQt QMainWindow manager.
 
 TODO:
+- tile windows
+- pile windows
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ class WindowManager(QObject):
     def __init__(self):
         super().__init__()
 
-        # global dict for of all windows keyed on their unique window titles
+        # list of managed windows
         self._windows: list[QMainWindow] = []
 
         # event filter for managed windows
@@ -30,11 +32,6 @@ class WindowManager(QObject):
     
     def windows(self) -> list[QMainWindow]:
         return self._windows
-    
-    def setWindows(self, windows: list[QMainWindow]) -> None:
-        self._windows = windows
-        if self.manageWindowMenus():
-            self.updateAllWindowMenus()
     
     def windowTitles(self) -> list[str]:
         return [window.windowTitle() for window in self._windows]
@@ -66,7 +63,15 @@ class WindowManager(QObject):
     
     def removeWindow(self, window: QMainWindow) -> None:
         windows = self.windows()
+        if window not in windows:
+            # not in manager
+            return
+        window.removeEventFilter(self.windowEventFilter())
         windows.remove(window)
+    
+    def clear(self) -> None:
+        for window in tuple(self.windows()):
+            self.removeWindow(window)
     
     def selectWindow(self, window: QMainWindow) -> None:
         window.show()
