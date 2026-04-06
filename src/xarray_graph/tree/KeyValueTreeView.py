@@ -38,21 +38,19 @@ class KeyValueTreeView(TreeView):
         """ Get the root key:value map.
         """
         model: KeyValueTreeModel = self.model()
-        root_item: KeyValueTreeItem = model.rootItem()
-        return root_item.value()
+        return model.treeData()
     
     def setTreeData(self, data: dict | list) -> None:
         """ Set the root key:value map.
         """
         model: KeyValueTreeModel = self.model()
-        new_root_item = KeyValueTreeItem(None, data)
         if model is None:
             model = KeyValueTreeModel()
-            model.setRootItem(new_root_item)
+            model.setTreeData(data)
             self.setModel(model)
         else:
             self.storeViewState()
-            model.setRootItem(new_root_item)
+            model.setTreeData(data)
             self.restoreViewState()
     
     def setModel(self, model: KeyValueTreeModel, updateViewOptionsFromModel: bool = True) -> None:
@@ -137,7 +135,7 @@ class KeyValueTreeView(TreeView):
         
         return menu
     
-    def pasteCopy(self, parent_item: KeyValueTreeModel = None, row: int = None) -> None:
+    def pasteCopy(self, parent_item: KeyValueTreeItem = None, row: int = None) -> None:
         if not self.hasCopy():
             return
         model: KeyValueTreeModel = self.model()
@@ -203,6 +201,7 @@ def test_live():
     app = QApplication()
 
     root = KeyValueTreeItem(None, data)
+    root.updateSubtree()
 
     model = KeyValueTreeModel()
     model.setTypesColumnVisible(True)
@@ -220,6 +219,7 @@ def test_live():
     data2 = deepcopy(data)
 
     root2 = KeyValueTreeItem(None, data2)
+    root2.updateSubtree()
 
     model2 = KeyValueTreeModel()
     model2.setTypesColumnVisible(True)

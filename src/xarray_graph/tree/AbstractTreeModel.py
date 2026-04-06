@@ -36,15 +36,11 @@ class AbstractTreeModel(QAbstractItemModel):
         # setup item tree
         self._root_item = AbstractTreeItem()
     
-    # def treeData(self):
-    #     """ Get the tree data (NOT the item wrapper).
-    #     """
-    #     raise NotImplementedError('Implement in a derived class with data-specific logic.')
-    
-    # def setTreeData(self, data) -> None:
-    #     """ Set the tree data (NOT the item wrapper).
-    #     """
-    #     raise NotImplementedError('Implement in a derived class with data-specific logic.')
+    def reset(self) -> None:
+        """ Reset the model.
+        """
+        self.beginResetModel()
+        self.endResetModel()
     
     def rootItem(self) -> AbstractTreeItem:
         return self._root_item
@@ -53,11 +49,6 @@ class AbstractTreeModel(QAbstractItemModel):
         self.beginResetModel()
         self._root_item = root_item
         self.endResetModel()
-    
-    def reset(self) -> None:
-        """ Reset the model.
-        """
-        self.setRootItem(self.rootItem())
     
     def itemFromIndex(self, index: QModelIndex) -> AbstractTreeItem:
         if not index.isValid():

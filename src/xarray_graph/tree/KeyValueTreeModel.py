@@ -33,17 +33,18 @@ class KeyValueTreeModel(AbstractTreeModel):
         # setup item tree
         self.setRootItem(KeyValueTreeItem(None, {}))
     
-    # def treeData(self) -> dict | list:
-    #     """ Get the root key:value map.
-    #     """
-    #     root_item: KeyValueTreeItem = self.rootItem()
-    #     return root_item.value()
+    def treeData(self) -> dict | list:
+        """ Get the root key:value map.
+        """
+        root_item: KeyValueTreeItem = self.rootItem()
+        return root_item.value()
     
-    # def setTreeData(self, data: dict | list) -> None:
-    #     """ Set the root key:value map.
-    #     """
-    #     new_root_item = KeyValueTreeItem(None, data)
-    #     self.setRootItem(new_root_item)
+    def setTreeData(self, data: dict | list) -> None:
+        """ Set the root key:value map.
+        """
+        new_root_item = KeyValueTreeItem(None, data)
+        new_root_item.updateSubtree()
+        self.setRootItem(new_root_item)
     
     def isTypesColumnVisible(self) -> bool:
         return self._is_types_column_visible

@@ -46,7 +46,10 @@ class AbstractTreeItem():
            If the path is not unique, the first item with path is returned.
         """
         item: AbstractTreeItem = self
-        path_parts = path.strip(self._path_sep).split(self._path_sep)
+        stripped_path = path.strip(self._path_sep)
+        if not stripped_path:
+            return self
+        path_parts = stripped_path.split(self._path_sep)
         for name in path_parts:
             try:
                 child_names = [child.name() for child in item.children]
@@ -98,7 +101,7 @@ class AbstractTreeItem():
     
     # Override in derived class with data-specific logic.
     
-    def updateSubtree(self):
+    def updateSubtree(self) -> None:
         """ Recursively build item subtree based on this item's data.
         """
         raise NotImplementedError('Implement in derived class with data-specific logic.')
@@ -174,9 +177,11 @@ class AbstractTreeItem():
     
     def path(self) -> str:
         if self.parent is None:
-            return self.name() or self._path_sep
+            return self._path_sep
         path_parts: list[str] = list(reversed([item.name() for item in self.parents()])) + [self.name()]
-        return self._path_sep.join(path_parts)
+        # if path_parts[0] == self._path_sep:
+        #     path_parts[0] = ''
+        return self._path_sep.join(path_parts[1:])
     
     def row(self) -> int:
         return self.siblingIndex()
