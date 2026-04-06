@@ -7,278 +7,100 @@ import xarray as xr
 from collections.abc import Iterator
 
 
-_ATTRS_KEY_FOR_ORDERED_DATA_VARS = '_ORDERED_DATA_VARS'
-_ATTRS_KEY_FOR_INHERITED_DATA_VARS = '_INHERITED_DATA_VARS'
+# metadata for serialization/deserialization
+ORDERED_DATA_VARS_KEY = '_ORDERED_DATA_VARS'
+INHERITED_DATA_VARS_KEY = '_INHERITED_DATA_VARS'
 
 
-def get_ordered_dims(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> list[str]:
-    """ Get the ordered dimensions from the DataArrays in any DataTrees or Datasets.
+def ordered_dims_iter(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> Iterator[str]:
+    """ Yield dimensions in the order they appear in the DataArrays for a collection of DataTree, Dataset, and DataArray objects.
     
-    This is useful to work with Dataset dims ordered the same as their underlying DataArrays. New dimensions in subsequent objects will be appended to the list of returned dimensions.
-    
-    This function is useful because Xarray Dataset's do not have a defined dimension order, whereas DataArray's do.
-    This is because Datasets can contain multiple DataArrays with different dimensions.
+    Xarray DataTree or Dataset do not have a defined dimension order, whereas DataArray does. This function is useful to work with dims ordered consistently based on DataArrays.
     """
-    dims: list[str] = []
+    # keep track of dims already yielded
+    yielded_dims: list[str] = []
+    # yield dims in the order they appear in the DataArrays, skipping dims already yielded
     for obj in objects:
         if isinstance(obj, xr.DataArray):
             vars = [obj]
-        else:
-            # assume DataTree or Dataset
+        elif isinstance(obj, (xr.DataTree, xr.Dataset)):
             vars = obj.data_vars.values()
-    
+        else:
+            # ignore objects that aren't DataArrays, Datasets, or DataTrees
+            continue
         var: xr.DataArray
         for var in vars:
             for dim in var.dims:
-                if dim not in dims:
-                    dims.append(dim)
-    return dims
+                if dim not in yielded_dims:
+                    yield dim
+                    yielded_dims.append(dim)
 
 
-def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
-    """ Rename dimensions in the input tree branch.
-
-    This renames both dims and coords with the same name.
-    Renames are applied to the entire aligned tree branch containing node.
-
-    !!! This updates the input tree inplace.
-    """
-    branch_root: xr.DataTree = _branch_root(node)
-    branch_root.dataset = branch_root.to_dataset().rename_dims({dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.dims})
-    # rename coords to match dims
-    coord_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.coords}
-    if coord_renames:
-        branch_root.dataset = branch_root.to_dataset().rename_vars(coord_renames)
-    
-    for node in branch_root.subtree:
-        if node is branch_root:
-            # already handled above
+def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> Iterator[xr.DataArray]:
+    if not include_inherited:
+        inherited_coord_names: set[str] = node._inherited_coords_set()
+    ordered_dims: tuple[str] = tuple(ordered_dims_iter([node]))
+    # keep track of coords already yielded
+    yielded_coord_names: list[str] = []
+    # first yield index coords in dim order
+    for dim in ordered_dims:
+        if dim not in node.xindexes:
             continue
-        new_data_vars: dict[str, xr.DataArray] = {}
-        for name, data_var in node.data_vars.items():
-            dim_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in data_var.dims}
-            if dim_renames:
-                data_var = data_var.swap_dims(dim_renames)
-            new_data_vars[name] = data_var
-        node.dataset = node.to_dataset().assign(new_data_vars)
-
-
-def rename_vars(node: xr.DataTree, vars_dict: dict[str, str]) -> None:
-    """ Rename variables in the input tree branch.
-
-    Renames are applied to node's entire subtree.
-
-    !!! This updates the input tree inplace.
-    """
-    anode: xr.DataTree
-    for anode in node.subtree:
-        anode_vars_dict = {name: new_name for name, new_name in vars_dict.items() if name in anode.variables}
-        if anode_vars_dict:
-            anode.dataset = anode.to_dataset().rename_vars(anode_vars_dict)
-
-
-def subtree_depth_first_iter(node: xr.DataTree) -> Iterator[xr.DataTree]:
-    """ Iterate over subtree nodes in depth-first order.
-
-    Note: dt.subtree iterates in breadth-first order.
-    """
-    while node is not None:
-        yield node
-        node = _next_depth_first(node)
-
-
-def subtree_reverse_depth_first_iter(node: xr.DataTree) -> Iterator[xr.DataTree]:
-    """ Iterate over subtree nodes in reversed depth-first order.
-    """
-    start = _last_depth_first(node)
-    stop = _prev_depth_first(node)
-    node = start
-    while node is not stop:
-        yield node
-        node = _prev_depth_first(node)
-
-
-def subtree_leaf_iter(node: xr.DataTree) -> Iterator[xr.DataTree]:
-    """ Iterate over subtree leaves.
-    """
-    start = _first_leaf(node)
-    stop = _next_leaf(_last_leaf(node))
-    node = start
-    while node is not stop:
-        yield node
-        node = _next_leaf(node)
-
-
-def subtree_reverse_leaf_iter(node: xr.DataTree) -> Iterator[xr.DataTree]:
-    """ Iterate over subtree leaves.
-    """
-    start = _last_leaf(node)
-    stop = _prev_leaf(_first_leaf(node))
-    node = start
-    while node is not stop:
-        yield node
-        node = _prev_leaf(node)
-
-
-def subtree_branch_roots(dt: xr.DataTree) -> list[xr.DataTree]:
-    """ Find branch root nodes for all aligned branches in the tree.
-
-    Xarray DataTree requires that child nodes be aligned with their parent node.
-    Thus, we define a branch as a subtree of aligned nodes.
-    Here, we find and return all unique branch roots in the tree.
-    """
-    if dt.has_data:
-        return [dt]
+        if include_inherited or (dim not in inherited_coord_names):
+            yield node.coords[dim]
+            yielded_coord_names.append(dim)
+    # next yield non-index coords
+    for name, coord in node.coords.items():
+        if name in yielded_coord_names:
+            continue
+        if include_inherited or (name not in inherited_coord_names):
+            yield coord
     
-    # find the branch root for each leaf node
-    branch_roots: list[xr.DataTree] = []
-    leaf: xr.DataTree
-    for leaf in subtree_leaf_iter(dt):
-        branch_root: xr.DataTree = _branch_root(leaf)
-        if branch_root not in branch_roots:
-            branch_roots.append(branch_root)
-    return branch_roots
 
+# def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
+#     """ Rename dimensions in the input tree branch.
 
-def _first_child(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the first child of the input node.
+#     This renames both dims and coords with the same name.
+#     Renames are applied to the entire aligned tree branch containing node.
 
-    Returns None if there are no children.
-    """
-    if node.children:
-        return list(node.children.values())[0]
-    return None
-
-
-def _last_child(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the last child of the input node.
-
-    Returns None if there are no children.
-    """
-    if node.children:
-        return list(node.children.values())[-1]
-    return None
-
-
-def _next_sibling(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the next sibling of the input node.
-
-    Returns None if there is no next sibling.
-    """
-    parent: xr.DataTree = node.parent
-    if parent is None:
-        return None
-    siblings = list(parent.children.values())
-    index = index_by_identity(siblings, node)
-    if 0 < index + 1 < len(siblings):
-        return siblings[index + 1]
-    else:
-        return None
-
-
-def _prev_sibling(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the previous sibling of the input node.
-
-    Returns None if there is no previous sibling.
-    """
-    parent: xr.DataTree = node.parent
-    if parent is None:
-        return None
-    siblings = list(parent.children.values())
-    index = index_by_identity(siblings, node)
-    if 0 <= index - 1 < len(siblings) - 1:
-        return siblings[index - 1]
-    else:
-        return None
-
-
-def _last_depth_first(node: xr.DataTree) -> xr.DataTree:
-    """ Get the last node in depth-first order in the subtree rooted at the input node.
-    """
-    while node.children:
-        node = _last_child(node)
-    return node
-
-
-def _next_depth_first(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the next node in depth-first order.
-
-    Returns None if there is no next node.
-    """
-    if node.children:
-        return _first_child(node)
+#     !!! This updates the input tree inplace.
+#     """
+#     branch_root: xr.DataTree = _branch_root(node)
+#     branch_root.dataset = branch_root.to_dataset().rename_dims({dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.dims})
+#     # rename coords to match dims
+#     coord_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.coords}
+#     if coord_renames:
+#         branch_root.dataset = branch_root.to_dataset().rename_vars(coord_renames)
     
-    # no children, so go up until we can go right
-    while node is not None:
-        parent = node.parent
-        if parent is None:
-            return None
-        next_sibling = _next_sibling(node)
-        if next_sibling is not None:
-            return next_sibling
-        node = parent
-    
-    return None
+#     for node in branch_root.subtree:
+#         if node is branch_root:
+#             # already handled above
+#             continue
+#         new_data_vars: dict[str, xr.DataArray] = {}
+#         for name, data_var in node.data_vars.items():
+#             dim_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in data_var.dims}
+#             if dim_renames:
+#                 data_var = data_var.swap_dims(dim_renames)
+#             new_data_vars[name] = data_var
+#         node.dataset = node.to_dataset().assign(new_data_vars)
 
 
-def _prev_depth_first(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the previous node in depth-first order.
+# def rename_vars(node: xr.DataTree, vars_dict: dict[str, str]) -> None:
+#     """ Rename variables in the input tree branch.
 
-    Returns None if there is no previous node.
-    """
-    parent: xr.DataTree = node.parent
-    if parent is None:
-        return None
-    prev_sibling = _prev_sibling(node)
-    if prev_sibling is not None:
-        return _last_depth_first(prev_sibling)
-    return parent
+#     Renames are applied to node's entire subtree.
 
-
-def _first_leaf(node: xr.DataTree) -> xr.DataTree:
-    """ Get the first leaf node.
-    """
-    while node.children:
-        node = _first_child(node)
-    return node
+#     !!! This updates the input tree inplace.
+#     """
+#     anode: xr.DataTree
+#     for anode in node.subtree:
+#         anode_vars_dict = {name: new_name for name, new_name in vars_dict.items() if name in anode.variables}
+#         if anode_vars_dict:
+#             anode.dataset = anode.to_dataset().rename_vars(anode_vars_dict)
 
 
-def _last_leaf(node: xr.DataTree) -> xr.DataTree:
-    """ Get the last leaf node.
-    """
-    while node.children:
-        node = _last_child(node)
-    return node
-
-
-def _next_leaf(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the next leaf node.
-
-    Returns None if there is no next leaf.
-    """
-    if node.is_leaf:
-        node = _next_depth_first(node)
-        if node is None:
-            return None
-    return _first_leaf(node)
-
-
-def _prev_leaf(node: xr.DataTree) -> xr.DataTree | None:
-    """ Get the previous leaf node.
-
-    Returns None if there is no previous leaf.
-    """
-    if node.is_leaf:
-        node = _prev_depth_first(node)
-        if node is None:
-            return None
-    while (node is not None) and (not node.is_leaf):
-        node = _prev_depth_first(node)
-    return node
-
-
-def _branch_root(node: xr.DataTree) -> xr.DataTree:
-    """ Find root node for the aligned data in the input node's branch.
+def aligned_root(node: xr.DataTree) -> xr.DataTree:
+    """ Return the most distant ancestor aligned with node.
 
     Xarray DataTree requires that child nodes be aligned with their parent node.
     Thus, we define a branch as a subtree of aligned nodes.
@@ -290,12 +112,36 @@ def _branch_root(node: xr.DataTree) -> xr.DataTree:
     return node
 
 
-def index_by_identity(lst, target_obj):
+def branch_iter(dt: xr.DataTree) -> Iterator[xr.DataTree]:
+    """ Yield the branch root nodes for all aligned branches in the tree.
+
+    Xarray DataTree requires that child nodes be aligned with their parent node.
+    Thus, we define a branch as a subtree of aligned nodes.
+    Here, we find and return all unique branch roots in the tree.
     """
-    Returns the index of the first occurrence of target_obj in lst based on identity.
+    if dt.has_data:
+        # if the root node has data, then the entire tree is one aligned branch
+        if dt.parent and dt.parent.has_data:
+            raise ValueError('Subtree does not contain any branch roots.')
+        yield dt
+        return
+    
+    # keep track of branch roots already yielded
+    yielded_branches: list[xr.DataTree] = []
+    # yield the root node for each branch in the subtree
+    for leaf in dt.leaves:
+        branch_root: xr.DataTree = aligned_root(leaf)
+        if branch_root not in yielded_branches:
+            yield branch_root
+            yielded_branches.append(branch_root)
+
+
+def index_by_identity(objects: list | tuple, target_obj):
+    """
+    Returns the index of the first occurrence of target_obj in objects based on identity.
     Returns -1 if the object is not found.
     """
-    for i, item in enumerate(lst):
+    for i, item in enumerate(objects):
         if item is target_obj:
             return i
     return -1
@@ -313,23 +159,6 @@ def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> s
         i += 1
         name = f'{base_name}_{i}'
     return name
-
-
-def prepare_datatree_for_serialization(dt: xr.DataTree) -> xr.DataTree:
-    """ Returns a new datatree ready for serialization.
-    """
-    dt = store_ordered_data_vars(dt)
-    dt = store_inherited_data_vars(dt)
-    dt = remove_inherited_data_vars(dt)
-    return dt
-
-
-def recover_datatree_post_serialization(dt: xr.DataTree) -> xr.DataTree:
-    """ Returns a new datatree ready for use post serialization.
-    """
-    dt = restore_inherited_data_vars(dt)
-    dt = restore_ordered_data_vars(dt)
-    return dt
 
 
 def inherit_missing_data_vars(dt: xr.DataTree) -> xr.DataTree:
@@ -365,10 +194,9 @@ def remove_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
         if not parent:
             continue
         to_remove = []
-        for name, data_var in parent.data_vars.items():
-            if name in node.data_vars:
-                if node.data_vars[name].data is data_var.data:
-                    to_remove.append(name)
+        for name, var in node.data_vars.items():
+            if (name in parent.data_vars) and var.identical(parent.data_vars[name]):
+                to_remove.append(name)
         if to_remove:
             node.dataset = node.to_dataset().drop_vars(to_remove)
     return dt
@@ -388,12 +216,12 @@ def store_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
             continue
         inherited = []
         for name, var in node.data_vars.items():
-            if (name in parent.data_vars) and (var.data is parent.data_vars[name].data):
+            if (name in parent.data_vars) and var.identical(parent.data_vars[name]):
                 inherited.append(name)
         if inherited:
-            node.attrs[_ATTRS_KEY_FOR_INHERITED_DATA_VARS] = inherited
-        elif _ATTRS_KEY_FOR_INHERITED_DATA_VARS in node.attrs:
-            del node.attrs[_ATTRS_KEY_FOR_INHERITED_DATA_VARS]
+            node.attrs[INHERITED_DATA_VARS_KEY] = inherited
+        elif INHERITED_DATA_VARS_KEY in node.attrs:
+            del node.attrs[INHERITED_DATA_VARS_KEY]
     return dt
 
 
@@ -408,7 +236,7 @@ def restore_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
         parent: xr.DataTree = node.parent
         if not parent:
             continue
-        inherited = node.attrs.get(_ATTRS_KEY_FOR_INHERITED_DATA_VARS, None)
+        inherited = node.attrs.get(INHERITED_DATA_VARS_KEY, None)
         if inherited is None:
             continue
         to_inherit = {name: parent.data_vars[name] for name in inherited if name in parent.data_vars and name not in node.data_vars}
@@ -427,9 +255,9 @@ def store_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     for node in dt.subtree:
         ordered_data_vars: tuple[str] = tuple(node.data_vars)
         if ordered_data_vars:
-            node.attrs[_ATTRS_KEY_FOR_ORDERED_DATA_VARS] = ordered_data_vars
-        elif _ATTRS_KEY_FOR_ORDERED_DATA_VARS in node.attrs:
-            del node.attrs[_ATTRS_KEY_FOR_ORDERED_DATA_VARS]
+            node.attrs[ORDERED_DATA_VARS_KEY] = ordered_data_vars
+        elif ORDERED_DATA_VARS_KEY in node.attrs:
+            del node.attrs[ORDERED_DATA_VARS_KEY]
     return dt
 
 
@@ -441,22 +269,39 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
-        ordered_data_vars = node.attrs.get(_ATTRS_KEY_FOR_ORDERED_DATA_VARS, None)
+        ordered_data_vars = node.attrs.get(ORDERED_DATA_VARS_KEY, None)
         if ordered_data_vars is None:
             continue
         ds = node.to_dataset()
-        new_data_vars = {name: ds.data_vars[name] for name in ordered_data_vars if name in ds.data_vars}
+        reordered_data_vars = {name: ds.data_vars[name] for name in ordered_data_vars if name in ds.data_vars}
         for name in ds.data_vars:
-            if name not in new_data_vars:
-                new_data_vars[name] = ds.data_vars[name]
-        if tuple(ds.data_vars) != tuple(new_data_vars):
+            if name not in reordered_data_vars:
+                reordered_data_vars[name] = ds.data_vars[name]
+        if tuple(ds.data_vars) != tuple(reordered_data_vars):
             node.dataset = xr.Dataset(
-                data_vars=new_data_vars,
+                data_vars=reordered_data_vars,
                 coords=ds.coords,
                 attrs=ds.attrs,
             )
     return dt
-    
+
+
+def prepare_for_serialization(dt: xr.DataTree) -> xr.DataTree:
+    """ Returns a new datatree ready for serialization.
+    """
+    dt = store_ordered_data_vars(dt)
+    dt = store_inherited_data_vars(dt)
+    dt = remove_inherited_data_vars(dt)
+    return dt
+
+
+def recover_post_deserialization(dt: xr.DataTree) -> xr.DataTree:
+    """ Returns a new datatree ready for use post serialization.
+    """
+    dt = restore_inherited_data_vars(dt)
+    dt = restore_ordered_data_vars(dt)
+    return dt
+
 
 # def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: pint.UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
 #     """ Use pint to convert input data into base units.
