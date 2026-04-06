@@ -567,7 +567,7 @@ class XarrayGraph(QMainWindow):
             return
         
         # restore datatree from serialization
-        datatree = xarray_utils.recover_datatree_post_serialization(datatree)
+        datatree = xarray_utils.recover_post_deserialization(datatree)
 
         # new window
         window: XarrayGraph = XarrayGraph.new()
@@ -627,7 +627,7 @@ class XarrayGraph(QMainWindow):
 
         # prepare datatree for serilazation
         datatree: xr.DataTree = self.datatree()
-        datatree = xarray_utils.prepare_datatree_for_serialization(datatree)
+        datatree = xarray_utils.prepare_for_serialization(datatree)
 
         # write datatree to filesystem
         if filetype == 'Zarr Directory':
