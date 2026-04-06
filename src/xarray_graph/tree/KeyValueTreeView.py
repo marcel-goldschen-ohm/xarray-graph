@@ -125,7 +125,7 @@ class KeyValueTreeView(TreeView):
             menu.addAction(self._resizeAllColumnsToContentsAction)
             menu.addAction(self._showAllAction)
         
-        # Options
+        # options
         menu.addSeparator()
         menu.addAction(self._showTypeColumnAction)
 
