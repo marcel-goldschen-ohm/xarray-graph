@@ -14,7 +14,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeModel, KeyValueTreeView
+from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeModel, KeyValueTreeView
 
 
 class XarrayDataTreeView(TreeView):
@@ -140,8 +140,22 @@ class XarrayDataTreeView(TreeView):
         else:
             # should never happen
             icon: QIcon = self._unknown_icon
-        menu.addAction(QAction(f'{item.path()}:', parent=menu, icon=icon, iconVisibleInMenu=True, enabled=False)) # just a label
-        # menu.addAction(QAction('Info', parent=menu, triggered=lambda checked, item=item: self.infoDialog(item)))
+        
+        # disabled action acts as a label for the item that was right-clicked on
+        menu.addAction(QAction(
+            text=f'{item.path()}:',
+            parent=menu,
+            icon=icon,
+            iconVisibleInMenu=True, enabled=False
+        ))
+        # item-specific actions
+        menu.addAction(QAction(
+            text='Info',
+            parent=menu,
+            shortcut=QKeySequence('Ctrl+I'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked, item=item: xarray_utils.infoDialog(item.data, parent=self, size=self.size(), pos=QPoint(0, 0), title=item.path())
+        ))
         # menu.addAction(QAction('Attrs', parent=menu, triggered=lambda checked, item=item: self.attrsDialog(item)))
         # if item.isVariable():
         #     menu.addAction(QAction('Data', parent=menu, enabled=False))
@@ -216,101 +230,6 @@ class XarrayDataTreeView(TreeView):
     #     count: int = 1
     #     parent_index: QModelIndex = model.indexFromItem(parent_item)
     #     model.insertRows(row, count, parent_index)
-    
-    # def infoDialog(self, item: XarrayDataTreeItem = None) -> None:
-    #     if item is None:
-    #         items = self.selectedItems()
-    #         if not items:
-    #             return
-    #         item = items[0]
-        
-    #     info = str(item.data)
-
-    #     font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-    #     font.setPointSize(QFont().pointSize())
-        
-    #     textEdit = QTextEdit()
-    #     textEdit.setFont(font)
-    #     textEdit.setPlainText(info)
-    #     textEdit.setReadOnly(True)
-
-    #     dlg = QDialog(self)
-    #     dlg.resize(max(self.width(), 800), self.height())
-    #     # if self.window_decoration_offset is None:
-    #     #     self._get_window_decoration_offset()
-    #     # dlg.move(self.mapToGlobal(self.window_decoration_offset))
-    #     dlg.move(self.mapToGlobal(QPoint(0, 0)))
-    #     dlg.setWindowTitle(item.path)
-        
-    #     layout = QVBoxLayout(dlg)
-    #     layout.setContentsMargins(0, 0, 0, 0)
-    #     layout.addWidget(textEdit)
-
-    #     dlg.exec()
-    
-    # def selectionInfoDialog(self) -> None:
-    #     items: list[XarrayDataTreeItem] = self.selectedItems()
-    #     if not items:
-    #         return
-        
-    #     textEdit: QTextEdit = self.updateInfoTextEdit(items)
-
-    #     if len(items) == 1:
-    #         title = items[0].path
-    #     else:
-    #         title = 'Selected'
-
-    #     dlg = QDialog(self)
-    #     dlg.resize(max(self.width(), 800), self.height())
-    #     # if self.window_decoration_offset is None:
-    #     #     self._get_window_decoration_offset()
-    #     # dlg.move(self.mapToGlobal(self.window_decoration_offset))
-    #     dlg.move(self.mapToGlobal(QPoint(0, 0)))
-    #     dlg.setWindowTitle(title)
-        
-    #     vbox = QVBoxLayout(dlg)
-    #     vbox.setContentsMargins(0, 0, 0, 0)
-    #     vbox.addWidget(textEdit)
-
-    #     dlg.exec()
-    
-    # @staticmethod
-    # def updateInfoTextEdit(items: list[XarrayDataTreeItem], text_edit: QTextEdit = None) -> QTextEdit:
-    #     if not items:
-    #         return
-    #     if text_edit is None:
-    #         text_edit = QTextEdit()
-        
-    #     text_edit.clear()
-    #     text_edit.setReadOnly(True)
-    #     sep = False
-    #     item: XarrayDataTreeItem
-    #     for item in items:
-    #         data: xr.DataTree | xr.DataArray = item.data
-    #         if isinstance(data, xr.DataTree):
-    #             data = data.dataset
-    #         if sep:
-    #             # TODO: check if this works on Windows (see https://stackoverflow.com/questions/76710833/how-do-i-add-a-full-width-horizontal-line-in-qtextedit)
-    #             text_edit.insertHtml('<br><hr><br>')
-    #         else:
-    #             sep = True
-    #         text_edit.insertPlainText(f'{item.path}:\n{data}')
-
-    #         # tc = self.result_text_box.textCursor()
-    #         # # move the cursor to the end of the document
-    #         # tc.movePosition(tc.End)
-    #         # # insert an arbitrary QTextBlock that will inherit the previous format
-    #         # tc.insertBlock()
-    #         # # get the block format
-    #         # fmt = tc.blockFormat()
-    #         # # remove the horizontal ruler property from the block
-    #         # fmt.clearProperty(fmt.BlockTrailingHorizontalRulerWidth)
-    #         # # set (not merge!) the block format
-    #         # tc.setBlockFormat(fmt)
-    #         # # eventually, apply the cursor so that editing actually starts at the end
-    #         # self.result_text_box.setTextCursor(tc)
-        
-    #     return text_edit
     
     # def attrsDialog(self, item: XarrayDataTreeItem) -> None:
     #     attrs_copy: dict = item.data.attrs.copy()
@@ -488,7 +407,20 @@ class XarrayDataTreeView(TreeView):
     #     except Exception as err:
     #         model.popupWarningDialog(str(err))
     
-    # def keyPressEvent(self, event: QKeyEvent):
+    def keyPressEvent(self, event: QKeyEvent):
+        if (event.key() == Qt.Key.Key_I) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            items: list[XarrayDataTreeItem] = self.selectedItems()
+            if items:
+                # ensure items are in tree order
+                items = AbstractTreeItem.orderedItems(items)
+                if len(items) == 1:
+                    data = items[0].data
+                    title = items[0].path()
+                else:
+                    data = [item.data for item in items]
+                    title = 'Selected'
+                xarray_utils.infoDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title)
+            return
         return super().keyPressEvent(event)
 
 

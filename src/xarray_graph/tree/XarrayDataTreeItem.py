@@ -7,17 +7,11 @@ TODO:
 """
 
 from __future__ import annotations
-from collections.abc import Iterator
 from enum import Enum
-from copy import copy, deepcopy
 import xarray as xr
-# from qtpy.QtCore import *
-# from qtpy.QtGui import *
-# from qtpy.QtWidgets import *
-# import qtawesome as qta
 from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import AbstractTreeItem#, AbstractTreeModel
-import cmap
+from xarray_graph.tree import AbstractTreeItem
+# import cmap
 
 
 class XarrayDataTreeType(Enum):

@@ -246,6 +246,24 @@ class AbstractTreeItem():
         index: int = len(self.children)
         return self.insertChild(index, item)
     
+    @staticmethod
+    def orderedItems(items: list[AbstractTreeItem], order='depth-first') -> list[AbstractTreeItem]:
+        """ Returns the input items ordered according to their position in the tree.
+        """
+        if not items:
+            return []
+        root = items[0].root()
+        ordered_items: list[AbstractTreeItem] = []
+        if order == 'depth-first':
+            for item in root.subtree_depth_first():
+                if item in items:
+                    ordered_items.append(item)
+        elif order == 'breadth-first':
+            for item in root.subtree_breadth_first():
+                if item in items:
+                    ordered_items.append(item)
+        return ordered_items
+    
     # Tree traversal
     
     def firstChild(self) -> AbstractTreeItem | None:
