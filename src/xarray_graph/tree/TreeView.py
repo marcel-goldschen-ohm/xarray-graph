@@ -52,6 +52,9 @@ class TreeView(QTreeView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._onCustomContextMenuRequested)
 
+        # Each item's view state (e.g. whether item is expanded, selected) will be stored in the item itself in a dict attribute called '_view_state' when the item is dragged or when storeViewState() is called. This allows the view state to be preserved when items are moved within the tree or between different tree views via drag-n-drop, or when the view is refreshed. Item view states are additionally stored in a single dict keyed on the item paths. This allows view state to be preserved when the view is refreshed even if the items themselves are recreated (e.g., from data) such that the item view state attribute is lost.
+        self._view_state: dict[str, dict] = {}
+
         # actions
         self._refreshAction = QAction(
             text='Refresh',
@@ -153,6 +156,7 @@ class TreeView(QTreeView):
         self.wasRefreshed.emit()
     
     def forgetViewState(self) -> None:
+        self._view_state = {}
         model: AbstractTreeModel = self.model()
         if not model:
             return
@@ -169,18 +173,18 @@ class TreeView(QTreeView):
         if items is None:
             items = list(model.rootItem().subtree_depth_first())
         selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
-        
-        item: AbstractTreeItem
         for item in items:
             if item.isRoot():
                 continue
             index: QModelIndex = model.indexFromItem(item)
             if not index.isValid():
                 continue
-            item._view_state = {
+            view_state = {
                 'expanded': self.isExpanded(index),
                 'selected': index in selected_indexes
             }
+            item._view_state = view_state
+            self._view_state[item.path()] = view_state
 
     def restoreViewState(self, items: list[AbstractTreeItem] = None) -> None:
         model: AbstractTreeModel = self.model()
@@ -191,15 +195,16 @@ class TreeView(QTreeView):
         selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
         to_be_selected: QItemSelection = QItemSelection()
         to_be_deselected: QItemSelection = QItemSelection()
-        
-        item: AbstractTreeItem
         for item in items:
             if item.isRoot():
                 continue
             try:
                 view_state: dict = item._view_state
             except AttributeError:
-                continue
+                try:
+                    view_state: dict = self._view_state[item.path()]
+                except KeyError:
+                    continue
             index: QModelIndex = model.indexFromItem(item)
             if not index.isValid():
                 continue
