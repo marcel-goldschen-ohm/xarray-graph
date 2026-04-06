@@ -16,10 +16,12 @@ class TableWidgetWithCopyPaste(QTableWidget):
     def keyPressEvent(self, event: QKeyEvent):
         QTableWidget.keyPressEvent(self, event)
 
-        if event.key() == Qt.Key.Key_C and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
-            self.copy_selected_cells()
-        elif event.key() == Qt.Key.Key_V and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
-            self.paste_to_cells()
+        is_control_pressed = event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        if is_control_pressed:
+            if event.key() == Qt.Key.Key_C:
+                self.copy_selected_cells()
+            elif event.key() == Qt.Key.Key_V:
+                self.paste_to_cells()
     
     def copy_selected_cells(self):
         copied_cells = sorted(self.selectedIndexes())
