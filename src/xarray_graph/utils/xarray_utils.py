@@ -75,48 +75,6 @@ def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
                 child.dataset = child.to_dataset().reset_coords(old_names, drop=True)
 
 
-# def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
-#     """ Rename dimensions in the input tree branch.
-
-#     This renames both dims and coords with the same name.
-#     Renames are applied to the entire aligned tree branch containing node.
-
-#     !!! This updates the input tree inplace.
-#     """
-#     branch_root: xr.DataTree = _branch_root(node)
-#     branch_root.dataset = branch_root.to_dataset().rename_dims({dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.dims})
-#     # rename coords to match dims
-#     coord_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in branch_root.coords}
-#     if coord_renames:
-#         branch_root.dataset = branch_root.to_dataset().rename_vars(coord_renames)
-    
-#     for node in branch_root.subtree:
-#         if node is branch_root:
-#             # already handled above
-#             continue
-#         new_data_vars: dict[str, xr.DataArray] = {}
-#         for name, data_var in node.data_vars.items():
-#             dim_renames = {dim: new_dim for dim, new_dim in dims_dict.items() if dim in data_var.dims}
-#             if dim_renames:
-#                 data_var = data_var.swap_dims(dim_renames)
-#             new_data_vars[name] = data_var
-#         node.dataset = node.to_dataset().assign(new_data_vars)
-
-
-# def rename_vars(node: xr.DataTree, vars_dict: dict[str, str]) -> None:
-#     """ Rename variables in the input tree branch.
-
-#     Renames are applied to node's entire subtree.
-
-#     !!! This updates the input tree inplace.
-#     """
-#     anode: xr.DataTree
-#     for anode in node.subtree:
-#         anode_vars_dict = {name: new_name for name, new_name in vars_dict.items() if name in anode.variables}
-#         if anode_vars_dict:
-#             anode.dataset = anode.to_dataset().rename_vars(anode_vars_dict)
-
-
 def aligned_root(node: xr.DataTree) -> xr.DataTree:
     """ Return the most distant ancestor aligned with node.
 
