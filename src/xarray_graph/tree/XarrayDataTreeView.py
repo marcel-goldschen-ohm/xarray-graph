@@ -170,13 +170,12 @@ class XarrayDataTreeView(TreeView):
                     parent=menu,
                     enabled=False # TODO
                 ))
-            menu.addAction(QAction(
-                text='Rename Dimensions',
-                parent=menu,
-                # triggered=lambda checked, item=item: self.renameDimensions(item),
-                enabled=False # TODO
-            ))
             if item.isNode():
+                menu.addAction(QAction(
+                    text='Rename Dimensions',
+                    parent=menu,
+                    triggered=lambda checked, item=item: self.renameDimensions(item),
+                ))
                 menu.addAction(QAction(
                     text='New Child Node',
                     parent=menu,
@@ -284,53 +283,40 @@ class XarrayDataTreeView(TreeView):
         new_node_item = XarrayDataTreeItem(new_node)
         model.insertItems([new_node_item], row, parent_item)
     
-    # def renameDimensions(self, root_item: XarrayDataTreeItem) -> None:
-    #     model: XarrayDataTreeModel = self.model()
-    #     if not model:
-    #         return
-    #     if not root_item.is_group:
-    #         root_item = root_item.parent
-    #     root_group: xr.DataTree = root_item.data
-    #     root_group: xr.DataTree = xarray_utils._branch_root(root_group)
-    #     while root_item.parent and root_item.data is not root_group:
-    #         root_item = root_item.parent
+    def renameDimensions(self, item: XarrayDataTreeItem) -> None:
+        if not item.isNode():
+            item = item.parent
+        node: xr.DataTree = item.data
         
-    #     dims: list[str] = []
-    #     for group in root_group.subtree:
-    #         for dim in list(group.dims):
-    #             if dim not in dims:
-    #                 dims.append(dim)
+        dim_lineedits: dict[str, QLineEdit] = {}
+        for dim in node.dims:
+            dim_lineedits[dim] = QLineEdit()
+            dim_lineedits[dim].setPlaceholderText(dim)
         
-    #     dim_lineedits: dict[str, QLineEdit] = {}
-    #     for dim in dims:
-    #         dim_lineedits[dim] = QLineEdit()
-    #         dim_lineedits[dim].setPlaceholderText(dim)
+        dlg = QDialog(self)
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        dlg.setWindowTitle('Rename Dimensions')
+        vbox = QVBoxLayout(dlg)
+        for lineedit in dim_lineedits.values():
+            vbox.addWidget(lineedit)
         
-    #     dlg = QDialog(self)
-    #     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-    #     dlg.setWindowTitle('Rename Dimensions')
-    #     vbox = QVBoxLayout(dlg)
-    #     for dim in dims:
-    #         vbox.addWidget(dim_lineedits[dim])
-        
-    #     buttons = QDialogButtonBox(standardButtons=QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-    #     buttons.accepted.connect(dlg.accept)
-    #     buttons.rejected.connect(dlg.reject)
-    #     vbox.addWidget(buttons)
+        buttons = QDialogButtonBox(standardButtons=QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        vbox.addWidget(buttons)
 
-    #     if dlg.exec() != QDialog.DialogCode.Accepted:
-    #         return
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
         
-    #     renamed_dims = {}
-    #     for dim in dims:
-    #         new_dim = dim_lineedits[dim].text().strip()
-    #         if new_dim and new_dim != dim:
-    #             renamed_dims[dim] = new_dim
-    #     if not renamed_dims:
-    #         return
-        
-    #     xarray_utils.rename_dims(root_group, renamed_dims)
-    #     self.refresh()
+        dim_renames = {}
+        for dim, lineedit in dim_lineedits.items():
+            new_dim = lineedit.text().strip()
+            if new_dim and new_dim != dim:
+                dim_renames[dim] = new_dim
+        if not dim_renames:
+            return
+        xarray_utils.rename_dims(node, dim_renames)
+        self.refresh()
     
     # def renameVariables(self, root_item: XarrayDataTreeItem) -> None:
     #     model: XarrayDataTreeModel = self.model()

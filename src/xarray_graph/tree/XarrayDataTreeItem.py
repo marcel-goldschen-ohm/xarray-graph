@@ -117,6 +117,16 @@ class XarrayDataTreeItem(AbstractTreeItem):
                     child = XarrayDataTreeItem(child, NODE, parent=self)
                     child.updateSubtree(include_data_vars, include_coords, include_inherited_coords, data_type_order)
     
+    def refreshSubtree(self) -> None:
+        """ Refresh references to datatree objects for all items in the subtree.
+        """
+        root_item: XarrayDataTreeItem = self.root()
+        dt: xr.DataTree = root_item.data
+        item: XarrayDataTreeItem
+        for item in self.subtree_depth_first():
+            item.data = dt[item.path()]
+            # item._data_type = XarrayDataTreeItem.autodetectDataType(item) or item._data_type
+    
     def name(self) -> str:
         name = self.data.name
         if not name and self.parent is None:

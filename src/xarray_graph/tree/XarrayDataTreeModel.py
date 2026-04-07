@@ -46,12 +46,21 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._is_details_column_visible: bool = False
 
         # colors
-        # self._default_text_color = QApplication.palette().color(QPalette.ColorRole.Text)
-        self._node_color: QColor = QColor(206, 103, 0)
-        self._data_var_color: QColor = QColor(96, 137, 180)
-        self._coord_color: QColor = QColor(152, 114, 162)
-        self._inherited_coord_color: QColor = QColor(152, 114, 162, 128)
-        self._unknown_color: QColor = QColor(155, 0, 0)
+        self._default_text_color = QApplication.palette().color(QPalette.ColorRole.Text)
+        color_scheme = QGuiApplication.styleHints().colorScheme()
+        if color_scheme == Qt.ColorScheme.Dark:
+            self._node_color: QColor = QColor('#e69f00')
+            self._data_var_color: QColor = QColor('#56b4e9')
+            self._coord_color: QColor = QColor('#cc79a7')
+            self._unknown_color: QColor = QColor('#990000')
+        elif color_scheme == Qt.ColorScheme.Light:
+            # TODO: choose better colors for light mode
+            self._node_color: QColor = self._default_text_color
+            self._data_var_color: QColor = QColor('#D7005F')
+            self._coord_color: QColor = QColor('#005F87')
+            self._unknown_color: QColor = QColor('#FF0000')
+        self._inherited_coord_color: QColor = QColor(self._coord_color or self._default_text_color)
+        self._inherited_coord_color.setAlpha(128)
 
         # icons
         self._node_icon: QIcon = qta.icon('ph.folder-thin', color=self._node_color)
@@ -250,136 +259,73 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 return self._node_color
             elif item.isDataVar():
                 return self._data_var_color
-            elif item.isInheritedCoord():
-                if self._inherited_coord_color:
-                    return self._inherited_coord_color
-                # default to 50% transparent
-                color = QApplication.palette().color(QPalette.ColorRole.Text)
-                color.setAlpha(128)
-                return color
             elif item.isCoord():
+                if item.isInheritedCoord():
+                    return self._inherited_coord_color
                 return self._coord_color
 
-    # def setData(self, index: QModelIndex, value, role: int) -> bool:
-    #     """ This amounts to just renaming items.
-    #     """
-    #     if not index.isValid():
-    #         return False
-    #     if index.column() != 0:
-    #         # only allow editing the names in the tree column 0
-    #         # cannot edit details column 1
-    #         return False
-    #     if role == Qt.ItemDataRole.EditRole:
-    #         # rename object
-    #         new_name: str = value.strip()
-    #         if not new_name or '/' in new_name:
-    #             parent_widget: QWidget = QApplication.focusWidget()
-    #             title='Invalid Name'
-    #             text = f'"{new_name}" is not a valid DataTree key. Must be a non-empty string without any path separators "/".'
-    #             QMessageBox.warning(parent_widget, title, text)
-    #             return False
-    #         item: XarrayDataTreeItem = self.itemFromIndex(index)
-    #         old_name = item.data.name
-    #         if new_name == old_name:
-    #             # nothing to do
-    #             return False
-    #         parent_item: XarrayDataTreeItem = item.parent
-    #         parent_group: xr.DataTree = parent_item.data
-    #         parent_keys: list[str] = list(parent_group.keys())
-    #         if new_name in parent_keys:
-    #             parent_widget: QWidget = QApplication.focusWidget()
-    #             title='Existing Name'
-    #             text = f'"{new_name}" already exists in parent DataTree.'
-    #             QMessageBox.warning(parent_widget, title, text)
-    #             return False
-    #         if item.is_group:
-    #             # rename group
-    #             try:
-    #                 parent_group.children = {name if name != old_name else new_name: child for name, child in parent_group.children.items()}
-    #                 self.dataChanged.emit(index, index)
-    #                 return True
-    #             except Exception as err:
-    #                 from warnings import warn
-    #                 warn(err)
-    #                 return False
-    #         elif item.is_data_var:
-    #             # rename data_var
-    #             try:
-    #                 parent_dataset: xr.Dataset = parent_group.to_dataset()
-    #                 renamed_data_vars = {name if name != old_name else new_name: data_var for name, data_var in parent_dataset.data_vars.items()}
-    #                 new_parent_dataset = xr.Dataset(
-    #                     data_vars=renamed_data_vars,
-    #                     coords=parent_dataset.coords,
-    #                     attrs=parent_dataset.attrs,
-    #                 )
-    #                 parent_group.dataset = new_parent_dataset
-    #                 item.data = new_parent_dataset.data_vars[new_name]
-    #                 self.dataChanged.emit(index, index)
-    #                 return True
-    #             except Exception as err:
-    #                 from warnings import warn
-    #                 warn(err)
-    #                 return False
-    #         # elif item.is_inherited_coord:
-    #         #     # not allowed
-    #         #     return False
-    #         # elif item.is_index_coord:
-    #         #     # rename dimension along with coord
-    #         #     try:
-    #         #         parent_dataset: xr.Dataset = parent_group.to_dataset()
-    #         #         new_parent_dataset: xr.Dataset = parent_dataset.rename_dims({old_name: new_name})
-    #         #         # new_parent_dataset = new_parent_dataset.assign_coords({new_name: parent_dataset.coords[old_name]}).drop_vars([old_name])
-    #         #         # new_coord_names = [name if name != old_name else new_name for name in parent_dataset.coords]
-    #         #         # renamed_coords = {name: new_parent_dataset.coords[name] for name in new_coord_names}
-    #         #         # new_parent_dataset = xr.Dataset(
-    #         #         #     data_vars=new_parent_dataset.data_vars,
-    #         #         #     coords=renamed_coords,
-    #         #         #     attrs=parent_dataset.attrs,
-    #         #         # )
-    #         #         parent_group.dataset = new_parent_dataset
-    #         #         item.data = new_parent_dataset.coords[new_name]
-    #         #         for item in parent_item.children:
-    #         #             if item.is_data_var:
-    #         #                 item.data = new_parent_dataset.data_vars[item.name]
-    #         #             elif item.is_coord:
-    #         #                 item.data = new_parent_dataset.coords[item.name]
-    #         #         for aitem in parent_item.subtree_depth_first():
-    #         #             index0: QModelIndex = self.indexFromItem(aitem, column=0)
-    #         #             index1: QModelIndex = self.indexFromItem(aitem, column=1)
-    #         #             self.dataChanged.emit(index0, index1)
-    #         #         self._updateSubtreeCoordItems(parent_item)
-    #         #         return True
-    #         #     except Exception as err:
-    #         #         from warnings import warn
-    #         #         warn(err)
-    #         #         return False
-    #         elif item.is_coord:
-    #             # rename coord
-    #             try:
-    #                 parent_dataset: xr.Dataset = parent_group.to_dataset()
-    #                 new_parent_dataset: xr.Dataset = parent_dataset.assign_coords({new_name: parent_dataset.coords[old_name]}).drop_vars([old_name])
-    #                 new_coord_names = [name if name != old_name else new_name for name in parent_dataset.coords]
-    #                 renamed_coords = {name: new_parent_dataset.coords[name] for name in new_coord_names}
-    #                 new_parent_dataset = xr.Dataset(
-    #                     data_vars=new_parent_dataset.data_vars,
-    #                     coords=renamed_coords,
-    #                     attrs=parent_dataset.attrs,
-    #                 )
-    #                 parent_group.dataset = new_parent_dataset
-    #                 item.data = new_parent_dataset.coords[new_name]
-    #                 for item in parent_item.children:
-    #                     if item.is_data_var:
-    #                         item.data = new_parent_dataset.data_vars[item.name]
-    #                     elif item.is_coord:
-    #                         item.data = new_parent_dataset.coords[item.name]
-    #                 self.dataChanged.emit(index, index)
-    #                 self._updateSubtreeCoordItems(parent_item)
-    #                 return True
-    #             except Exception as err:
-    #                 from warnings import warn
-    #                 warn(err)
-    #                 return False
-    #     return False
+    def setData(self, index: QModelIndex, value, role: int) -> bool:
+        if not index.isValid():
+            return False
+        if index.column() != 0:
+            # only allow editing the names in column 0
+            return False
+        if role == Qt.ItemDataRole.EditRole:
+            # rename object
+            new_name: str = value.strip()
+            if not new_name:
+                # must have a valid name
+                return False
+            if '/' in new_name:
+                parent_widget: QWidget = QApplication.focusWidget()
+                title='Invalid Name'
+                text = f'Object names cannot contain path separators "/".'
+                QMessageBox.warning(parent_widget, title, text)
+                return False
+            item: XarrayDataTreeItem = self.itemFromIndex(index)
+            if item.isInheritedCoord():
+                # cannot rename inherited coords
+                return False
+            old_name = item.data.name
+            if new_name == old_name:
+                # nothing to do
+                return False
+            parent_item: XarrayDataTreeItem = item.parent
+            parent_node: xr.DataTree = parent_item.data
+            # ensure no name conflict with existing objects
+            parent_keys: list[str] = list(parent_node.keys())
+            if new_name in parent_keys:
+                parent_widget: QWidget = QApplication.focusWidget()
+                title='Existing Name'
+                text = f'"{new_name}" already exists in parent DataTree.'
+                QMessageBox.warning(parent_widget, title, text)
+                return False
+            if item.isIndexCoord():
+                # rename dimension in entire branch
+                branch_root: xr.DataTree = xarray_utils.aligned_root(parent_node)
+                branch_root.dataset = branch_root.to_dataset().rename_dims({old_name: new_name})
+                for node in branch_root.descendants:
+                    node.dataset = node.to_dataset().swap_dims({old_name: new_name})
+                # rename index coord
+                new_index_coord = item.data.copy(deep=False).swap_dims({old_name: new_name})
+                parent_node.dataset = parent_node.to_dataset().reindex({new_name: new_index_coord}, copy=False).drop_indexes(old_name).reset_coords(old_name, drop=True)
+                for node in parent_node.descendants:
+                    if old_name in node.coords:
+                        node.dataset = node.to_dataset().reset_coords(old_name, drop=True)
+                item.data = parent_node[new_name]
+                # xarray_utils.rename_dims(parent_node, {old_name: new_name})
+                # item.data = parent_node[new_name]
+                self.refreshRequested.emit() # inefficient solution to update branch
+                return True
+            elif item.isVariable():
+                parent_node.dataset = parent_node.to_dataset().rename_vars({old_name: new_name})
+                item.data = parent_node[new_name]
+                return True
+            elif item.isNode():
+                parent_node.children = {name if name != old_name else new_name: child for name, child in parent_node.children.items()}
+                item.data = parent_node[new_name]
+                return True
+        return False
 
     def removeRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         if self.isInheritedCoordsVisible():
@@ -395,12 +341,22 @@ class XarrayDataTreeModel(AbstractTreeModel):
     def insertItems(self, items: list[XarrayDataTreeItem], row: int, parent_item: XarrayDataTreeItem) -> None:
         if not items:
             return
+
+        if not parent_item.isNode():
+            # raise ValueError('Can only insert items into nodes.')
+            parent_widget: QWidget = QApplication.focusWidget()
+            title = 'Invalid Insertion'
+            text = f'Cannot insert items in non-node "{parent_item.path()}".'
+            QMessageBox.warning(parent_widget, title, text)
+            return False
         
         # insert items one data type at a time
         for data_type in list(reversed(self._data_type_order)):
             items_of_type = [item for item in items if item._data_type == data_type]
             if not items_of_type:
                 continue
+            # TODO: handle name conflicts (or should this be done by the individual items?)
+            # TODO: handle alignment conflicts (or at least decide how they should be handled?)
             row_for_type = XarrayDataTreeModel._insertionRow(parent_item, data_type, row)
             super().insertItems(items_of_type, row_for_type, parent_item)
             if row_for_type < row:
@@ -436,6 +392,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
             items_of_type = [item for item in items_to_move if item._data_type == data_type]
             if not items_of_type:
                 continue
+            # TODO: handle name conflicts (or should this be done by the individual items?)
+            # TODO: handle alignment conflicts (or at least decide how they should be handled?)
             src_row_for_type = items_of_type[0].row()
             count = len(items_of_type)
             dst_row_for_type = XarrayDataTreeModel._insertionRow(dst_parent_item, data_type, dst_row)

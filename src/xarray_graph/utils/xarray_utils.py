@@ -57,6 +57,24 @@ def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> It
             yield coord
     
 
+def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
+    branch_root: xr.DataTree = aligned_root(node)
+    branch_root.dataset = branch_root.to_dataset().rename_dims(dims_dict)
+    for node in branch_root.descendants:
+        node.dataset = node.to_dataset().swap_dims(dims_dict)
+    # rename index coords to match new dims
+    for node in branch_root.subtree:
+        old_index_names = [name for name in node.xindexes if name in dims_dict and name not in node._inherited_coords_set()]
+        if not old_index_names:
+            continue
+        new_index_coords = {dims_dict[old_name]: node.coords[old_name].copy(deep=False) for old_name in old_index_names}
+        node.dataset = node.to_dataset().reindex(new_index_coords, copy=False).drop_indexes(old_index_names).reset_coords(old_index_names, drop=True)
+        for child in node.descendants:
+            old_names = [name for name in old_index_names if name in child.coords]
+            if old_names:
+                child.dataset = child.to_dataset().reset_coords(old_names, drop=True)
+
+
 # def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
 #     """ Rename dimensions in the input tree branch.
 
@@ -106,7 +124,7 @@ def aligned_root(node: xr.DataTree) -> xr.DataTree:
     Thus, we define a branch as a subtree of aligned nodes.
     Thus, the branch root is the highest ancestor node that has data (which must be aligned with the input node).
     """
-    for ancestor in node.ancestors:
+    for ancestor in tuple(reversed(node.parents)):
         if ancestor.has_data:
             return ancestor
     return node
