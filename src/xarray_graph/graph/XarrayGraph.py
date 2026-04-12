@@ -5,6 +5,7 @@ TODO:
 
 from __future__ import annotations
 import faulthandler
+import traceback
 faulthandler.enable()
 import os
 from copy import copy, deepcopy
@@ -29,6 +30,7 @@ from xarray_graph.graph import FilterControlPanel, CurveFitControlPanel, Measure
 import xarray_graph.graph.pyqtgraph_ext as pgx
 
 
+HIGHLIGHT_COLOR = '(255, 0, 0)'
 ROI_KEY = '_ROI_'
 MASK_KEY = '_mask_'
 CURVE_FIT_KEY = '_curve_fit_'
@@ -55,6 +57,8 @@ class XarrayGraph(QMainWindow):
     }
 
     _default_settings = {
+        # 'text color': QColor(0, 0, 0),
+        # 'highlight color': QColor(0, 0, 0),
         'icon size': 24,
         'line width': 1,
         'axis label font size': 12,
@@ -73,7 +77,13 @@ class XarrayGraph(QMainWindow):
             text_color: QColor = palette.color(QPalette.Active, QPalette.Text)
             XarrayGraph._default_settings['text color'] = text_color
             XarrayGraph._settings['text color'] = text_color
-
+        if 'highlight color' not in self._default_settings:
+            palette = QApplication.instance().palette()
+            # highlight_color: QColor = palette.color(QPalette.Active, QPalette.Highlight)
+            # highlight_color: QColor = palette.color(QPalette.Active, QPalette.HighlightedText)
+            highlight_color: QColor = palette.color(QPalette.Active, QPalette.Link)
+            XarrayGraph._default_settings['highlight color'] = highlight_color
+            XarrayGraph._settings['highlight color'] = highlight_color
         self._xdim: str | None = None
         self._dim_iter_widgets: dict[str, dict] = {}
 
@@ -157,7 +167,7 @@ class XarrayGraph(QMainWindow):
         model.setDetailsColumnVisible(False)
         model.setSharedDataHighlighted(False)
         model.setDebugInfoVisible(False)
-        model.setDatatree(xr.DataTree())
+        model.setTreeData(xr.DataTree())
         self._datatree_view = XarrayDataTreeView()
         self._datatree_view.setModel(model)
         self._datatree_view.selectionWasChanged.connect(self._on_datatree_selection_changed)
@@ -227,8 +237,9 @@ class XarrayGraph(QMainWindow):
     def _init_actions(self) -> None:
         """ Actions.
         """
-        color_on: QColor = self._settings['text color']
-        color_off = QColor(color_on)
+        color_on: QColor = self._settings['highlight color']
+        color_off: QColor = self._settings['text color']
+        # color_off = QColor(color_on)
         color_off.setAlphaF(0.5)
 
         self._refresh_action = QAction(
@@ -323,6 +334,26 @@ class XarrayGraph(QMainWindow):
             checked=False,
             shortcut=QKeySequence('R'),
             triggered=lambda: self._on_draw_ROI_button_clicked()
+        )
+
+        self._ROI_xrange_action = QAction(
+            icon=qta.icon('mdi.arrow-expand-horizontal', color=color_off, color_on=color_on),
+            iconVisibleInMenu=True,
+            text='Range',
+            checkable=True,
+            checked=True,
+            shortcut=QKeySequence('R'),
+            shortcutVisibleInContextMenu=True,
+        )
+
+        self._ROI_event_action = QAction(
+            icon=qta.icon('fa6s.arrow-down-long', color=color_off, color_on=color_on),
+            iconVisibleInMenu=True,
+            text='Event',
+            checkable=True,
+            checked=False,
+            shortcut=QKeySequence('E'),
+            shortcutVisibleInContextMenu=True,
         )
         
         self._data_action = QAction(
@@ -454,6 +485,26 @@ class XarrayGraph(QMainWindow):
         self._before_dim_iters_spacer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._before_dim_iters_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
+        # ROI selector
+        self._ROI_menu = QMenu()
+        self._ROI_menu.addAction(self._ROI_event_action)
+        self._ROI_menu.addAction(self._ROI_xrange_action)
+
+        self._ROI_action_group = QActionGroup(self)
+        self._ROI_action_group.addAction(self._ROI_event_action)
+        self._ROI_action_group.addAction(self._ROI_xrange_action)
+        self._ROI_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.Exclusive)
+
+        self._ROI_selection_button = QToolButton()
+        self._ROI_selection_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self._ROI_selection_button.setText('ROI')
+        self._ROI_selection_button.setIcon(self._ROI_action_group.checkedAction().icon())
+        self._ROI_selection_button.setCheckable(True)
+        self._ROI_selection_button.setMenu(self._ROI_menu)
+        self._ROI_selection_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        # self._ROI_selection_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        # self._ROI_selection_button.setStyleSheet("QToolButton::menu-indicator { image: none; }")
+
         self._top_toolbar.addAction(self._open_action)
         self._top_toolbar.addAction(self._save_as_action)
         self._top_toolbar.addSeparator()
@@ -466,6 +517,8 @@ class XarrayGraph(QMainWindow):
         self._before_dim_iters_spacer_action = self._top_toolbar.addWidget(self._before_dim_iters_spacer)
         self._after_dim_iters_separator_action = self._top_toolbar.addSeparator()
         self._top_toolbar.addAction(self._draw_ROI_action)
+        # self._top_toolbar.addWidget(self._ROI_selector)
+        self._top_toolbar.addWidget(self._ROI_selection_button)
         self._top_toolbar.addAction(self._home_action)
 
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._top_toolbar)
@@ -552,12 +605,12 @@ class XarrayGraph(QMainWindow):
         self._control_panel.setVisible(True)
     
     def datatree(self) -> xr.DataTree:
-        return self._datatree_view.datatree()
+        return self._datatree_view.treeData()
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
         if datatree is None:
             datatree = xr.DataTree()
-        self._datatree_view.setDatatree(datatree)
+        self._datatree_view.setTreeData(datatree)
         self.refresh()
     
     def xdim(self) -> str | None:
@@ -734,7 +787,7 @@ class XarrayGraph(QMainWindow):
             return
         
         # restore datatree from serialization
-        datatree = xarray_utils.recover_datatree_post_serialization(datatree)
+        datatree = xarray_utils.recover_post_deserialization(datatree)
 
         # new window
         window: XarrayGraph = XarrayGraph.new()
@@ -794,7 +847,7 @@ class XarrayGraph(QMainWindow):
 
         # prepare datatree for serilazation
         datatree: xr.DataTree = self.datatree()
-        datatree = xarray_utils.prepare_datatree_for_serialization(datatree)
+        datatree = xarray_utils.prepare_for_serialization(datatree)
 
         # write datatree to filesystem
         if filetype == 'Zarr Directory':
@@ -1015,7 +1068,7 @@ class XarrayGraph(QMainWindow):
         self._selected_data_vars = [dt[path] for path in self._selected_data_var_paths]
         
         # ordered dimensions
-        self._selection_ordered_dims = xarray_utils.get_ordered_dims(self._selected_data_vars)
+        self._selection_ordered_dims = xarray_utils.ordered_dims_iter(self._selected_data_vars)
 
         # try and ensure valid xdim
         if self.xdim() not in self._selection_ordered_dims:
@@ -1026,7 +1079,7 @@ class XarrayGraph(QMainWindow):
         # limit selection to variables with the xdim coordinate
         self._selected_data_var_paths = [path for path in self._selected_data_var_paths if self.xdim() in dt[path].dims]
         self._selected_data_vars = [dt[path] for path in self._selected_data_var_paths]
-        self._selection_ordered_dims = xarray_utils.get_ordered_dims(self._selected_data_vars)
+        self._selection_ordered_dims = xarray_utils.ordered_dims_iter(self._selected_data_vars)
         print(f'_selected_data_var_paths: {self._selected_data_var_paths}')
         # print(f'_selection_ordered_dims: {self._selection_ordered_dims}')
 
@@ -1764,6 +1817,10 @@ class XarrayGraph(QMainWindow):
         # if self._curve_fit_live_preview_enabled() and self._curve_fit_depends_on_ROIs() and self.isROIsVisible() and self.selectedROIs():
         #     self._update_curve_fit_preview()
 
+    def _on_draw_event_button_clicked(self) -> None:
+        # TODO
+        print('Draw event button clicked')
+    
     def changeEvent(self, event: QEvent):
         """ Overrides the changeEvent to catch window activation changes.
         """
