@@ -77,7 +77,7 @@ class XarrayDataTreeViewer(QMainWindow):
     
     def setDatatree(self, datatree: xr.DataTree) -> None:
         self._datatree_view.setTreeData(datatree)
-        self.onSelectionChanged()
+        self.refresh()
 
     def refresh(self) -> None:
         self._datatree_view.refresh()
