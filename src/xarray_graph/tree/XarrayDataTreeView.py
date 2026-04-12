@@ -245,7 +245,7 @@ class XarrayDataTreeView(TreeView):
     def infoDialog(self, items: XarrayDataTreeItem | list[XarrayDataTreeItem] = None, font_size: int = None) -> None:
         if isinstance(items, XarrayDataTreeItem):
             item = items
-            data = item.data
+            data = item.data()
             title = item.path()
         elif items is None:
             items: list[XarrayDataTreeItem] = self.selectedItems()
@@ -253,21 +253,21 @@ class XarrayDataTreeView(TreeView):
                 return
             # ensure items are in tree order
             items = AbstractTreeItem.orderedItems(items)
-            data = [item.data for item in items]
+            data = [item.data() for item in items]
             title = 'Selected'
         elif len(items) == 1:
             item = items[0]
-            data = item.data
+            data = item.data()
             title = item.path()
         else:
-            data = [item.data for item in items]
+            data = [item.data() for item in items]
             title = None
-        infoDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title, font_size=font_size)
+        infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title, font_size=font_size)
         
     def attrsDialog(self, item: XarrayDataTreeItem) -> None:
-        data = item.data
+        data = item.data()
         title = item.path()
-        status = attrsDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title)
+        status = attrsDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
         if status == QDialog.DialogCode.Accepted:
             self.finishedEditingAttrs.emit(item)
         
@@ -286,7 +286,7 @@ class XarrayDataTreeView(TreeView):
     def renameDimensions(self, item: XarrayDataTreeItem) -> None:
         if not item.isNode():
             item = item.parent
-        node: xr.DataTree = item.data
+        node: xr.DataTree = item.data()
         
         dim_lineedits: dict[str, QLineEdit] = {}
         for dim in node.dims:
@@ -294,7 +294,7 @@ class XarrayDataTreeView(TreeView):
             dim_lineedits[dim].setPlaceholderText(dim)
         
         dlg = QDialog(self)
-        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        # dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
         dlg.setWindowTitle('Rename Dimensions')
         vbox = QVBoxLayout(dlg)
         for lineedit in dim_lineedits.values():
@@ -400,14 +400,21 @@ class XarrayDataTreeView(TreeView):
                 # ensure items are in tree order
                 items = AbstractTreeItem.orderedItems(items)
                 if len(items) == 1:
-                    data = items[0].data
+                    data = items[0].data()
                     title = items[0].path()
                 else:
-                    data = [item.data for item in items]
+                    data = [item.data() for item in items]
                     title = 'Selected'
-                xarray_utils.infoDialog(data, parent=self, size=self.size(), pos=QPoint(0, 0), title=title)
+                infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             return
         return super().keyPressEvent(event)
+    
+    def _dialogSizeHint(self) -> QSize:
+        size = self.size()
+        hmin = QDialog().sizeHint().height()
+        if size.height() > hmin:
+            size.setHeight(max(hmin, size.height() - 100))
+        return size
 
 
 def makeDialog(parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None) -> QDialog:
@@ -430,6 +437,7 @@ def infoDialog(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree 
     layout = QVBoxLayout(dlg)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.addWidget(text_edit)
+    QTimer.singleShot(100, lambda: text_edit.verticalScrollBar().setValue(0))
     return dlg.exec()
 
 
