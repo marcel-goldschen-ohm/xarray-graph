@@ -471,19 +471,20 @@ class XarrayDataTreeModel(AbstractTreeModel):
         items = items.copy()
 
         # order by data type
-        items.sort(key=lambda item: XarrayDataTreeModel._data_type_order.index(item._data_type))
+        data_type_order = tuple(XarrayDataTreeItem.DataType)
+        items.sort(key=lambda item: data_type_order.index(item.dataType()))
 
         # order items depth-first so that it is easier to group them into blocks
-        items.sort(key=lambda item: item.level)
-        items.sort(key=lambda item: item.siblingIndex)
+        items.sort(key=lambda item: item.level())
+        items.sort(key=lambda item: item.siblingIndex())
 
         # group items into blocks by [data type,] parent, and contiguous rows
         blocks: list[list[XarrayDataTreeItem]] = [[items[0]]]
         for item in items[1:]:
             added_to_block = False
             for block in blocks:
-                if (item.parent is block[0].parent) and (item._data_type == block[0]._data_type):
-                    if item.siblingIndex == block[-1].siblingIndex + 1:
+                if (item.parent is block[0].parent) and (item.dataType() == block[0].dataType()):
+                    if item.siblingIndex() == block[-1].siblingIndex() + 1:
                         block.append(item)
                     else:
                         blocks.append([item])
