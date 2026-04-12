@@ -1,5 +1,5 @@
 from xarray_graph.io.io import open_datatree, save_datatree
 
-# from xarray_graph.io.read_golab_tev_adicht_mat import read_adicht_mat
-# from xarray_graph.io.read_heka import read_heka
-# from xarray_graph.io.read_winwcp import read_winwcp
+from xarray_graph.io.labchart import read_adicht_mat
+from xarray_graph.io.heka import read_heka
+from xarray_graph.io.winwcp import read_winwcp
