@@ -6,7 +6,7 @@ from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
 from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeModel
 from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
 
-from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeType, XarrayDataTreeItem
+from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
 from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 from xarray_graph.tree.XarrayDataTreeView import XarrayDataTreeView
 from xarray_graph.tree.XarrayDataTreeViewer import XarrayDataTreeViewer

@@ -16,12 +16,8 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import XarrayDataTreeType, XarrayDataTreeItem, AbstractTreeModel
+from xarray_graph.tree import XarrayDataTreeItem, AbstractTreeModel
 import cmap
-
-
-# for convenience in this file
-NODE, DATA_VAR, COORD = list(XarrayDataTreeType)
 
 
 class XarrayDataTreeModel(AbstractTreeModel):
@@ -29,8 +25,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
     """
 
     MIME_TYPE = 'application/x-xarray-datatree-model'
-
-    _data_type_order: tuple[XarrayDataTreeType] = (COORD, DATA_VAR, NODE)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -91,8 +85,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         item.updateSubtree(
             include_data_vars=self.isDataVarsVisible(),
             include_coords=self.isCoordsVisible(),
-            include_inherited_coords=self.isInheritedCoordsVisible(),
-            data_type_order=self._data_type_order
+            include_inherited_coords=self.isInheritedCoordsVisible()
         )
     
     def reset(self) -> None:
@@ -194,22 +187,16 @@ class XarrayDataTreeModel(AbstractTreeModel):
             item: XarrayDataTreeItem = self.itemFromIndex(index)
             if index.column() == 0:
                 # main column
-                return item.data.name
+                return item.name()
             elif index.column() == 1:
                 # details column
                 if item.isNode():
-                    node: xr.DataTree = item.data
-                    sizes_str = ', '.join([f'{dim}: {size}' for dim, size in node.sizes.items()])
-                    rep = f'({sizes_str})'
-                    # rep += f' <id={id(node)}>'
-                    return rep
+                    sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.node().sizes.items()])
+                    return f'({sizes_str})'
                 elif item.isDataVar():
-                    var: xr.DataArray = item.data
-                    parent_item: XarrayDataTreeItem = item.parent
-                    parent_node: xr.DataTree = parent_item.data
-                    rep = str(parent_node.dataset)
+                    rep = str(item.node().dataset)
                     i = rep.find('Data variables:')
-                    i = rep.find(f' {var.name} ', i)  # find data_var
+                    i = rep.find(f' {item.name()} ', i)  # find data_var
                     i = rep.find('(', i)  # skip data_var name
                     preview = False
                     if preview:
@@ -220,12 +207,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     rep = rep[i:j] if j > 0 else rep[i:]
                     return rep
                 elif item.isCoord():
-                    coord: xr.DataArray = item.data
-                    parent_item: XarrayDataTreeItem = item.parent
-                    parent_node: xr.DataTree = parent_item.data
-                    rep = str(parent_node.dataset)
+                    rep = str(item.node().dataset)
                     i = rep.find('Coordinates:')
-                    i = rep.find(f' {coord.name} ', i)  # find coord
+                    i = rep.find(f' {item.name()} ', i)  # find coord
                     i = rep.find('(', i)  # skip coord name
                     preview = False
                     if preview:
@@ -286,12 +270,12 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if item.isInheritedCoord():
                 # cannot rename inherited coords
                 return False
-            old_name = item.data.name
+            old_name = item.name()
             if new_name == old_name:
                 # nothing to do
                 return False
-            parent_item: XarrayDataTreeItem = item.parent
-            parent_node: xr.DataTree = parent_item.data
+            #            parent_item: XarrayDataTreeItem = item.parent
+            parent_node: xr.DataTree = item.parentNode()
             # ensure no name conflict with existing objects
             parent_keys: list[str] = list(parent_node.keys())
             if new_name in parent_keys:
@@ -307,23 +291,28 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 for node in branch_root.descendants:
                     node.dataset = node.to_dataset().swap_dims({old_name: new_name})
                 # rename index coord
-                new_index_coord = item.data.copy(deep=False).swap_dims({old_name: new_name})
+                new_index_coord = item.data()#.copy(deep=False).swap_dims({old_name: new_name})
                 parent_node.dataset = parent_node.to_dataset().reindex({new_name: new_index_coord}, copy=False).drop_indexes(old_name).reset_coords(old_name, drop=True)
                 for node in parent_node.descendants:
                     if old_name in node.coords:
                         node.dataset = node.to_dataset().reset_coords(old_name, drop=True)
-                item.data = parent_node[new_name]
                 # xarray_utils.rename_dims(parent_node, {old_name: new_name})
-                # item.data = parent_node[new_name]
+                item._varname = new_name
+                # update item name in subtree
+                branch_item: XarrayDataTreeItem
+                for branch_item in item.parent.subtree_depth_first():
+                    if branch_item._varname == old_name:
+                        branch_item._varname = new_name
+                print(item.parent)
                 self.refreshRequested.emit() # inefficient solution to update branch
                 return True
             elif item.isVariable():
                 parent_node.dataset = parent_node.to_dataset().rename_vars({old_name: new_name})
-                item.data = parent_node[new_name]
+                item._varname = new_name
                 return True
             elif item.isNode():
                 parent_node.children = {name if name != old_name else new_name: child for name, child in parent_node.children.items()}
-                item.data = parent_node[new_name]
+                # item._node.name = new_name
                 return True
         return False
 
@@ -350,17 +339,17 @@ class XarrayDataTreeModel(AbstractTreeModel):
             QMessageBox.warning(parent_widget, title, text)
             return False
         
+        # TODO: handle name conflicts (or should this be done by the individual items?)
+        # TODO: handle alignment conflicts (or at least decide how they should be handled?)
+        
         # insert items one data type at a time
-        for data_type in list(reversed(self._data_type_order)):
-            items_of_type = [item for item in items if item._data_type == data_type]
-            if not items_of_type:
-                continue
-            # TODO: handle name conflicts (or should this be done by the individual items?)
-            # TODO: handle alignment conflicts (or at least decide how they should be handled?)
-            row_for_type = XarrayDataTreeModel._insertionRow(parent_item, data_type, row)
-            super().insertItems(items_of_type, row_for_type, parent_item)
-            if row_for_type < row:
-                row += len(items_of_type)
+        for data_type in tuple(XarrayDataTreeItem.DataType):
+            items_of_type: list[XarrayDataTreeItem] = [item for item in items if item.dataType() == data_type]
+            if items_of_type:
+                row_for_type = XarrayDataTreeModel._insertionRow(parent_item, data_type, row)
+                super().insertItems(items_of_type, row_for_type, parent_item)
+                if row_for_type < row:
+                    row += len(items_of_type)
         
         # update inherited coords in inserted item subtrees
         if self.isInheritedCoordsVisible():
@@ -386,14 +375,15 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 return False
         
         items_to_move: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
+
+        # TODO: handle name conflicts (or should this be done by the individual items?)
+        # TODO: handle alignment conflicts (or at least decide how they should be handled?)
         
         # move items one data type at a time
-        for data_type in list(reversed(self._data_type_order)):
-            items_of_type = [item for item in items_to_move if item._data_type == data_type]
+        for data_type in reversed(tuple(XarrayDataTreeItem.DataType)):
+            items_of_type = [item for item in items_to_move if item.dataType() == data_type]
             if not items_of_type:
                 continue
-            # TODO: handle name conflicts (or should this be done by the individual items?)
-            # TODO: handle alignment conflicts (or at least decide how they should be handled?)
             src_row_for_type = items_of_type[0].row()
             count = len(items_of_type)
             dst_row_for_type = XarrayDataTreeModel._insertionRow(dst_parent_item, data_type, dst_row)
@@ -411,17 +401,23 @@ class XarrayDataTreeModel(AbstractTreeModel):
     def _visibleRowNames(self, item: XarrayDataTreeItem) -> list[str]:
         if not item.isNode():
             return []
-        node: xr.DataTree = item.data
+        node: xr.DataTree = item.data()
         names: list[str] = []
-        for data_type in self._data_type_order:
-            if data_type == NODE:
-                names += list(node.children)
-            elif data_type == DATA_VAR:
+        for data_type in tuple(XarrayDataTreeItem.DataType):
+            if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
+                if self.isCoordsVisible():
+                    names += list(node.xindexes)
+            elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
+                if self.isCoordsVisible() and self.isInheritedCoordsVisible():
+                    names += list(node._inherited_coords_set())
+            elif data_type == XarrayDataTreeItem.DataType.COORD:
+                if self.isCoordsVisible():
+                    names += [name for name in node.coords if (name not in node.xindexes) and (name not in node._inherited_coords_set())]
+            elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
                 if self.isDataVarsVisible():
                     names += list(node.data_vars)
-            elif data_type == COORD:
-                if self.isCoordsVisible():
-                    names += [coord.name for coord in xarray_utils.ordered_coords_iter(node, self.isInheritedCoordsVisible())]
+            elif data_type == XarrayDataTreeItem.DataType.NODE:
+                 names += list(node.children)
         return names
     
     def _updateSubtreeCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
@@ -431,16 +427,16 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 continue
             
             index: QModelIndex = self.indexFromItem(item)
-            node: xr.DataTree = item.data
+            node: xr.DataTree = item.data()
             inherited_coord_names = node._inherited_coords_set()
             coord_names = list(node.coords)
             
             # remove invalid coord items (no need to touch datatree)
-            # note: invalid coord items may have a data_type of None after tree manipulation
+            # note: invalid coord items may have a data type of None after tree manipulation
             coord_items_to_remove: list[XarrayDataTreeItem] = []
             child: XarrayDataTreeItem
             for child in item.children:
-                if (child.isCoord() and child.data.name not in node.coords) or (child._data_type is None) or (not self.isInheritedCoordsVisible() and child.isInheritedCoord()):
+                if (child.isCoord() and child.name() not in node.coords) or (child.dataType() is None) or (not self.isInheritedCoordsVisible() and child.isInheritedCoord()):
                     coord_items_to_remove.append(child)
             for coord_item in reversed(coord_items_to_remove):
                 self.beginRemoveRows(index, coord_item.row(), coord_item.row())
@@ -451,7 +447,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 continue
             
             # add missing coord items (no need to touch datatree)
-            existing_coord_names: list[str] = [child.data.name for child in item.children if child.isCoord()]
+            existing_coord_names: list[str] = [child.name() for child in item.children if child.isCoord()]
             missing_coord_names: list[str] = [name for name in coord_names if (name not in existing_coord_names) and (self.isInheritedCoordsVisible() or name not in inherited_coord_names)]
             if missing_coord_names:
                 row_names: list[str] = self._visibleRowNames(item)
@@ -498,20 +494,20 @@ class XarrayDataTreeModel(AbstractTreeModel):
         return blocks
     
     @staticmethod
-    def _insertionRow(parent_item: XarrayDataTreeItem, data_type: XarrayDataTreeType, row: int) -> int:
+    def _insertionRow(parent_item: XarrayDataTreeItem, data_type: XarrayDataTreeItem.DataType, row: int) -> int:
         """ Get the row index at which to insert an item of data_type when attempting to insert at row.
         
         This ensures that the data type order is maintained.
         """
-        items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item._data_type == data_type]
+        items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.dataType() == data_type]
 
         if not items_of_type:
             # insert after all items of other data types that come before data_type in the model
             row = 0
-            for dtype in XarrayDataTreeModel._data_type_order:
+            for dtype in tuple(XarrayDataTreeItem.DataType):
                 if dtype == data_type:
                     break
-                row += len([item for item in parent_item.children if item._data_type == dtype])
+                row += len([item for item in parent_item.children if item.dataType() == dtype])
             return row
         elif row > items_of_type[-1].row():
             # append after last item of data_type

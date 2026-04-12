@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Callable
 from collections.abc import Iterator
 from warnings import warn
+from copy import deepcopy
 
 
 class AbstractTreeItem():
@@ -159,10 +160,18 @@ class AbstractTreeItem():
         """
         item_copy = AbstractTreeItem()
         item_copy.setName(self.name()) # testing/debugging just copies name
+        try:
+            item_copy._view_state = deepcopy(self._view_state)
+        except AttributeError:
+            pass
         # recursively copy children
         for child in self.children:
             child_copy = child.copy()
             item_copy.appendChild(child_copy)
+            try:
+                child_copy._view_state = deepcopy(child._view_state)
+            except AttributeError:
+                pass
         return item_copy
     
     # Methods below should not need to be overridden.

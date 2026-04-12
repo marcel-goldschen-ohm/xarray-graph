@@ -372,6 +372,13 @@ class TreeView(QTreeView):
             row = len(parent_item.children)
         items_to_paste = [item.copy() for item in TreeView._copied_items]
         model.insertItems(items_to_paste, row, parent_item)
+        # update view state of pasted items and all their descendents as specified in the copied items
+        all_pasted_items = []
+        for item in items_to_paste:
+            for subitem in item.subtree_depth_first():
+                if subitem not in all_pasted_items:
+                    all_pasted_items.append(subitem)
+        self.restoreViewState(all_pasted_items)
     
     def hasCopy(self) -> bool:
         return len(TreeView._copied_items) > 0
