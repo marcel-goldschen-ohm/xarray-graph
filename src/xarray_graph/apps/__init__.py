@@ -1,0 +1,1 @@
+from xarray_graph.apps.XarrayDataTreeViewer import XarrayDataTreeViewer

@@ -1,6 +1,7 @@
 """ Embedded IPython console widget.
 """
 
+from qtpy.QtCore import Qt
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import QAction
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
@@ -33,7 +34,8 @@ class IPythonConsole(RichJupyterWidget):
             toolTip='Show Console',
             checkable=False,
             shortcut=QKeySequence('`'),
-            triggered=lambda checked: self.showConsole()
+            shortcutContext=Qt.ShortcutContext.ApplicationShortcut,
+            triggered=lambda checked: self._show_and_raise()
         )
     
     def start(self) -> None:
@@ -54,17 +56,10 @@ class IPythonConsole(RichJupyterWidget):
         """
         self.kernel_manager.kernel.shell.push(variables)
     
-    def clearConsole(self):
+    def clear(self):
         """ Clears the console.
         """
         self._control.clear()
-    
-    def showConsole(self) -> None:
-        """ Show the console window.
-
-        Override this for custom logic on console showing.
-        """
-        self.show()
     
     def printMessage(self, message: str, dedent: bool = True) -> None:
         """ Print message to the console.
@@ -73,6 +68,12 @@ class IPythonConsole(RichJupyterWidget):
             import textwrap
             message = textwrap.dedent(message).strip()
         self._append_plain_text(message, before_prompt=True)
+    
+    def _show_and_raise(self):
+        """ Show the console and raise it to the front.
+        """
+        self.show()
+        self.raise_()
     
     
 def test_live():

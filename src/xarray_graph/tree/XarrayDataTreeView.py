@@ -318,54 +318,6 @@ class XarrayDataTreeView(TreeView):
         xarray_utils.rename_dims(node, dim_renames)
         self.refresh()
     
-    # def renameVariables(self, root_item: XarrayDataTreeItem) -> None:
-    #     model: XarrayDataTreeModel = self.model()
-    #     if not model:
-    #         return
-    #     if not root_item.is_group:
-    #         root_item = root_item.parent
-    #     root_group: xr.DataTree = root_item.data
-        
-    #     var_names: list[str] = []
-    #     for group in root_group.subtree:
-    #         for name in group.variables:
-    #             if name not in var_names:
-    #                 var_names.append(name)
-        
-    #     lineedits: dict[str, QLineEdit] = {}
-    #     for name in var_names:
-    #         lineedits[name] = QLineEdit()
-    #         lineedits[name].setPlaceholderText(name)
-        
-    #     dlg = QDialog(self)
-    #     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-    #     dlg.setWindowTitle('Rename Variables')
-    #     vbox = QVBoxLayout(dlg)
-    #     for name in var_names:
-    #         vbox.addWidget(lineedits[name])
-        
-    #     buttons = QDialogButtonBox(standardButtons=QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-    #     buttons.accepted.connect(dlg.accept)
-    #     buttons.rejected.connect(dlg.reject)
-    #     vbox.addWidget(buttons)
-
-    #     if dlg.exec() != QDialog.DialogCode.Accepted:
-    #         return
-        
-    #     var_renames = {}
-    #     for name in var_names:
-    #         new_name = lineedits[name].text().strip()
-    #         if new_name and new_name != name:
-    #             var_renames[name] = new_name
-    #     if not var_renames:
-    #         return
-        
-    #     xarray_utils.rename_vars(root_group, var_renames)
-    #     self.refresh()
-    
-    # def mergeSelection(self) -> None:
-    #     pass # TODO
-    
     # def concatenateSelectedGroups(self, dim: str = None) -> None:
     #     model: XarrayDataTreeModel = self.model()
     #     if not model:

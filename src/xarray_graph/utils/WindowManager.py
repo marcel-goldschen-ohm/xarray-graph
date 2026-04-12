@@ -47,7 +47,7 @@ class WindowManager(QObject):
         
         if self.enforceUniqueWindowTitles():
             title = window.windowTitle()
-            unique_title = self.uniqueName(title, self.windowTitles())
+            unique_title = self.uniqueName(title or 'Untitled', self.windowTitles())
             if unique_title != title:
                 window.setWindowTitle(unique_title)
         
@@ -124,10 +124,17 @@ class WindowManager(QObject):
         active_window: QMainWindow = QApplication.instance().activeWindow()
         
         # clear old window list from menu
-        windows_action_group: QActionGroup = menu._windows_action_group
-        for action in windows_action_group.actions():
-            windows_action_group.removeAction(action)
-            menu.removeAction(action)
+        try:
+            windows_action_group: QActionGroup = menu._windows_action_group
+            for action in windows_action_group.actions():
+                windows_action_group.removeAction(action)
+                menu.removeAction(action)
+        except AttributeError:
+            # menu does not have window list yet
+            menu._before_windows_action = menu.addSeparator()
+            menu._windows_action_group = QActionGroup(menu)
+            menu._windows_action_group.setExclusive(True)
+            windows_action_group: QActionGroup = menu._windows_action_group
         
         # add current window list to menu
         for window in self.windows():

@@ -35,9 +35,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         # parts of datatree to show
         self._is_data_vars_visible: bool = True
-        self._is_coords_visible: bool = False
+        self._is_coords_visible: bool = True
         self._is_inherited_coords_visible: bool = False
-        self._is_details_column_visible: bool = False
+        self._is_details_column_visible: bool = True
 
         # colors
         self._default_text_color = QApplication.palette().color(QPalette.ColorRole.Text)
@@ -72,7 +72,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         """ Get the datatree.
         """
         root_item: XarrayDataTreeItem = self.rootItem()
-        return root_item.data
+        return root_item.data()
     
     def setTreeData(self, data: xr.DataTree) -> None:
         """ Set the datatree.

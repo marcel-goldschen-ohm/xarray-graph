@@ -1,8 +1,8 @@
 from qtpy.QtWidgets import QApplication, QMessageBox
-from xarray_graph.tree import XarrayDataTreeViewer
+from xarray_graph.apps import XarrayDataTreeViewer
 
 
-def main():
+def xtree():
     app = QApplication()
     app.setQuitOnLastWindowClosed(False)
 
@@ -19,4 +19,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    xtree()

@@ -9,7 +9,6 @@ from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
 from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
 from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 from xarray_graph.tree.XarrayDataTreeView import XarrayDataTreeView
-from xarray_graph.tree.XarrayDataTreeViewer import XarrayDataTreeViewer
 
 from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeItem, AnnotationTreeModel
 from xarray_graph.tree.AnnotationTreeView import AnnotationTreeView
