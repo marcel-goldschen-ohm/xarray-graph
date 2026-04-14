@@ -55,7 +55,17 @@ def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> It
             continue
         if include_inherited or (name not in inherited_coord_names):
             yield coord
-    
+
+
+def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> list[str]:
+    keys = []
+    if include_coords:
+        keys.extend([coord.name for coord in ordered_coords_iter(node, include_inherited=include_inherited_coords)])
+    if include_data_vars:
+        keys.extend(node.data_vars)
+    keys.extend(node.children)
+    return keys
+
 
 def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
     branch_root: xr.DataTree = aligned_root(node)

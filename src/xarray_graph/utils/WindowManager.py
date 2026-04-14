@@ -36,6 +36,13 @@ class WindowManager(QObject):
     def windowTitles(self) -> list[str]:
         return [window.windowTitle() for window in self._windows]
     
+    def __getitem__(self, key: str | int) -> QMainWindow | None:
+        windows = self.windows()
+        if isinstance(key, int):
+            return windows[key]
+        window_dict = {window.windowTitle(): window for window in self.windows()}
+        return window_dict[key]
+    
     def windowEventFilter(self) -> QObject:
         return self._window_event_filter
     

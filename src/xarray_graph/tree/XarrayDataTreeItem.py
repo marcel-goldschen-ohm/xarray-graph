@@ -21,10 +21,9 @@ class XarrayDataTreeItem(AbstractTreeItem):
     # order of data types in the tree model (top to bottom)
     class DataType(Enum):
         INDEX_COORD = 1
-        INHERITED_COORD = 2
-        COORD = 3
-        DATA_VAR = 4
-        NODE = 5
+        COORD = 2
+        DATA_VAR = 3
+        NODE = 4
 
     def __init__(self, node: xr.DataTree, varname: str = '', parent: XarrayDataTreeItem = None, sibling_index: int = None):
         self._node = node
@@ -77,8 +76,6 @@ class XarrayDataTreeItem(AbstractTreeItem):
     def dataType(self) -> XarrayDataTreeItem.DataType:
         if self.isIndexCoord():
             return XarrayDataTreeItem.DataType.INDEX_COORD
-        elif self.isInheritedCoord():
-            return XarrayDataTreeItem.DataType.INHERITED_COORD
         elif self.isCoord():
             return XarrayDataTreeItem.DataType.COORD
         elif self.isDataVar():
@@ -90,29 +87,39 @@ class XarrayDataTreeItem(AbstractTreeItem):
         if not self.isNode():
             return
         self.children = []
-        for data_type in tuple(XarrayDataTreeItem.DataType):
-             if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
-                if include_coords:
-                    for name, coord in self._node.xindexes.items():
-                        if name not in self._node._inherited_coords_set():
-                            XarrayDataTreeItem(self._node, name, parent=self)
-             elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
-                if include_coords and include_inherited_coords:
-                    for name in self._node._inherited_coords_set():
-                        XarrayDataTreeItem(self._node, name, parent=self)
-             elif data_type == XarrayDataTreeItem.DataType.COORD:
-                if include_coords:
-                    for name, coord in self._node.coords.items():
-                        if name not in self._node.xindexes and name not in self._node._inherited_coords_set():
-                            XarrayDataTreeItem(self._node, name, parent=self)
-             elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
-                if include_data_vars:
-                    for name in self._node.data_vars:
-                        XarrayDataTreeItem(self._node, name, parent=self)
-             elif data_type == XarrayDataTreeItem.DataType.NODE:
-                for name, child_node in self._node.children.items():
-                    child_item = XarrayDataTreeItem(child_node, parent=self)
-                    child_item.updateSubtree(include_data_vars, include_coords, include_inherited_coords)
+        if include_coords:
+            for coord in xarray_utils.ordered_coords_iter(self._node, include_inherited=include_inherited_coords):
+                XarrayDataTreeItem(self._node, coord.name, parent=self)
+        if include_data_vars:
+            for name in self._node.data_vars:
+                XarrayDataTreeItem(self._node, name, parent=self)
+        for child_node in self._node.children.values():
+            child_item = XarrayDataTreeItem(child_node, parent=self)
+            child_item.updateSubtree(include_data_vars, include_coords, include_inherited_coords)
+        
+        # for data_type in tuple(XarrayDataTreeItem.DataType):
+        #      if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
+        #         if include_coords:
+        #             for name, coord in self._node.xindexes.items():
+        #                 if name not in self._node._inherited_coords_set():
+        #                     XarrayDataTreeItem(self._node, name, parent=self)
+        #      elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
+        #         if include_coords and include_inherited_coords:
+        #             for name in self._node._inherited_coords_set():
+        #                 XarrayDataTreeItem(self._node, name, parent=self)
+        #      elif data_type == XarrayDataTreeItem.DataType.COORD:
+        #         if include_coords:
+        #             for name, coord in self._node.coords.items():
+        #                 if name not in self._node.xindexes and name not in self._node._inherited_coords_set():
+        #                     XarrayDataTreeItem(self._node, name, parent=self)
+        #      elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
+        #         if include_data_vars:
+        #             for name in self._node.data_vars:
+        #                 XarrayDataTreeItem(self._node, name, parent=self)
+        #      elif data_type == XarrayDataTreeItem.DataType.NODE:
+        #         for name, child_node in self._node.children.items():
+        #             child_item = XarrayDataTreeItem(child_node, parent=self)
+        #             child_item.updateSubtree(include_data_vars, include_coords, include_inherited_coords)
     
     def name(self) -> str:
         if self._varname:
@@ -179,8 +186,8 @@ class XarrayDataTreeItem(AbstractTreeItem):
         if not self.isNode():
             raise TypeError('Cannot insert child into non-node item')
         child_name = child_item.name()
-        if child_name in self._node:
-            raise ValueError(f'Name conflict: node already has a child named {child_name}')
+        # if child_name in self._node:
+        #     raise ValueError(f'Name conflict: node already has a child named {child_name}')
         
         # update datatree
         dt = self._node.root
@@ -209,6 +216,31 @@ class XarrayDataTreeItem(AbstractTreeItem):
             new_node_path = item._node.path.replace(old_child_path, new_child_path, 1)
             # print(item._node.path, '->', new_node_path)
             item._node = dt[new_node_path]
+    
+    @staticmethod
+    def _findInsertionIndex(parent_item: XarrayDataTreeItem, child_item: XarrayDataTreeItem, index: int) -> int:
+        """ Find insertion index that preserves data type order.
+        """
+        data_type = child_item.dataType()
+        items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.dataType() == data_type]
+
+        if not items_of_type:
+            # insert after all items of other data types that come before data_type in the model
+            index = 0
+            for dtype in tuple(XarrayDataTreeItem.DataType):
+                if dtype == data_type:
+                    break
+                index += len([item for item in parent_item.children if item.dataType() == dtype])
+            return index
+        elif index > items_of_type[-1].siblingIndex():
+            # append after last item of data_type
+            return items_of_type[-1].siblingIndex() + 1
+        elif index <= items_of_type[0].siblingIndex():
+            # prepend before first item of data_type
+            return items_of_type[0].siblingIndex()
+        else:
+            # insert at index which falls within items of data_type
+            return index
     
     def copy(self, deep: bool = True) -> XarrayDataTreeItem:
         """ Returns an orphaned copy of this item.
@@ -276,6 +308,7 @@ def test_tree():
     dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
     dt['child/grandchild/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['rasm'] = xr.tutorial.load_dataset('rasm')
+    dt['rasm/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     # print(dt)
 

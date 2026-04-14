@@ -477,8 +477,9 @@ def test_live():
     dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
     dt['child/grandchild/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['rasm'] = xr.tutorial.load_dataset('rasm')
+    dt['rasm/rasm2'] = xr.tutorial.load_dataset('rasm')
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
-    # print(dt)
+    print(dt)
 
     model = XarrayDataTreeModel()
     model.setDataVarsVisible(True)

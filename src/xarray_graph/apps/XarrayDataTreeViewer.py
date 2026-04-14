@@ -10,7 +10,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 import xarray_graph.io as io
-from xarray_graph.io.io import supported_filetypes
+# from xarray_graph.io.io import supported_filetypes
 from xarray_graph.utils import xarray_utils, WindowManager, IPythonConsole
 from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeView
 from xarray_graph.widgets import CollapsibleSectionsSplitter
@@ -34,7 +34,21 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # global console
         if XarrayDataTreeViewer.console is None:
-            XarrayDataTreeViewer.console = IPythonConsole()
+            console = IPythonConsole()
+            console.execute('import numpy as np', hidden=True)
+            console.execute('import xarray as xr', hidden=True)
+            console.addVariables({'wm': XarrayDataTreeViewer.window_mgr})
+            msg = """
+            ----------------------------------------------------
+            Variables:
+            wm -> WindowManager
+            e.g., window = wm['window title'] or wm[index]
+                  datatree = window.datatree()
+            Modules loaded at startup: numpy as np, xarray as xr
+            ----------------------------------------------------
+            """
+            console.printMessage(msg)
+            XarrayDataTreeViewer.console = console
         
         # datatree
         self._datatree_view = XarrayDataTreeView()
@@ -43,7 +57,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
 
         # selection
-        self._info_view = QTextEdit()
+        self._info_view = infoTextEdit([])
         self._attrs_view = KeyValueTreeView()
 
         self._selection_splitter = CollapsibleSectionsSplitter()
@@ -124,7 +138,7 @@ class XarrayDataTreeViewer(QMainWindow):
         return window
     
     @staticmethod
-    def open(filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer | list[XarrayDataTreeViewer] | None:
+    def open(filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer:
         """ Load datatree from file.
         """
         focus_widget: QWidget = QApplication.instance().focusWidget()
@@ -317,12 +331,12 @@ class XarrayDataTreeViewer(QMainWindow):
         self._file_menu.addSeparator()
         self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, QApplication.instance().quit)
 
-        for i, filetype in enumerate(supported_filetypes):
+        for filetype in ['Zarr Zip', 'Zarr Directory', 'NetCDF', 'HDF5']:
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
-            if i < 4:
-                self._export_menu.addAction(filetype, lambda filetype=filetype: self.saveAs(filetype=filetype))
-            if i == 3:
-                self._import_menu.addSeparator()
+            self._export_menu.addAction(filetype, lambda filetype=filetype: self.saveAs(filetype=filetype))
+        self._import_menu.addSeparator()
+        for filetype in ['WinWCP', 'HEKA', 'LabChart MATLAB TEVC']:
+            self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
 
         self._view_menu = menubar.addMenu('View')
         self._view_menu.addAction(XarrayDataTreeViewer.console._console_action)
@@ -382,6 +396,7 @@ def test_live():
     dt['child/grandchild/greatgrandchild'] = xr.DataTree()
     dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
     dt['rasm'] = xr.tutorial.load_dataset('rasm')
+    dt['rasm/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     
     window = XarrayDataTreeViewer()

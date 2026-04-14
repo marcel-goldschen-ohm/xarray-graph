@@ -26,6 +26,79 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
     MIME_TYPE = 'application/x-xarray-datatree-model'
 
+    themes = {
+        'default': {
+            'icon': {
+                'node': 'ph.folder-thin',
+                'data_var': 'ph.cube-thin',
+                'coord': 'ph.list-numbers-thin',
+                'index_coord': 'ph.asterisk-thin',
+                'unknown': 'fa6s.question',
+            },
+            'color': {
+                'node': None, # None -> use default text color
+                'data_var': None,
+                'coord': None,
+                'inherited_coord': None,
+                'unknown': None,
+            },
+        },
+        'dark': {
+            'color': {
+                'node': '#e69f00',
+                'data_var': '#56b4e9',
+                'coord': '#cc79a7',
+                # 'inherited_coord': '#cc79a780', # last 80 makes it 50% transparent
+                'unknown': '#990000',
+            },
+        }
+    }
+
+    def setTheme(self, name: str) -> None:
+        # color_scheme = QGuiApplication.styleHints().colorScheme()
+        # if color_scheme == Qt.ColorScheme.Dark:
+        #     pass
+        # elif color_scheme == Qt.ColorScheme.Light:
+        #     pass
+
+        default_color = QApplication.palette().color(QPalette.ColorRole.Text)
+
+        theme = XarrayDataTreeModel.themes[name]
+
+        try:
+            colors = theme['color']
+        except KeyError:
+            # if theme does not have colors, use default colors
+            colors = XarrayDataTreeModel.themes['default']['color']
+
+        self._node_color: QColor = QColor(colors['node'] or default_color)
+        self._data_var_color: QColor = QColor(colors['data_var'] or default_color)
+        self._coord_color: QColor = QColor(colors['coord'] or default_color)
+        inherited_coord_color = colors.get('inherited_coord', None)
+        if not inherited_coord_color:
+            # if no inherited_coord color specified, use coord color but faded
+            inherited_coord_color = QColor(self._coord_color)
+            inherited_coord_color.setAlpha(128)  # make it 50% transparent
+        self._inherited_coord_color: QColor = QColor(inherited_coord_color)
+        self._unknown_color: QColor = QColor(colors['unknown'] or default_color)
+
+        try:
+            icons = theme['icon']
+        except KeyError:
+            # if theme does not have icons, use default icons
+            icons = XarrayDataTreeModel.themes['default']['icon']
+
+        self._node_icon: QIcon = qta.icon(icons['node'], color=self._node_color)
+        self._data_var_icon: QIcon = qta.icon(icons['data_var'], color=self._data_var_color)
+        self._coord_icon: QIcon = qta.icon(icons['coord'], color=self._coord_color)
+        self._index_coord_icon: QIcon = qta.icon(icons['index_coord'], color=self._coord_color)
+        self._inherited_coord_icon: QIcon = qta.icon(icons['coord'], color=self._inherited_coord_color)
+        self._inherited_index_coord_icon: QIcon = qta.icon(icons['index_coord'], color=self._inherited_coord_color)
+        self._unknown_icon: QIcon = qta.icon(icons['unknown'], color=self._unknown_color)
+
+        self._theme = name
+
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -39,30 +112,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._is_inherited_coords_visible: bool = False
         self._is_details_column_visible: bool = True
 
-        # colors
-        self._default_text_color = QApplication.palette().color(QPalette.ColorRole.Text)
-        color_scheme = QGuiApplication.styleHints().colorScheme()
-        if color_scheme == Qt.ColorScheme.Dark:
-            self._node_color: QColor = QColor('#e69f00')
-            self._data_var_color: QColor = QColor('#56b4e9')
-            self._coord_color: QColor = QColor('#cc79a7')
-            self._unknown_color: QColor = QColor('#990000')
-        elif color_scheme == Qt.ColorScheme.Light:
-            # TODO: choose better colors for light mode
-            self._node_color: QColor = self._default_text_color
-            self._data_var_color: QColor = QColor('#D7005F')
-            self._coord_color: QColor = QColor('#005F87')
-            self._unknown_color: QColor = QColor('#FF0000')
-        self._inherited_coord_color: QColor = QColor(self._coord_color or self._default_text_color)
-        self._inherited_coord_color.setAlpha(128)
-
-        # icons
-        self._node_icon: QIcon = qta.icon('ph.folder-thin', color=self._node_color)
-        self._data_var_icon: QIcon = qta.icon('ph.cube-thin', color=self._data_var_color)
-        self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin', color=self._coord_color)
-        self._index_coord_icon: QIcon = qta.icon('ph.asterisk-thin', color=self._coord_color)
-        self._inherited_coord_icon: QIcon = qta.icon('ph.asterisk-thin', color=self._inherited_coord_color)
-        self._unknown_icon: QIcon = qta.icon('fa6s.question', color=self._unknown_color)
+        # theme
+        # self.setTheme('default')
+        self.setTheme('dark')
 
         # setup item tree
         datatree: xr.DataTree = xr.DataTree()
@@ -227,11 +279,13 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return self._node_icon
                 elif item.isDataVar():
                     return self._data_var_icon
-                elif item.isInheritedCoord():
-                    return self._inherited_coord_icon
                 elif item.isIndexCoord():
+                    if item.isInheritedCoord():
+                        return self._inherited_index_coord_icon
                     return self._index_coord_icon
                 elif item.isCoord():
+                    if item.isInheritedCoord():
+                        return self._inherited_coord_icon
                     return self._coord_icon
                 else:
                     # should never happen
@@ -341,15 +395,22 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         # TODO: handle name conflicts (or should this be done by the individual items?)
         # TODO: handle alignment conflicts (or at least decide how they should be handled?)
+
+        # insert items one at a time (because actual insertion position may differ from requested position to maintain data type order)
+        for item in items:
+            row_for_item = XarrayDataTreeItem._findInsertionIndex(parent_item, item, row)
+            super().insertItems([item], row_for_item, parent_item)
+            if row_for_item <= row:
+                row += 1
         
-        # insert items one data type at a time
-        for data_type in tuple(XarrayDataTreeItem.DataType):
-            items_of_type: list[XarrayDataTreeItem] = [item for item in items if item.dataType() == data_type]
-            if items_of_type:
-                row_for_type = XarrayDataTreeModel._insertionRow(parent_item, data_type, row)
-                super().insertItems(items_of_type, row_for_type, parent_item)
-                if row_for_type < row:
-                    row += len(items_of_type)
+        # # insert items one data type at a time
+        # for data_type in tuple(XarrayDataTreeItem.DataType):
+        #     items_of_type: list[XarrayDataTreeItem] = [item for item in items if item.dataType() == data_type]
+        #     if items_of_type:
+        #         row_for_type = XarrayDataTreeModel._insertionRow(parent_item, data_type, row)
+        #         super().insertItems(items_of_type, row_for_type, parent_item)
+        #         if row_for_type < row:
+        #             row += len(items_of_type)
         
         # update inherited coords in inserted item subtrees
         if self.isInheritedCoordsVisible():
@@ -374,51 +435,66 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 # nothing moved
                 return False
         
-        items_to_move: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
+        src_items: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
 
         # TODO: handle name conflicts (or should this be done by the individual items?)
         # TODO: handle alignment conflicts (or at least decide how they should be handled?)
+
+        # move items one at a time (because actual insertion position may differ from requested position to maintain data type order)
+        for src_item in src_items:
+            dst_row_for_item = XarrayDataTreeItem._findInsertionIndex(dst_parent_item, src_item, dst_row)
+            success = super().moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row_for_item)
+            if success:
+                if dst_row_for_item < dst_row:
+                    dst_row += 1
+            else:
+                src_row += 1  # if move failed, skip this item in source and try to move the next item to the same destination row
         
-        # move items one data type at a time
-        for data_type in reversed(tuple(XarrayDataTreeItem.DataType)):
-            items_of_type = [item for item in items_to_move if item.dataType() == data_type]
-            if not items_of_type:
-                continue
-            src_row_for_type = items_of_type[0].row()
-            count = len(items_of_type)
-            dst_row_for_type = XarrayDataTreeModel._insertionRow(dst_parent_item, data_type, dst_row)
-            success = super().moveRows(src_parent_index, src_row_for_type, count, dst_parent_index, dst_row_for_type)
-            if success and dst_row_for_type < dst_row:
-                dst_row += count
+        # # move items one data type at a time
+        # for data_type in reversed(tuple(XarrayDataTreeItem.DataType)):
+        #     items_of_type = [item for item in src_items if item.dataType() == data_type]
+        #     if not items_of_type:
+        #         continue
+        #     src_row_for_type = items_of_type[0].row()
+        #     count = len(items_of_type)
+        #     dst_row_for_type = XarrayDataTreeModel._insertionRow(dst_parent_item, data_type, dst_row)
+        #     success = super().moveRows(src_parent_index, src_row_for_type, count, dst_parent_index, dst_row_for_type)
+        #     if success and dst_row_for_type < dst_row:
+        #         dst_row += count
         
-        # update inherited coords in moved item subtrees
-        if self.isInheritedCoordsVisible():
-            for item in items_to_move:
-                self._updateSubtreeCoordItems(item)
+        # update coords in moved item subtrees (in case inherited coords were added/removed due to move)
+        for item in src_items:
+            self._updateSubtreeCoordItems(item)
         
         return True
 
     def _visibleRowNames(self, item: XarrayDataTreeItem) -> list[str]:
         if not item.isNode():
             return []
-        node: xr.DataTree = item.data()
-        names: list[str] = []
-        for data_type in tuple(XarrayDataTreeItem.DataType):
-            if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
-                if self.isCoordsVisible():
-                    names += list(node.xindexes)
-            elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
-                if self.isCoordsVisible() and self.isInheritedCoordsVisible():
-                    names += list(node._inherited_coords_set())
-            elif data_type == XarrayDataTreeItem.DataType.COORD:
-                if self.isCoordsVisible():
-                    names += [name for name in node.coords if (name not in node.xindexes) and (name not in node._inherited_coords_set())]
-            elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
-                if self.isDataVarsVisible():
-                    names += list(node.data_vars)
-            elif data_type == XarrayDataTreeItem.DataType.NODE:
-                 names += list(node.children)
-        return names
+        return xarray_utils.ordered_node_keys(
+            item._node,
+            include_data_vars=self.isDataVarsVisible(),
+            include_coords=self.isCoordsVisible(),
+            include_inherited_coords=self.isInheritedCoordsVisible()
+        )
+        # node: xr.DataTree = item.data()
+        # names: list[str] = []
+        # for data_type in tuple(XarrayDataTreeItem.DataType):
+        #     if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
+        #         if self.isCoordsVisible():
+        #             names += list(node.xindexes)
+        #     elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
+        #         if self.isCoordsVisible() and self.isInheritedCoordsVisible():
+        #             names += list(node._inherited_coords_set())
+        #     elif data_type == XarrayDataTreeItem.DataType.COORD:
+        #         if self.isCoordsVisible():
+        #             names += [name for name in node.coords if (name not in node.xindexes) and (name not in node._inherited_coords_set())]
+        #     elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
+        #         if self.isDataVarsVisible():
+        #             names += list(node.data_vars)
+        #     elif data_type == XarrayDataTreeItem.DataType.NODE:
+        #          names += list(node.children)
+        # return names
     
     def _updateSubtreeCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
         item: XarrayDataTreeItem
@@ -452,7 +528,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if missing_coord_names:
                 row_names: list[str] = self._visibleRowNames(item)
                 for name in missing_coord_names:
-                    inherited_coord_item = XarrayDataTreeItem(node.coords[name])
+                    inherited_coord_item = XarrayDataTreeItem(node, name)
                     row: int = row_names.index(name)
                     if row == -1:
                         row = len(item.children)
@@ -460,65 +536,65 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     item.insertChild(row, inherited_coord_item)
                     self.endInsertRows()
     
-    @staticmethod
-    def _itemBlocks(items: list[XarrayDataTreeItem]) -> list[list[XarrayDataTreeItem]]:
-        """ Group items by data type, parent, and contiguous rows.
+    # @staticmethod
+    # def _itemBlocks(items: list[XarrayDataTreeItem]) -> list[list[XarrayDataTreeItem]]:
+    #     """ Group items by data type, parent, and contiguous rows.
 
-        Each block can be input to removeRows() or moveRows().
-        Blocks are ordered depth-first. Typically you should remove/move blocks in reverse depth-first order to ensure insertion row indices remain valid after handling each block.
-        """
-        # so we don't modify the input list
-        items = items.copy()
+    #     Each block can be input to removeRows() or moveRows().
+    #     Blocks are ordered depth-first. Typically you should remove/move blocks in reverse depth-first order to ensure insertion row indices remain valid after handling each block.
+    #     """
+    #     # so we don't modify the input list
+    #     items = items.copy()
 
-        # order by data type
-        data_type_order = tuple(XarrayDataTreeItem.DataType)
-        items.sort(key=lambda item: data_type_order.index(item.dataType()))
+    #     # order by data type
+    #     data_type_order = tuple(XarrayDataTreeItem.DataType)
+    #     items.sort(key=lambda item: data_type_order.index(item.dataType()))
 
-        # order items depth-first so that it is easier to group them into blocks
-        items.sort(key=lambda item: item.level())
-        items.sort(key=lambda item: item.siblingIndex())
+    #     # order items depth-first so that it is easier to group them into blocks
+    #     items.sort(key=lambda item: item.level())
+    #     items.sort(key=lambda item: item.siblingIndex())
 
-        # group items into blocks by [data type,] parent, and contiguous rows
-        blocks: list[list[XarrayDataTreeItem]] = [[items[0]]]
-        for item in items[1:]:
-            added_to_block = False
-            for block in blocks:
-                if (item.parent is block[0].parent) and (item.dataType() == block[0].dataType()):
-                    if item.siblingIndex() == block[-1].siblingIndex() + 1:
-                        block.append(item)
-                    else:
-                        blocks.append([item])
-                    added_to_block = True
-                    break
-            if not added_to_block:
-                blocks.append([item])
-        return blocks
+    #     # group items into blocks by [data type,] parent, and contiguous rows
+    #     blocks: list[list[XarrayDataTreeItem]] = [[items[0]]]
+    #     for item in items[1:]:
+    #         added_to_block = False
+    #         for block in blocks:
+    #             if (item.parent is block[0].parent) and (item.dataType() == block[0].dataType()):
+    #                 if item.siblingIndex() == block[-1].siblingIndex() + 1:
+    #                     block.append(item)
+    #                 else:
+    #                     blocks.append([item])
+    #                 added_to_block = True
+    #                 break
+    #         if not added_to_block:
+    #             blocks.append([item])
+    #     return blocks
     
-    @staticmethod
-    def _insertionRow(parent_item: XarrayDataTreeItem, data_type: XarrayDataTreeItem.DataType, row: int) -> int:
-        """ Get the row index at which to insert an item of data_type when attempting to insert at row.
+    # @staticmethod
+    # def _insertionRow(parent_item: XarrayDataTreeItem, data_type: XarrayDataTreeItem.DataType, row: int) -> int:
+    #     """ Get the row index at which to insert an item of data_type when attempting to insert at row.
         
-        This ensures that the data type order is maintained.
-        """
-        items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.dataType() == data_type]
+    #     This ensures that the data type order is maintained.
+    #     """
+    #     items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.dataType() == data_type]
 
-        if not items_of_type:
-            # insert after all items of other data types that come before data_type in the model
-            row = 0
-            for dtype in tuple(XarrayDataTreeItem.DataType):
-                if dtype == data_type:
-                    break
-                row += len([item for item in parent_item.children if item.dataType() == dtype])
-            return row
-        elif row > items_of_type[-1].row():
-            # append after last item of data_type
-            return items_of_type[-1].row() + 1
-        elif row <= items_of_type[0].row():
-            # prepend before first item of data_type
-            return items_of_type[0].row()
-        else:
-            # insert at row which falls within items of data_type
-            return row
+    #     if not items_of_type:
+    #         # insert after all items of other data types that come before data_type in the model
+    #         row = 0
+    #         for dtype in tuple(XarrayDataTreeItem.DataType):
+    #             if dtype == data_type:
+    #                 break
+    #             row += len([item for item in parent_item.children if item.dataType() == dtype])
+    #         return row
+    #     elif row > items_of_type[-1].row():
+    #         # append after last item of data_type
+    #         return items_of_type[-1].row() + 1
+    #     elif row <= items_of_type[0].row():
+    #         # prepend before first item of data_type
+    #         return items_of_type[0].row()
+    #     else:
+    #         # insert at row which falls within items of data_type
+    #         return row
     
     # @staticmethod
     # def _handleInsertionConflicts(name_item_map: dict[str, XarrayDataTreeItem], parent_item: XarrayDataTreeItem, orphan_only: bool = False) -> dict[str, XarrayDataTreeItem]:
@@ -703,6 +779,7 @@ def test_model():
     dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
     dt['child/grandchild/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['rasm'] = xr.tutorial.load_dataset('rasm')
+    dt['rasm/rasm'] = xr.tutorial.load_dataset('rasm')
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     # print(dt)
 

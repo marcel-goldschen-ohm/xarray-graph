@@ -37,6 +37,8 @@ class IPythonConsole(RichJupyterWidget):
             shortcutContext=Qt.ShortcutContext.ApplicationShortcut,
             triggered=lambda checked: self._show_and_raise()
         )
+
+        self._message_queue: list[str] = []
     
     def start(self) -> None:
         manager = QtInProcessKernelManager()
@@ -67,13 +69,20 @@ class IPythonConsole(RichJupyterWidget):
         if dedent:
             import textwrap
             message = textwrap.dedent(message).strip()
-        self._append_plain_text(message, before_prompt=True)
+        if self.isVisible():
+            self._append_plain_text(message, before_prompt=True)
+        else:
+            # will be displayed the next time _show_and_raise() is called
+            self._message_queue.append(message)
     
     def _show_and_raise(self):
         """ Show the console and raise it to the front.
         """
         self.show()
         self.raise_()
+        while self._message_queue:
+            msg = self._message_queue.pop(0)
+            self.printMessage(msg)
     
     
 def test_live():

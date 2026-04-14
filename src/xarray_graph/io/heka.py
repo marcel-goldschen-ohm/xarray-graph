@@ -1,11 +1,7 @@
 from pathlib import Path
 import numpy as np
 import xarray as xr
-import warnings
-try:
-    from xarray_graph.io import heka_reader
-except ImportError:
-    warnings.warn("HEKA file i/o requires heka_reader")
+from xarray_graph.io import heka_reader
 
 
 def read_heka(filepath: Path | str) -> xr.DataTree:
@@ -68,7 +64,7 @@ def read_heka(filepath: Path | str) -> xr.DataTree:
                 sweeps = sweeps[0]
             else:
                 try:
-                    sweeps = xr.concat(sweeps, 'sweep')
+                    sweeps = xr.concat(sweeps, 'sweep', join='outer')
                     sweeps = sweeps.assign_coords(sweep=xr.DataArray(
                         data=np.arange(1, sweeps.sizes['sweep'] + 1),
                         dims=['sweep'],
@@ -83,7 +79,7 @@ def read_heka(filepath: Path | str) -> xr.DataTree:
             series = series[0]
         else:
             try:
-                series = xr.concat(series, 'series')
+                series = xr.concat(series, 'series', join='outer')
                 series = series.assign_coords(series=xr.DataArray(
                     data=np.arange(1, series.sizes['series'] + 1),
                     dims=['series'],
@@ -118,6 +114,5 @@ def read_heka(filepath: Path | str) -> xr.DataTree:
 
 
 if __name__ == '__main__':
-    dt = read_heka('./examples/heka.dat')
-
+    dt = read_heka('examples/HEKA.dat')
     print(dt)
