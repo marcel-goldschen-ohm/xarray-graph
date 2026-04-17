@@ -222,7 +222,7 @@ def test_live():
     app = QApplication()
 
     root = KeyValueTreeItem(None, data)
-    root.updateSubtree()
+    root.rebuildSubtree()
 
     model = KeyValueTreeModel()
     model.setTypesColumnVisible(True)
@@ -240,7 +240,7 @@ def test_live():
     data2 = deepcopy(data)
 
     root2 = KeyValueTreeItem(None, data2)
-    root2.updateSubtree()
+    root2.rebuildSubtree()
 
     model2 = KeyValueTreeModel()
     model2.setTypesColumnVisible(True)

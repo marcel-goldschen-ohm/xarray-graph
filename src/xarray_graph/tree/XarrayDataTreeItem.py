@@ -83,7 +83,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         elif self.isNode():
             return XarrayDataTreeItem.DataType.NODE
     
-    def updateSubtree(self, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> None:
+    def rebuildSubtree(self, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> None:
         if not self.isNode():
             return
         self.children = []
@@ -95,31 +95,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
                 XarrayDataTreeItem(self._node, name, parent=self)
         for child_node in self._node.children.values():
             child_item = XarrayDataTreeItem(child_node, parent=self)
-            child_item.updateSubtree(include_data_vars, include_coords, include_inherited_coords)
-        
-        # for data_type in tuple(XarrayDataTreeItem.DataType):
-        #      if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
-        #         if include_coords:
-        #             for name, coord in self._node.xindexes.items():
-        #                 if name not in self._node._inherited_coords_set():
-        #                     XarrayDataTreeItem(self._node, name, parent=self)
-        #      elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
-        #         if include_coords and include_inherited_coords:
-        #             for name in self._node._inherited_coords_set():
-        #                 XarrayDataTreeItem(self._node, name, parent=self)
-        #      elif data_type == XarrayDataTreeItem.DataType.COORD:
-        #         if include_coords:
-        #             for name, coord in self._node.coords.items():
-        #                 if name not in self._node.xindexes and name not in self._node._inherited_coords_set():
-        #                     XarrayDataTreeItem(self._node, name, parent=self)
-        #      elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
-        #         if include_data_vars:
-        #             for name in self._node.data_vars:
-        #                 XarrayDataTreeItem(self._node, name, parent=self)
-        #      elif data_type == XarrayDataTreeItem.DataType.NODE:
-        #         for name, child_node in self._node.children.items():
-        #             child_item = XarrayDataTreeItem(child_node, parent=self)
-        #             child_item.updateSubtree(include_data_vars, include_coords, include_inherited_coords)
+            child_item.rebuildSubtree(include_data_vars, include_coords, include_inherited_coords)
     
     def name(self) -> str:
         if self._varname:
@@ -321,7 +297,7 @@ def test_tree():
     # return
 
     root = XarrayDataTreeItem(dt)
-    root.updateSubtree()
+    root.rebuildSubtree()
 
     print('-'*82)
     print('-'*82)

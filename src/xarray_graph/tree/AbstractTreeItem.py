@@ -102,7 +102,7 @@ class AbstractTreeItem():
     
     # Override in derived class with data-specific logic.
     
-    def updateSubtree(self) -> None:
+    def rebuildSubtree(self) -> None:
         """ Recursively build item subtree based on this item's data.
         """
         raise NotImplementedError('Implement in derived class with data-specific logic.')

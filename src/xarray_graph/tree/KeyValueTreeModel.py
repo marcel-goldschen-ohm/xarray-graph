@@ -43,7 +43,7 @@ class KeyValueTreeModel(AbstractTreeModel):
         """ Set the root key:value map.
         """
         new_root_item = KeyValueTreeItem(None, data)
-        new_root_item.updateSubtree()
+        new_root_item.rebuildSubtree()
         self.setRootItem(new_root_item)
     
     def isTypesColumnVisible(self) -> bool:

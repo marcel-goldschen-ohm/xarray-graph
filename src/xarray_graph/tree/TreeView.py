@@ -492,7 +492,7 @@ class TreeView(QTreeView):
     def dropEvent(self, event: QDropEvent) -> None:
         mime_data: TreeMimeData = event.mimeData()
         # print('dropEvent', mime_data.formats())
-        if not isinstance(mime_data, TreeMimeData) and not issubclass(mime_data, TreeMimeData):
+        if not isinstance(mime_data, TreeMimeData):
             event.ignore()
             return
 
@@ -532,6 +532,17 @@ class TreeView(QTreeView):
         # only update wether items are expanded, selection should be handled already in drag-n-drop
         dragged_items: list[AbstractTreeItem] = getattr(mime_data, '_dragged_items', [])
         for item in dragged_items:
+            # # skip if this is a stale item reference (should NOT happen)
+            # current = item
+            # is_stale = False
+            # while current.parent is not None:
+            #     if current not in current.parent.children:
+            #         is_stale = True
+            #         break
+            #     current = current.parent
+            # if is_stale:
+            #     continue
+
             index: QModelIndex = dst_model.indexFromItem(item)
             if not index.isValid():
                 continue

@@ -30,7 +30,7 @@ class KeyValueTreeItem(AbstractTreeItem):
     def isContainer(self) -> bool:
         return isinstance(self.value(), (dict, list))
     
-    def updateSubtree(self) -> None:
+    def rebuildSubtree(self) -> None:
         """ Recursively build subtree if value is itself a container with key:value access.
         """
         self.children = []
@@ -38,11 +38,11 @@ class KeyValueTreeItem(AbstractTreeItem):
         if isinstance(value, dict):
             for key, val in value.items():
                 child = KeyValueTreeItem(key, val, parent=self)
-                child.updateSubtree()
+                child.rebuildSubtree()
         elif isinstance(value, list):
             for key, val in enumerate(value):
                 child = KeyValueTreeItem(key, val, parent=self)
-                child.updateSubtree()
+                child.rebuildSubtree()
     
     def key(self):
         # if this item is in a list, return the item's sibling index
@@ -71,7 +71,7 @@ class KeyValueTreeItem(AbstractTreeItem):
             parent_map: dict | list = parent.value()
             parent_map[self.key()] = value
         self._value = value
-        self.updateSubtree()
+        self.rebuildSubtree()
     
     def name(self) -> str:
         key = self.key()
@@ -112,7 +112,7 @@ class KeyValueTreeItem(AbstractTreeItem):
         """ Returns an orphaned copy of this item.
         """
         item_copy = KeyValueTreeItem(self.key(), deepcopy(self.value()))
-        item_copy.updateSubtree()
+        item_copy.rebuildSubtree()
         return item_copy
     
 
@@ -135,7 +135,7 @@ def test_tree():
     }
 
     root = KeyValueTreeItem(None, tree)
-    root.updateSubtree()
+    root.rebuildSubtree()
     print('-'*82)
     print(root)
 

@@ -2,14 +2,9 @@
 
 TODO:
 - moveRows: merge items?
-- should we ask before removing inherited coords in descendents when moving a coord?
-- enforce coord order at all times? note: this currently happens when refreshing the tree, but not otherwise.
 """
 
 from __future__ import annotations
-from collections.abc import Iterator
-from enum import Enum
-from copy import copy
 import xarray as xr
 from qtpy.QtCore import *
 from qtpy.QtGui import *
@@ -17,7 +12,6 @@ from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import XarrayDataTreeItem, AbstractTreeModel
-import cmap
 
 
 class XarrayDataTreeModel(AbstractTreeModel):
@@ -98,7 +92,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         self._theme = name
 
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -130,11 +123,11 @@ class XarrayDataTreeModel(AbstractTreeModel):
         """ Set the datatree.
         """
         new_root_item = XarrayDataTreeItem(data)
-        self._updateItemSubtree(new_root_item)
+        self._rebuildItemSubtree(new_root_item)
         self.setRootItem(new_root_item)
     
-    def _updateItemSubtree(self, item: XarrayDataTreeItem) -> None:
-        item.updateSubtree(
+    def _rebuildItemSubtree(self, item: XarrayDataTreeItem) -> None:
+        item.rebuildSubtree(
             include_data_vars=self.isDataVarsVisible(),
             include_coords=self.isCoordsVisible(),
             include_inherited_coords=self.isInheritedCoordsVisible()
@@ -144,7 +137,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         """ Reset the model.
         """
         self.beginResetModel()
-        self._updateItemSubtree(self._root_item)
+        self._rebuildItemSubtree(self._root_item)
         self.endResetModel()
     
     def isDataVarsVisible(self) -> bool:
@@ -155,7 +148,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return
         self.beginResetModel()
         self._is_data_vars_visible = visible
-        self._updateItemSubtree(self._root_item)
+        self._rebuildItemSubtree(self._root_item)
         self.endResetModel()
     
     def isCoordsVisible(self) -> bool:
@@ -166,7 +159,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return
         self.beginResetModel()
         self._is_coords_visible = visible
-        self._updateItemSubtree(self._root_item)
+        self._rebuildItemSubtree(self._root_item)
         self.endResetModel()
     
     def isInheritedCoordsVisible(self) -> bool:
@@ -177,7 +170,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return
         self.beginResetModel()
         self._is_inherited_coords_visible = visible
-        self._updateItemSubtree(self._root_item)
+        self._rebuildItemSubtree(self._root_item)
         self.endResetModel()
     
     def isDetailsColumnVisible(self) -> bool:
@@ -378,12 +371,12 @@ class XarrayDataTreeModel(AbstractTreeModel):
         success = super().removeRows(row, count, parent_index)
         if self.isInheritedCoordsVisible() and success and is_coord_removed:
             # clean up inherited coords in parent's subtree
-            self._updateSubtreeCoordItems(parent_item)
+            self._updateSubtreeItems(parent_item)
         return success
     
-    def insertItems(self, items: list[XarrayDataTreeItem], row: int, parent_item: XarrayDataTreeItem) -> None:
+    def insertItems(self, items: list[XarrayDataTreeItem], row: int, parent_item: XarrayDataTreeItem) -> bool:
         if not items:
-            return
+            return False
 
         if not parent_item.isNode():
             # raise ValueError('Can only insert items into nodes.')
@@ -392,30 +385,93 @@ class XarrayDataTreeModel(AbstractTreeModel):
             text = f'Cannot insert items in non-node "{parent_item.path()}".'
             QMessageBox.warning(parent_widget, title, text)
             return False
-        
-        # TODO: handle name conflicts (or should this be done by the individual items?)
-        # TODO: handle alignment conflicts (or at least decide how they should be handled?)
 
         # insert items one at a time (because actual insertion position may differ from requested position to maintain data type order)
+        inserted_items: list[XarrayDataTreeItem] = []
+        parent_keys: list[str] = list(parent_item._node.keys())
+        skip_all_conflicts = False
+        name_conflict_default_action = None
         for item in items:
+            # check conflicts
+            conflict = None
+            if item.parent is not None:
+                conflict = f'Cannot insert non-orphan "{item.path()}".'
+            elif parent_item.hasAncestor(item):
+                conflict = f'Cannot insert "{item.path()}" into its own subtree at "{parent_item.path()}".'
+            elif parent_item._node.has_data and item._node.has_data:
+                # check alignment conflict
+                try:
+                    data = item.data()
+                    if isinstance(data, xr.DataTree):
+                        data = data.dataset
+                    xr.align(parent_item._node.dataset, data, join='exact')
+                except:
+                    conflict = f'"{item.path()}" is not aligned with "{parent_item.path()}".'
+            if conflict:
+                if skip_all_conflicts:
+                    continue
+                parent_widget: QWidget = QApplication.focusWidget()
+                title = 'Conflict'
+                text = conflict
+                dlg = ConflictDialog(parent_widget, title, text)
+                if dlg.exec() == QDialog.DialogCode.Rejected:
+                    # abort
+                    break
+                # skip
+                skip_all_conflicts = dlg.skipAll()
+                continue
+
+            # check name conflict
+            name_conflict = None
+            item_name = item.name()
+            if '/' in item_name:
+                name_conflict = f'"{item_name}" is not a valid DataTree name, which cannot contain "/".'
+            elif item_name in parent_keys:
+                name_conflict = f'"{item_name}" already exists in "{parent_item.path()}".'
+            if name_conflict:
+                action = name_conflict_default_action
+                if action is None:
+                    parent_widget: QWidget = QApplication.focusWidget()
+                    title = 'Name Conflict'
+                    text = name_conflict
+                    dlg = NameConflictDialog(parent_widget, title, text)
+                    dlg._merge_button.setEnabled(False) # TODO
+                    if dlg.exec() == QDialog.DialogCode.Rejected:
+                        # abort
+                        break
+                    action = dlg.selectedAction()
+                    if dlg.applyToAll():
+                        name_conflict_default_action = action
+                if action == 'Overwrite':
+                    # nothing to do here (this is the default)
+                    pass
+                elif action == 'Merge':
+                    # TODO
+                    pass
+                elif action == 'Keep Both':
+                    new_name = xarray_utils.unique_name(item_name, parent_keys)
+                    item.setName(new_name)
+                elif action == 'Skip':
+                    continue
+
+            # insert item
             row_for_item = XarrayDataTreeItem._findInsertionIndex(parent_item, item, row)
-            super().insertItems([item], row_for_item, parent_item)
-            if row_for_item <= row:
-                row += 1
+            success = super().insertItems([item], row_for_item, parent_item)
+            if success:
+                inserted_items.append(item)
+                parent_keys.append(item.name())
+                if row_for_item <= row:
+                    row += 1
+            else:
+                # TODO: how should we handle failed insertions?
+                pass
         
-        # # insert items one data type at a time
-        # for data_type in tuple(XarrayDataTreeItem.DataType):
-        #     items_of_type: list[XarrayDataTreeItem] = [item for item in items if item.dataType() == data_type]
-        #     if items_of_type:
-        #         row_for_type = XarrayDataTreeModel._insertionRow(parent_item, data_type, row)
-        #         super().insertItems(items_of_type, row_for_type, parent_item)
-        #         if row_for_type < row:
-        #             row += len(items_of_type)
+        # update inserted item subtrees (e.g., for inherited coords that may need to be added/removed in subtree after insertion)
+        for item in inserted_items:
+            self._updateSubtreeItems(item)
         
-        # update inherited coords in inserted item subtrees
-        if self.isInheritedCoordsVisible():
-            for item in items:
-                self._updateSubtreeCoordItems(item)
+        # !! does not check success of each insertItems() call
+        return len(inserted_items) > 0
     
     def moveRows(self, src_parent_index: QModelIndex, src_row: int, count: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
         if count <= 0:
@@ -437,35 +493,92 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         src_items: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
 
-        # TODO: handle name conflicts (or should this be done by the individual items?)
-        # TODO: handle alignment conflicts (or at least decide how they should be handled?)
-
         # move items one at a time (because actual insertion position may differ from requested position to maintain data type order)
+        moved_items: list[XarrayDataTreeItem] = []
+        src_parent_keys: list[str] = list(src_parent_item._node.keys())
+        dst_parent_keys: list[str] = list(dst_parent_item._node.keys())
+        skip_all_conflicts = False
+        name_conflict_default_action = None
         for src_item in src_items:
+            # check conflicts
+            conflict = None
+            if dst_parent_item.hasAncestor(src_item):
+                conflict = f'Cannot move "{src_item.path()}" to its own descendent "{dst_parent_item.path()}".'
+            elif dst_parent_item._node.has_data and src_item._node.has_data:
+                # check alignment conflict
+                try:
+                    src_data = src_item.data()
+                    if isinstance(src_data, xr.DataTree):
+                        src_data = src_data.dataset
+                    xr.align(dst_parent_item._node.dataset, src_data, join='exact')
+                except:
+                    conflict = f'"{src_item.path()}" is not aligned with "{dst_parent_item.path()}".'
+            if conflict:
+                if skip_all_conflicts:
+                    continue
+                parent_widget: QWidget = QApplication.focusWidget()
+                title = 'Conflict'
+                text = conflict
+                dlg = ConflictDialog(parent_widget, title, text)
+                if dlg.exec() == QDialog.DialogCode.Rejected:
+                    # abort
+                    break
+                # skip
+                skip_all_conflicts = dlg.skipAll()
+                continue
+
+            # check name conflict
+            name_conflict = None
+            src_item_name = src_item.name()
+            if '/' in src_item_name:
+                name_conflict = f'"{src_item_name}" is not a valid DataTree name, which cannot contain "/".'
+            elif src_item_name in dst_parent_keys:
+                name_conflict = f'"{src_item_name}" already exists in "{dst_parent_item.path()}".'
+            if name_conflict:
+                action = name_conflict_default_action
+                if action is None:
+                    parent_widget: QWidget = QApplication.focusWidget()
+                    title = 'Name Conflict'
+                    text = name_conflict
+                    dlg = NameConflictDialog(parent_widget, title, text)
+                    dlg._merge_button.setEnabled(False) # TODO
+                    if dlg.exec() == QDialog.DialogCode.Rejected:
+                        # abort
+                        break
+                    action = dlg.selectedAction()
+                    if dlg.applyToAll():
+                        name_conflict_default_action = action
+                if action == 'Overwrite':
+                    # nothing to do here (this is the default)
+                    pass
+                elif action == 'Merge':
+                    # TODO
+                    pass
+                elif action == 'Keep Both':
+                    # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
+                    new_name = xarray_utils.unique_name(src_item_name, dst_parent_keys + src_parent_keys)
+                    src_item.setName(new_name)
+                elif action == 'Skip':
+                    continue
+
+            # move src_item
             dst_row_for_item = XarrayDataTreeItem._findInsertionIndex(dst_parent_item, src_item, dst_row)
-            success = super().moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row_for_item)
+            # print(f'moving {src_item.path()} from {src_parent_item.path()} to {dst_parent_item.path()} at row {dst_row} -> {dst_row_for_item}')
+            success = super().moveRows(src_parent_index, src_item.row(), 1, dst_parent_index, dst_row_for_item)
             if success:
+                moved_items.append(src_item)
+                dst_parent_keys.append(src_item.name())
                 if dst_row_for_item < dst_row:
                     dst_row += 1
             else:
-                src_row += 1  # if move failed, skip this item in source and try to move the next item to the same destination row
+                # TODO: how should we handle failed moves?
+                pass
         
-        # # move items one data type at a time
-        # for data_type in reversed(tuple(XarrayDataTreeItem.DataType)):
-        #     items_of_type = [item for item in src_items if item.dataType() == data_type]
-        #     if not items_of_type:
-        #         continue
-        #     src_row_for_type = items_of_type[0].row()
-        #     count = len(items_of_type)
-        #     dst_row_for_type = XarrayDataTreeModel._insertionRow(dst_parent_item, data_type, dst_row)
-        #     success = super().moveRows(src_parent_index, src_row_for_type, count, dst_parent_index, dst_row_for_type)
-        #     if success and dst_row_for_type < dst_row:
-        #         dst_row += count
+        # update moved item subtrees (e.g., for inherited coords that may need to be added/removed in subtree after move)
+        for item in moved_items:
+            self._updateSubtreeItems(item)
         
-        # update coords in moved item subtrees (in case inherited coords were added/removed due to move)
-        for item in src_items:
-            self._updateSubtreeCoordItems(item)
-        
+        # !! does not check success of each insertItems() call
         return True
 
     def _visibleRowNames(self, item: XarrayDataTreeItem) -> list[str]:
@@ -496,7 +609,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         #          names += list(node.children)
         # return names
     
-    def _updateSubtreeCoordItems(self, parent_item: XarrayDataTreeItem) -> None:
+    def _updateSubtreeItems(self, parent_item: XarrayDataTreeItem) -> None:
         item: XarrayDataTreeItem
         for item in parent_item.subtree_depth_first():
             if not item.isNode():
@@ -569,202 +682,96 @@ class XarrayDataTreeModel(AbstractTreeModel):
     #         if not added_to_block:
     #             blocks.append([item])
     #     return blocks
+
+
+class ConflictDialog(QDialog):
+
+    def __init__(self, parent: QWidget, title: str, text: str):
+        super().__init__(parent, modal=True)
+        
+        self.setWindowTitle(title)
+        vbox = QVBoxLayout(self)
+
+        self._text_field = QTextEdit(readOnly=True, plainText=text)
+        vbox.addWidget(self._text_field)
+        vbox.addSpacing(10)
+
+        self._skip_button = QRadioButton('Skip')
+        self._skip_all_button = QRadioButton('Skip All')
+        self._action_button_group = QButtonGroup()
+        self._action_button_group.addButton(self._skip_button)
+        self._action_button_group.addButton(self._skip_all_button)
+        self._skip_button.setChecked(True)
+        vbox.addWidget(self._skip_button)
+        vbox.addWidget(self._skip_all_button)
+        vbox.addSpacing(10)
+
+        buttons = QDialogButtonBox()
+        self._continue_button: QPushButton = buttons.addButton('Skip & Continue', QDialogButtonBox.ButtonRole.AcceptRole)
+        self._cancel_button: QPushButton = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        self._continue_button.setAutoDefault(False)
+        self._cancel_button.setDefault(True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        vbox.addWidget(buttons)
     
-    # @staticmethod
-    # def _insertionRow(parent_item: XarrayDataTreeItem, data_type: XarrayDataTreeItem.DataType, row: int) -> int:
-    #     """ Get the row index at which to insert an item of data_type when attempting to insert at row.
-        
-    #     This ensures that the data type order is maintained.
-    #     """
-    #     items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.dataType() == data_type]
+    def skipAll(self) -> bool:
+        return self._skip_all_button.isChecked()
 
-    #     if not items_of_type:
-    #         # insert after all items of other data types that come before data_type in the model
-    #         row = 0
-    #         for dtype in tuple(XarrayDataTreeItem.DataType):
-    #             if dtype == data_type:
-    #                 break
-    #             row += len([item for item in parent_item.children if item.dataType() == dtype])
-    #         return row
-    #     elif row > items_of_type[-1].row():
-    #         # append after last item of data_type
-    #         return items_of_type[-1].row() + 1
-    #     elif row <= items_of_type[0].row():
-    #         # prepend before first item of data_type
-    #         return items_of_type[0].row()
-    #     else:
-    #         # insert at row which falls within items of data_type
-    #         return row
+
+class NameConflictDialog(QDialog):
+
+    def __init__(self, parent: QWidget, title: str, text: str):
+        super().__init__(parent, modal=True)
+        
+        self.setWindowTitle(title)
+        vbox = QVBoxLayout(self)
+
+        self._text_field = QTextEdit(readOnly=True, plainText=text)
+        vbox.addWidget(self._text_field)
+        vbox.addSpacing(10)
+
+        self._overwrite_button = QRadioButton('Overwrite')
+        self._merge_button = QRadioButton('Merge')
+        self._keep_both_button = QRadioButton('Keep Both')
+        self._skip_button = QRadioButton('Skip')
+        self._action_button_group = QButtonGroup()
+        self._action_button_group.addButton(self._overwrite_button)
+        self._action_button_group.addButton(self._merge_button)
+        self._action_button_group.addButton(self._keep_both_button)
+        self._action_button_group.addButton(self._skip_button)
+        vbox.addWidget(self._overwrite_button)
+        vbox.addWidget(self._merge_button)
+        vbox.addWidget(self._keep_both_button)
+        vbox.addWidget(self._skip_button)
+        vbox.addSpacing(10)
+
+        self._apply_to_all_checkbox = QCheckBox('Apply to all')
+        vbox.addWidget(self._apply_to_all_checkbox)
+
+        buttons = QDialogButtonBox()
+        self._continue_button: QPushButton = buttons.addButton('Continue', QDialogButtonBox.ButtonRole.AcceptRole)
+        self._cancel_button: QPushButton = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        self._continue_button.setAutoDefault(False)
+        self._cancel_button.setDefault(True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        vbox.addWidget(buttons)
+
+        # continuing is only valid if an action is selected
+        self._continue_button.setEnabled(self._action_button_group.checkedButton() is not None)
+        for button in self._action_button_group.buttons():
+            button.pressed.connect(lambda: self._continue_button.setEnabled(True))
     
-    # @staticmethod
-    # def _handleInsertionConflicts(name_item_map: dict[str, XarrayDataTreeItem], parent_item: XarrayDataTreeItem, orphan_only: bool = False) -> dict[str, XarrayDataTreeItem]:
-    #     if not parent_item.is_group:
-    #         # cannot insert items into non-group item
-    #         return {}
-        
-    #     # so we don't alter the input map
-    #     name_item_map = name_item_map.copy()
-
-    #     parent_group: xr.DataTree = parent_item.data
-    #     parent_keys: list[str] = list(parent_group.keys())
-
-    #     # conflicts[name] = conflict message
-    #     # we'll handle name conflicts separately from all other conflicts
-    #     conflicts: dict[str, str] = {}
-    #     name_conflicts: dict[str, str] = {}
-        
-    #     name: str
-    #     item: XarrayDataTreeItem
-    #     for name, item in name_item_map.items():
-    #         # only allow insertion of orphaned items
-    #         if orphan_only and item.parent is not None:
-    #             conflicts[name] = f'Cannot insert non-orphan "{item.path}".'
-    #             continue
-
-    #         # cannot insert item into one of its descendents
-    #         if parent_item.hasAncestor(item):
-    #             conflicts[name] = f'Cannot insert "{item.path}" into its own subtree at "{parent_item.path}".'
-    #             continue
-
-    #         # inserted objects must align with parent group
-    #         try:
-    #             if isinstance(item.data, xr.DataTree):
-    #                 data = item.data.dataset
-    #             elif isinstance(item.data, xr.DataArray):
-    #                 data = item.data
-    #             # dataset views include inherited coords
-    #             xr.align(parent_group.dataset, data, join='exact')
-    #         except:
-    #             conflicts[name] = f'"{item.path}" is not aligned with "{parent_item.path}".'
-    #             continue
-            
-    #         # inserted item names must be valid new keys in parent
-    #         if '/' in name:
-    #             conflicts[name] = f'"{name}" is not a valid DataTree name, which cannot contain "/".'
-    #             continue
-    #         if name in parent_keys:
-    #             name_conflicts[name] = f'"{name}" already exists in "{parent_item.path}".'
-    #             continue
-
-    #         parent_keys.append(name)
-        
-    #     # either abort or skip these conflicts
-    #     if conflicts:
-    #         parent_widget: QWidget = QApplication.focusWidget()
-    #         title = 'Conflict'
-    #         text = '\n'.join(list(conflicts.values()))
-    #         dlg = ConflictDialog(parent_widget, title, text)
-    #         if dlg.exec() == QDialog.DialogCode.Rejected:
-    #             # abort
-    #             return {}
-    #         for name in conflicts:
-    #             # skip conflicting items
-    #             del name_item_map[name]
-        
-    #     # either abort, skip, overwrite, merge, or rename these conflicts
-    #     if name_conflicts:
-    #         parent_widget: QWidget = QApplication.focusWidget()
-    #         title = 'Name Conflict'
-    #         text = '\n'.join(list(name_conflicts.values()))
-    #         dlg = NameConflictDialog(parent_widget, title, text)
-    #         dlg._merge_button.setEnabled(False) # TODO
-    #         if dlg.exec() == QDialog.DialogCode.Rejected:
-    #             # abort
-    #             return {}
-    #         action = dlg._action_button_group.checkedButton().text().lower()
-    #         if action == 'overwrite':
-    #             # nothing to do here (this is the default)
-    #             pass
-    #         elif action == 'merge':
-    #             # TODO
-    #             pass
-    #         elif action == 'keep both':
-    #             for existing_name in name_conflicts:
-    #                 new_name: str = xarray_utils.unique_name(existing_name, parent_keys)
-    #                 name_item_map = {new_name if name == existing_name else name: item for name, item in name_item_map.items()}
-    #                 parent_keys.append(new_name)
-    #         elif action == 'skip':
-    #             for name in name_conflicts:
-    #                 del name_item_map[name]
-        
-    #     return name_item_map
-
-
-# class ConflictDialog(QDialog):
-
-#     def __init__(self, parent: QWidget, title: str, text: str):
-#         super().__init__(parent, modal=True)
-        
-#         self.setWindowTitle(title)
-#         vbox = QVBoxLayout(self)
-
-#         self._text_field = QTextEdit(readOnly=True, plainText=text)
-#         vbox.addWidget(self._text_field)
-#         vbox.addSpacing(10)
-
-#         # self._skip_button = QRadioButton('Skip')
-#         # self._skip_all_button = QRadioButton('Skip All')
-#         # self._action_button_group = QButtonGroup()
-#         # self._action_button_group.addButton(self._skip_button)
-#         # self._action_button_group.addButton(self._skip_all_button)
-#         # self._skip_button.setChecked(True)
-#         # vbox.addWidget(self._skip_button)
-#         # vbox.addWidget(self._skip_all_button)
-#         # vbox.addSpacing(10)
-
-#         buttons = QDialogButtonBox()
-#         self._continue_button: QPushButton = buttons.addButton('Skip & Continue', QDialogButtonBox.ButtonRole.AcceptRole)
-#         self._cancel_button: QPushButton = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-#         self._continue_button.setAutoDefault(False)
-#         self._cancel_button.setDefault(True)
-#         buttons.accepted.connect(self.accept)
-#         buttons.rejected.connect(self.reject)
-#         vbox.addWidget(buttons)
-
-
-# class NameConflictDialog(QDialog):
-
-#     def __init__(self, parent: QWidget, title: str, text: str):
-#         super().__init__(parent, modal=True)
-        
-#         self.setWindowTitle(title)
-#         vbox = QVBoxLayout(self)
-
-#         self._text_field = QTextEdit(readOnly=True, plainText=text)
-#         vbox.addWidget(self._text_field)
-#         vbox.addSpacing(10)
-
-#         self._overwrite_button = QRadioButton('Overwrite')
-#         self._merge_button = QRadioButton('Merge')
-#         self._keep_both_button = QRadioButton('Keep Both')
-#         self._skip_button = QRadioButton('Skip')
-#         self._action_button_group = QButtonGroup()
-#         self._action_button_group.addButton(self._overwrite_button)
-#         self._action_button_group.addButton(self._merge_button)
-#         self._action_button_group.addButton(self._keep_both_button)
-#         self._action_button_group.addButton(self._skip_button)
-#         vbox.addWidget(self._overwrite_button)
-#         vbox.addWidget(self._merge_button)
-#         vbox.addWidget(self._keep_both_button)
-#         vbox.addWidget(self._skip_button)
-#         vbox.addSpacing(10)
-
-#         self._apply_to_all_checkbox = QCheckBox('Apply to all')
-#         vbox.addWidget(self._apply_to_all_checkbox)
-
-#         buttons = QDialogButtonBox()
-#         self._continue_button: QPushButton = buttons.addButton('Continue', QDialogButtonBox.ButtonRole.AcceptRole)
-#         self._cancel_button: QPushButton = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-#         self._continue_button.setAutoDefault(False)
-#         self._cancel_button.setDefault(True)
-#         buttons.accepted.connect(self.accept)
-#         buttons.rejected.connect(self.reject)
-#         vbox.addWidget(buttons)
-
-#         # continuing is only valid if an action is selected
-#         self._continue_button.setEnabled(self._action_button_group.checkedButton() is not None)
-#         for button in self._action_button_group.buttons():
-#             button.pressed.connect(lambda: self._continue_button.setEnabled(True))
+    def selectedAction(self) -> str:
+        """ Return the selected action button's text.
+        """
+        button: QRadioButton = self._action_button_group.checkedButton()
+        if button is not None:
+            return button.text()
+    
+    def applyToAll(self) -> bool:
+        return self._apply_to_all_checkbox.isChecked()
 
 
 def test_model():

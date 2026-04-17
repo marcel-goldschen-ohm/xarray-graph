@@ -211,19 +211,18 @@ class AbstractTreeModel(QAbstractItemModel):
         self.endRemoveRows()
         return True
     
-    def removeItems(self, items: list[AbstractTreeItem]) -> None:
+    def removeItems(self, items: list[AbstractTreeItem]) -> bool:
         if not items:
-            return
+            return False
         
-        # discard items that are descendents of other items to be removed
+        # discard items that are descendents of other items to be removed (they will be removed when their ancestor is removed)
         items = self._branchRootItemsOnly(items)
 
         if len(items) == 1:
             item: AbstractTreeItem = items[0]
             parent_index: QModelIndex = self.indexFromItem(item.parent)
             row: int = item.siblingIndex()
-            self.removeRows(row, 1, parent_index)
-            return
+            return self.removeRows(row, 1, parent_index)
         
         # group items into blocks by parent and contiguous rows
         item_blocks: list[list[AbstractTreeItem]] = self._itemBlocks(items)
@@ -235,23 +234,45 @@ class AbstractTreeModel(QAbstractItemModel):
             count: int = len(block)
             parent_index: QModelIndex = self.indexFromItem(block[0].parent)
             self.removeRows(row, count, parent_index)
+        
+        # !! does not check success of each removeRows() call
+        return True
     
     def insertRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         raise NotImplementedError('See insertItems() instead.')
     
-    def insertItems(self, items: list[AbstractTreeItem], row: int, parent_item: AbstractTreeItem) -> None:
+    def insertItems(self, items: list[AbstractTreeItem], row: int, parent_item: AbstractTreeItem) -> bool:
         if not items:
-            return
+            return False
         parent_index: QModelIndex = self.indexFromItem(parent_item)
         num_rows: int = self.rowCount(parent_index)
         if (row < 0) or (row > num_rows):
-            return
+            return False
+        
+        # only allow inserting orphaned items
+        for item in items:
+            if item.parent is not None:
+                parent_widget: QWidget = QApplication.focusWidget()
+                title = 'Invalid Insert'
+                text = f'Cannot insert item "{item.path()}" because it already has a parent. Only orphaned items can be inserted. See moveItems() or transferItems() to move items that already have a parent.'
+                QMessageBox.warning(parent_widget, title, text)
+                return False
+
+        # # cannot insert item into one of its own descendents
+        # for item in items:
+        #     if parent_item.hasAncestor(item):
+        #         parent_widget: QWidget = QApplication.focusWidget()
+        #         title = 'Invalid Insert'
+        #         text = f'Cannot insert item "{item.path()}" into its own descendent "{parent_item.path()}".'
+        #         QMessageBox.warning(parent_widget, title, text)
+        #         return False
 
         count: int = len(items)
         self.beginInsertRows(parent_index, row, row + count - 1)
         for item in reversed(items):
             parent_item.insertChild(row, item)
         self.endInsertRows()
+        return True
     
     def moveRows(self, src_parent_index: QModelIndex, src_row: int, count: int, dst_parent_index: QModelIndex, dst_row: int) -> bool:
         if count <= 0:
@@ -293,9 +314,12 @@ class AbstractTreeModel(QAbstractItemModel):
         
         return True
     
-    def moveItems(self, src_items: list[AbstractTreeItem], dst_parent_item: AbstractTreeItem, dst_row: int) -> None:
+    def moveItems(self, src_items: list[AbstractTreeItem], dst_parent_item: AbstractTreeItem, dst_row: int) -> bool:
         if not src_items or not dst_parent_item:
-            return
+            return False
+        
+        # only move branch root items (descendents are moved with their ancestors)
+        src_items = self._branchRootItemsOnly(src_items)
         
         dst_parent_index: QModelIndex = self.indexFromItem(dst_parent_item)
         
@@ -303,8 +327,7 @@ class AbstractTreeModel(QAbstractItemModel):
             src_item: AbstractTreeItem = src_items[0]
             src_parent_index: QModelIndex = self.indexFromItem(src_item.parent)
             src_row: int = src_item.siblingIndex()
-            self.moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row)
-            return
+            return self.moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row)
         
         # group items into blocks by parent and contiguous rows
         src_item_blocks: list[list[AbstractTreeItem]] = self._itemBlocks(src_items)
@@ -316,15 +339,26 @@ class AbstractTreeModel(QAbstractItemModel):
             src_row: int = block[0].siblingIndex()
             count: int = len(block)
             self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
-    
-    def transferItems(self, src_items: list[AbstractTreeItem], dst_model: AbstractTreeModel, dst_parent_item: AbstractTreeItem, dst_row: int) -> None:
-        if dst_model is self:
-            self.moveItems(src_items, dst_parent_item, dst_row)
-            return
         
-        self.removeItems(src_items)
-        dst_model.insertItems(src_items, dst_row, dst_parent_item)
+        # !! does not check success of each moveRows() call
+        return True
     
+    def transferItems(self, src_items: list[AbstractTreeItem], dst_model: AbstractTreeModel, dst_parent_item: AbstractTreeItem, dst_row: int) -> bool:
+        if not src_items or not dst_model or not dst_parent_item:
+            return False
+        
+        # only move branch root items (descendents are moved with their ancestors)
+        src_items = self._branchRootItemsOnly(src_items)
+
+        if dst_model is self:
+            return self.moveItems(src_items, dst_parent_item, dst_row)
+        
+        if self.removeItems(src_items):
+            if dst_model.insertItems(src_items, dst_row, dst_parent_item):
+                return True
+            # TODO: re-insert src_items back to their original positions to avoid leaving the model in a corrupted state if insertion fails
+        return False
+
     @staticmethod
     def _branchRootItemsOnly(items: list[AbstractTreeItem]) -> list[AbstractTreeItem]:
         """ Discard items that are descendents of other items.
@@ -402,7 +436,7 @@ class AbstractTreeModel(QAbstractItemModel):
         return TreeMimeData(self, items, self.MIME_TYPE)
 
     def dropMimeData(self, data: TreeMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex) -> bool:
-        if not isinstance(data, TreeMimeData) and not issubclass(data, TreeMimeData):
+        if not isinstance(data, TreeMimeData):
             return False
         
         src_model: AbstractTreeModel = data.src_model
