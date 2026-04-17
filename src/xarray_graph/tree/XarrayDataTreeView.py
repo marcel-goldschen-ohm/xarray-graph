@@ -206,20 +206,21 @@ class XarrayDataTreeView(TreeView):
         menu.addAction(self._removeSelectedAction)
         
         # combine items
-        if has_selection and len(self.selectedIndexes()) > 1:
-            menu.addSeparator()
-            menu.addAction(QAction(
-                text='Merge Selection',
-                parent=menu,
-                # triggered=lambda checked: self.mergeSelection(),
-                enabled=False # TODO
-            ))
-            menu.addAction(QAction(
-                text='Concatenate Selection',
-                parent=menu,
-                # triggered=lambda checked: self.concatenateSelectedGroups(),
-                enabled=False # TODO
-            ))
+        has_multi_selection: bool = has_selection and len(self.selectedIndexes()) > 1
+        is_multi_nodes_selected: bool = has_multi_selection and len([item for item in self.selectedItems() if item.isNode()]) > 1
+        menu.addSeparator()
+        menu.addAction(QAction(
+            text='Merge Selected Nodes',
+            parent=menu,
+            triggered=lambda checked: self.mergeSelectedNodes(),
+            enabled=False #is_multi_nodes_selected
+        ))
+        menu.addAction(QAction(
+            text='Concatenate Selected Nodes',
+            parent=menu,
+            triggered=lambda checked: self.concatenateSelectedNodes(),
+            enabled=is_multi_nodes_selected
+        ))
         
         # expand/collapse
         menu.addSeparator()
@@ -318,32 +319,35 @@ class XarrayDataTreeView(TreeView):
         xarray_utils.rename_dims(node, dim_renames)
         self.refresh()
     
-    # def concatenateSelectedGroups(self, dim: str = None) -> None:
-    #     model: XarrayDataTreeModel = self.model()
-    #     if not model:
-    #         return
-    #     items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if item.is_group]
-    #     if not items or len(items) < 2:
-    #         return
-    #     if dim is None:
-    #         title = 'Concatenate'
-    #         label = 'Concatenate along dim:'
-    #         dim, ok = QInputDialog.getText(self, title, label)
-    #         if not ok:
-    #             return
-    #         dim = dim.strip()
-    #         if not dim:
-    #             return
-    #     try:
-    #         datasets: list[xr.Dataset] = [item.data.to_dataset() for item in items]
-    #         concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
-    #         parent_item: XarrayDataTreeItem = items[0].parent
-    #         parent_group: xr.DataTree = parent_item.data
-    #         name = xarray_utils.unique_name('Concat', list(parent_group.keys()))
-    #         parent_group[name] = concatenated_dataset
-    #         self.refresh()
-    #     except Exception as err:
-    #         model.popupWarningDialog(str(err))
+    def mergeSelectedNodes(self) -> None:
+        pass # TODO
+    
+    def concatenateSelectedNodes(self, dim: str = None) -> None:
+        model: XarrayDataTreeModel = self.model()
+        if not model:
+            return
+        items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if item.isNode()]
+        if not items or len(items) < 2:
+            return
+        if dim is None:
+            title = 'Concatenate'
+            label = 'Concatenate along dim:'
+            dim, ok = QInputDialog.getText(self, title, label)
+            if not ok:
+                return
+            dim = dim.strip()
+            if not dim:
+                return
+        try:
+            datasets: list[xr.Dataset] = [item._node.to_dataset() for item in items]
+            concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
+            parent_item: XarrayDataTreeItem = items[0].parent
+            parent_node: xr.DataTree = parent_item._node
+            name = xarray_utils.unique_name('Concat', list(parent_node.keys()))
+            parent_node[name] = concatenated_dataset
+            self.refresh()
+        except Exception as err:
+            model.popupWarningDialog(str(err))
     
     def keyPressEvent(self, event: QKeyEvent):
         if (event.key() == Qt.Key.Key_I) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
