@@ -321,11 +321,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if new_name == old_name:
                 # nothing to do
                 return False
-            #            parent_item: XarrayDataTreeItem = item.parent
             parent_node: xr.DataTree = item.parentNode()
             # ensure no name conflict with existing objects
-            parent_keys: list[str] = list(parent_node.keys())
-            if new_name in parent_keys:
+            if new_name in parent_node:
                 parent_widget: QWidget = QApplication.focusWidget()
                 title='Existing Name'
                 text = f'"{new_name}" already exists in parent DataTree.'
@@ -345,13 +343,13 @@ class XarrayDataTreeModel(AbstractTreeModel):
                         node.dataset = node.to_dataset().reset_coords(old_name, drop=True)
                 # xarray_utils.rename_dims(parent_node, {old_name: new_name})
                 item._varname = new_name
-                # update item name in subtree
+                # update item name in branch
+                branch_root_item: XarrayDataTreeItem = item.root()[branch_root.path.strip('/')]
                 branch_item: XarrayDataTreeItem
-                for branch_item in item.parent.subtree_depth_first():
+                for branch_item in branch_root_item.subtree_depth_first():
                     if branch_item._varname == old_name:
                         branch_item._varname = new_name
-                print(item.parent)
-                self.refreshRequested.emit() # inefficient solution to update branch
+                # self._updateSubtreeItems(branch_root_item)
                 return True
             elif item.isVariable():
                 parent_node.dataset = parent_node.to_dataset().rename_vars({old_name: new_name})
@@ -443,8 +441,16 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     if dlg.applyToAll():
                         name_conflict_default_action = action
                 if action == 'Overwrite':
-                    # nothing to do here (this is the default)
-                    pass
+                    # remove item to be overwritten in parent
+                    item_to_remove: XarrayDataTreeItem = parent_item[item_name]
+                    row_to_remove = item_to_remove.row()
+                    parent_index = self.indexFromItem(parent_item)
+                    success = super().removeRows(row_to_remove, 1, parent_index)
+                    if not success:
+                        # skip
+                        continue
+                    if row_to_remove < row:
+                        row -= 1
                 elif action == 'Merge':
                     # TODO
                     pass
@@ -549,8 +555,15 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     if dlg.applyToAll():
                         name_conflict_default_action = action
                 if action == 'Overwrite':
-                    # nothing to do here (this is the default)
-                    pass
+                    # remove item to be overwritten in dst parent
+                    dst_item_to_remove: XarrayDataTreeItem = dst_parent_item[src_item_name]
+                    row_to_remove = dst_item_to_remove.row()
+                    success = super().removeRows(row_to_remove, 1, dst_parent_index)
+                    if not success:
+                        # skip
+                        continue
+                    if row_to_remove < dst_row:
+                        dst_row -= 1
                 elif action == 'Merge':
                     # TODO
                     pass

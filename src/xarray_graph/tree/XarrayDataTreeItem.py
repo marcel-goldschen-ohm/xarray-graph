@@ -103,25 +103,52 @@ class XarrayDataTreeItem(AbstractTreeItem):
         return self._node.name
     
     def setName(self, name: str) -> None:
-        parent_node = self.parentNode()
+        if not name:
+            # must have a valid name
+            return
+        if '/' in name:
+            # object names cannot contain path separators "/"
+            return
+        if self.isInheritedCoord():
+            # cannot rename inherited coords
+            return
+        old_name = self.name()
+        if name == old_name:
+            # nothing to do
+            return
+        parent_node: xr.DataTree = self.parentNode()
         if parent_node is None:
-            # root node
+            # this is the root node
             self._node.name = name
             return
         if name in parent_node:
             raise ValueError(f'Name conflict: parent node already has an item named {name}')
-        dt = self._node.root
-        old_name = self.name()
-        old_path = self.abspath()
-        new_path = old_path.removesuffix(old_name) + name
-        # update datatree
-        dt[new_path] = dt[old_path]
-        del dt[old_path]
-        # update itemtree node references
-        item: XarrayDataTreeItem
-        for item in self.subtree_depth_first():
-            updated_path = item.abspath().replace(old_path, new_path, 1)
-            item._node = dt[updated_path]
+        
+        if self.isIndexCoord():
+            # rename dimension in entire branch
+            branch_root: xr.DataTree = xarray_utils.aligned_root(parent_node)
+            branch_root.dataset = branch_root.to_dataset().rename_dims({old_name: name})
+            for node in branch_root.descendants:
+                node.dataset = node.to_dataset().swap_dims({old_name: name})
+            # rename index coord
+            new_index_coord = self.data()#.copy(deep=False).swap_dims({old_name: new_name})
+            parent_node.dataset = parent_node.to_dataset().reindex({name: new_index_coord}, copy=False).drop_indexes(old_name).reset_coords(old_name, drop=True)
+            for node in parent_node.descendants:
+                if old_name in node.coords:
+                    node.dataset = node.to_dataset().reset_coords(old_name, drop=True)
+            # xarray_utils.rename_dims(parent_node, {old_name: name})
+            self._varname = name
+            # update item name in branch
+            branch_root_item: XarrayDataTreeItem = self.root()[branch_root.path.strip('/')]
+            branch_item: XarrayDataTreeItem
+            for branch_item in branch_root_item.subtree_depth_first():
+                if branch_item._varname == old_name:
+                    branch_item._varname = name
+        elif self.isVariable():
+            parent_node.dataset = parent_node.to_dataset().rename_vars({old_name: name})
+            self._varname = name
+        elif self.isNode():
+            parent_node.children = {name if name != old_name else name: child for name, child in parent_node.children.items()}
     
     def orphan(self) -> None:
         # remove data from existing datatree and put into new orphaned datatree
