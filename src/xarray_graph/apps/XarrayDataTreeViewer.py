@@ -10,7 +10,6 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
 import xarray_graph.io as io
-# from xarray_graph.io.io import supported_filetypes
 from xarray_graph.utils import xarray_utils, WindowManager, IPythonConsole
 from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeView
 from xarray_graph.widgets import CollapsibleSectionsSplitter
@@ -56,32 +55,9 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view.setModel(model)
         self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
 
-        # selection
-        self._info_view = infoTextEdit([])
-        self._attrs_view = KeyValueTreeView()
-
-        self._selection_splitter = CollapsibleSectionsSplitter()
-        self._selection_splitter.addSection('Info', self._info_view)
-        self._selection_splitter.addSection('Attrs', self._attrs_view)
-
-        # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
-        self._selection_splitter_wrapper = QWidget()
-        vbox = QVBoxLayout(self._selection_splitter_wrapper)
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(0)
-        vbox.addWidget(self._selection_splitter, stretch=10000)
-        vbox.addStretch(1)
-
-        # layout
-        hsplitter = QSplitter(Qt.Orientation.Horizontal)
-        hsplitter.addWidget(self._datatree_view)
-        hsplitter.addWidget(self._selection_splitter_wrapper)
-        self.setCentralWidget(hsplitter)
-
-        # actions
+        # setup
+        self._init_ui()
         self._init_actions()
-
-        # menubar
         self._init_menubar()
 
     def sizeHint(self) -> QSize:
@@ -98,22 +74,22 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view.refresh()
         self.onSelectionChanged()
     
-    # @staticmethod
-    # def refreshAllWindows():
-    #     window: XarrayDataTreeViewer
-    #     for window in XarrayDataTreeViewer.window_mgr.windows():
-    #         if issubclass(type(window), XarrayDataTreeViewer):
-    #             window.refresh()
-    
     @staticmethod
-    def about() -> None:
+    def refreshAllWindows():
+        window: XarrayDataTreeViewer
+        for window in XarrayDataTreeViewer.window_mgr.windows():
+            if isinstance(window, XarrayDataTreeViewer):
+                window.refresh()
+    
+    @classmethod
+    def about(cls) -> None:
         """ Popup about message dialog.
         """
         import textwrap
         focus_widget: QWidget = QApplication.instance().focusWidget()
 
         text = f"""
-        XarrayGraph
+        {cls.__name__}
 
         PyQt UIs for visualizing and manipulating Xarray DataTrees.
 
@@ -124,21 +100,21 @@ class XarrayDataTreeViewer(QMainWindow):
         """
         text = textwrap.dedent(text).strip()
         
-        QMessageBox.about(focus_widget, 'About XarrayGraph', text)
+        QMessageBox.about(focus_widget, f'About {cls.__name__}', text)
 
     # def settings(self) -> None:
     #     print('settings') # TODO
     
-    @staticmethod
-    def new() -> XarrayDataTreeViewer:
+    @classmethod
+    def new(cls) -> XarrayDataTreeViewer:
         """ Create new XarrayDataTreeViewer top level window.
         """
-        window = XarrayDataTreeViewer()
+        window = cls()
         window.show()
         return window
     
-    @staticmethod
-    def open(filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer:
+    @classmethod
+    def open(cls, filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer:
         """ Load datatree from file.
         """
         focus_widget: QWidget = QApplication.instance().focusWidget()
@@ -166,7 +142,7 @@ class XarrayDataTreeViewer(QMainWindow):
             title = filepath.stem
         
         # new window
-        window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
+        window = cls.new()
         window.setDatatree(datatree)
         window.setWindowTitle(title)
         window.show()
@@ -194,8 +170,8 @@ class XarrayDataTreeViewer(QMainWindow):
         self._filepath = filepath
         self.setWindowTitle(filepath.stem)
     
-    @staticmethod
-    def combineWindows(windows: list[XarrayDataTreeViewer] = None) -> XarrayDataTreeViewer:
+    @classmethod
+    def combineWindows(cls, windows: list[XarrayDataTreeViewer] = None) -> XarrayDataTreeViewer:
         """ Combine windows into one window as multiple top-level groups in a single datatree.
         """
         if windows is None:
@@ -215,7 +191,7 @@ class XarrayDataTreeViewer(QMainWindow):
         noncombined_window_titles: list[str] = [window.windowTitle() for window in noncombined_windows]
 
         # new combined window
-        combined_window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
+        combined_window = cls.new()
         combined_window_title: str = xarray_utils.unique_name('Combined', noncombined_window_titles)
         combined_window.setWindowTitle(combined_window_title)
         combined_window.setDatatree(combined_datatree)
@@ -244,6 +220,34 @@ class XarrayDataTreeViewer(QMainWindow):
         # close this window
         self.close()
    
+    def _init_ui(self) -> None:
+        """ Initialize UI elements and layout.
+        """
+        # selection info
+        self._info_view = infoTextEdit([])
+
+        # selected item attrs
+        self._attrs_view = KeyValueTreeView()
+
+        # selection info and attrs splitter
+        self._selection_splitter = CollapsibleSectionsSplitter()
+        self._selection_splitter.addSection('Info', self._info_view)
+        self._selection_splitter.addSection('Attrs', self._attrs_view)
+
+        # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
+        self._selection_splitter_wrapper = QWidget()
+        vbox = QVBoxLayout(self._selection_splitter_wrapper)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+        vbox.addWidget(self._selection_splitter, stretch=10000)
+        vbox.addStretch(1)
+
+        # main layout
+        hsplitter = QSplitter(Qt.Orientation.Horizontal)
+        hsplitter.addWidget(self._datatree_view)
+        hsplitter.addWidget(self._selection_splitter_wrapper)
+        self.setCentralWidget(hsplitter)
+    
     def _init_actions(self) -> None:
 
         self._refresh_action = QAction(
