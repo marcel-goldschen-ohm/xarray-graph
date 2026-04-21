@@ -50,6 +50,37 @@ wheels = [
 ]
 
 [[package]]
+name = "cf-xarray"
+version = "0.10.6"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+dependencies = [
+    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5b/15/8c916b4118ece2011c0c1365b64823ce361d352c460785402c78b8520ba8/cf_xarray-0.10.6.tar.gz", hash = "sha256:159236eca465453784ee7efa2a430d5e2092978db8a5d4d8b591f61d0639cb89", size = 513498, upload-time = "2025-06-20T18:19:18.526Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/55/2cce57427624814f4c6db8b14147fb73b86ed82e808d3dfd36426195071c/cf_xarray-0.10.6-py3-none-any.whl", hash = "sha256:39b457e47bb1557749ede115d1126ad9340eafb26ddeea0fef3a81149fc4d019", size = 70998, upload-time = "2025-06-20T18:19:17.054Z" },
+]
+
+[[package]]
+name = "cf-xarray"
+version = "0.10.11"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+]
+dependencies = [
+    { name = "xarray", version = "2025.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e3/78/f4f38e7ea6221773ea48d85c00d529b1fdc7378a1a1b77c2b77661446a0b/cf_xarray-0.10.11.tar.gz", hash = "sha256:e10ee37b0ed3ba36f42346360f2bc070c690ddc73bb9dcdd9463b3a221453be3", size = 686693, upload-time = "2026-02-03T19:17:42.211Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/ce/5c4f4660da5521d90bea62cdf8396d7e4ce4a00513e218d267b97f9ea453/cf_xarray-0.10.11-py3-none-any.whl", hash = "sha256:c47fff625766c69a66fedef368d9787acb0819b32d8bd022f8b045089b42109a", size = 78421, upload-time = "2026-02-03T19:17:40.431Z" },
+]
+
+[[package]]
 name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1027,6 +1058,41 @@ wheels = [
 ]
 
 [[package]]
+name = "pint-xarray"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pint", version = "0.24.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/2a/3e39c85c9107bd25f67f0438fca8990ae6843ef3b6ccf9081fd02ef5ea4c/pint_xarray-0.5.1.tar.gz", hash = "sha256:708670b84cb2583aea602c7d1a56c976322f2a5c53a1043f99f2dc68b2f2fd27", size = 51807, upload-time = "2025-08-09T22:46:33.657Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/26/fd5e5d034af92d5eaabde3e4e1920143f9ab1292c83296bf0ec9e2731958/pint_xarray-0.5.1-py3-none-any.whl", hash = "sha256:b17b61274726f39bedb6c5079c71ed21d173cb4de9b6aab802343e1e3662c4c4", size = 36932, upload-time = "2025-08-09T22:46:32.205Z" },
+]
+
+[[package]]
+name = "pint-xarray"
+version = "0.6.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+]
+dependencies = [
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pint", version = "0.25.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "xarray", version = "2025.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a1/92/b402b6e58a4f9ea2718ada67171586dc2ebd494ffcaf0c08f2b634714ad5/pint_xarray-0.6.1.tar.gz", hash = "sha256:a0febf909b69342fde39b8e053875c52bb75a65e4fc56d95bd146f74449aed84", size = 57668, upload-time = "2026-03-23T20:58:41.476Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/0d/e20fbbf036a88fc7be7438f6fc1c7606e8806064f933f7eb6d4f110bc622/pint_xarray-0.6.1-py3-none-any.whl", hash = "sha256:4f96682bda1234c3be652db2f9b7cfb8d858cc870c8e7a51213163e743d8ccf7", size = 44090, upload-time = "2026-03-23T20:58:40.016Z" },
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1107,22 +1173,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887", size = 4968631, upload-time = "2025-06-21T13:39:12.283Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b", size = 1225217, upload-time = "2025-06-21T13:39:07.939Z" },
-]
-
-[[package]]
-name = "pyqt-ext"
-version = "2025.11.12"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pyqtgraph" },
-    { name = "qtawesome" },
-    { name = "qtpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/68/037f93219fe1fef12cfc2080aedf7f23fd330e4610946a86c0b09a1884c4/pyqt_ext-2025.11.12.tar.gz", hash = "sha256:04cc2a142f8b31f82a3584aa438693e289e8d20ac5a118649b9828296837d527", size = 40894, upload-time = "2025-11-12T23:05:44.715Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/7b/989a013dabd995a0b670e698a8c1ba55cf878b704569a41cef2b55239035/pyqt_ext-2025.11.12-py3-none-any.whl", hash = "sha256:034b7fa7bb2450662d798ff861afeb2b2f1871e19928c1c4c96ed549a20ff79a", size = 53217, upload-time = "2025-11-12T23:05:43.779Z" },
 ]
 
 [[package]]
@@ -1624,12 +1674,15 @@ name = "xarray-graph"
 version = "2025.11.12"
 source = { editable = "." }
 dependencies = [
+    { name = "cf-xarray", version = "0.10.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "cf-xarray", version = "0.10.11", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "cmap" },
     { name = "h5netcdf" },
     { name = "lmfit" },
     { name = "pint", version = "0.24.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pint", version = "0.25.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pyqt-ext" },
+    { name = "pint-xarray", version = "0.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pint-xarray", version = "0.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pyqtgraph" },
     { name = "qtawesome" },
     { name = "qtconsole" },
@@ -1645,11 +1698,12 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cf-xarray", specifier = ">=0.10.6" },
     { name = "cmap" },
     { name = "h5netcdf" },
     { name = "lmfit" },
     { name = "pint" },
-    { name = "pyqt-ext", specifier = ">=2025.11.12" },
+    { name = "pint-xarray", specifier = ">=0.5.1" },
     { name = "pyqtgraph" },
     { name = "qtawesome" },
     { name = "qtconsole" },

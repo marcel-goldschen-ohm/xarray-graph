@@ -24,10 +24,11 @@ dependencies = [
     "QtPy",
     "QtAwesome",
     "pyqtgraph",
-    "pyqt-ext >=2025.11.12",
     "qtconsole",
     "cmap",
     "requests",
+    "pint-xarray>=0.5.1",
+    "cf-xarray>=0.10.6",
 ]
 
 [project.urls]

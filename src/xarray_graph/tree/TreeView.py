@@ -226,7 +226,7 @@ class TreeView(QTreeView):
         QTreeView.selectionChanged(self, selected, deselected)
         self.selectionWasChanged.emit()
 
-    def selectedItems(self) -> list[AbstractTreeItem]:
+    def selectedItems(self, ordered=False) -> list[AbstractTreeItem]:
         model: AbstractTreeModel = self.model()
         if not model:
             return
@@ -237,6 +237,8 @@ class TreeView(QTreeView):
             item: AbstractTreeItem = model.itemFromIndex(index)
             if item not in items:
                 items.append(item)
+        if ordered:
+            items = model.orderedItems(items)
         return items
     
     def setSelectedItems(self, items: list[AbstractTreeItem]):

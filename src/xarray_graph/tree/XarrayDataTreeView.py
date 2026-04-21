@@ -66,13 +66,13 @@ class XarrayDataTreeView(TreeView):
             triggered = lambda checked: self._updateModelFromViewOptions()
         )
 
-        self._showDetailsColumnAction = QAction(
-            text = 'Show Details Column',
+        self._showInfoColumnsAction = QAction(
+            text = 'Show Dimensions & Units',
             icon = qta.icon('fa6s.info'),
             iconVisibleInMenu=True,
             checkable = True,
             checked = False,
-            toolTip = 'Show details column in the tree view. Uncheck to hide column.',
+            toolTip = 'Show dimensions and units columns in the tree view. Uncheck to hide columns.',
             triggered = lambda checked: self._updateModelFromViewOptions()
         )
     
@@ -98,9 +98,9 @@ class XarrayDataTreeView(TreeView):
         self._showInheritedCoordsAction.setChecked(model.isInheritedCoordsVisible())
         self._showInheritedCoordsAction.blockSignals(False)
         
-        self._showDetailsColumnAction.blockSignals(True)
-        self._showDetailsColumnAction.setChecked(model.isDetailsColumnVisible())
-        self._showDetailsColumnAction.blockSignals(False)
+        self._showInfoColumnsAction.blockSignals(True)
+        self._showInfoColumnsAction.setChecked(model.isInfoColumnsVisible())
+        self._showInfoColumnsAction.blockSignals(False)
 
     def _updateModelFromViewOptions(self):
         model: XarrayDataTreeModel = self.model()
@@ -108,7 +108,7 @@ class XarrayDataTreeView(TreeView):
         model.setDataVarsVisible(self._showDataVarsAction.isChecked())
         model.setCoordsVisible(self._showCoordsAction.isChecked())
         model.setInheritedCoordsVisible(self._showInheritedCoordsAction.isChecked())
-        model.setDetailsColumnVisible(self._showDetailsColumnAction.isChecked())
+        model.setInfoColumnsVisible(self._showInfoColumnsAction.isChecked())
         self.restoreViewState()
     
     def treeData(self) -> xr.DataTree:
@@ -235,7 +235,7 @@ class XarrayDataTreeView(TreeView):
         menu.addAction(self._showDataVarsAction)
         menu.addAction(self._showCoordsAction)
         menu.addAction(self._showInheritedCoordsAction)
-        menu.addAction(self._showDetailsColumnAction)
+        menu.addAction(self._showInfoColumnsAction)
 
         # refresh
         menu.addSeparator()
@@ -489,7 +489,7 @@ def test_live():
     model.setDataVarsVisible(True)
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
-    model.setDetailsColumnVisible(True)
+    model.setInfoColumnsVisible(True)
     model.setTreeData(dt)
 
     view = XarrayDataTreeView()
@@ -506,7 +506,7 @@ def test_live():
     model2.setDataVarsVisible(True)
     model2.setCoordsVisible(True)
     model2.setInheritedCoordsVisible(True)
-    model2.setDetailsColumnVisible(True)
+    model2.setInfoColumnsVisible(True)
     model2.setTreeData(dt2)
 
     view2 = XarrayDataTreeView()

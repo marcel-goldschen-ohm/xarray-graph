@@ -405,6 +405,15 @@ class AbstractTreeModel(QAbstractItemModel):
                 blocks.append([item])
         return blocks
     
+    @staticmethod
+    def orderedItems(items: list[AbstractTreeItem]) -> list[AbstractTreeItem]:
+        """ Return items in depth-first order.
+        """
+        items = items.copy()
+        items.sort(key=lambda item: item.level())
+        items.sort(key=lambda item: item.siblingIndex())
+        return items
+    
     def supportedDropActions(self) -> Qt.DropActions:
         return self._supportedDropActions
     

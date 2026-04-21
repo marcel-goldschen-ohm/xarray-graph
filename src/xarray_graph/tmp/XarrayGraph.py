@@ -164,9 +164,9 @@ class XarrayGraph(QMainWindow):
         model = XarrayDataTreeModel()
         model.setCoordsVisible(False)
         model.setInheritedCoordsVisible(False)
-        model.setDetailsColumnVisible(False)
-        model.setSharedDataHighlighted(False)
-        model.setDebugInfoVisible(False)
+        model.setInfoColumnsVisible(False)
+        # model.setSharedDataHighlighted(False)
+        # model.setDebugInfoVisible(False)
         model.setTreeData(xr.DataTree())
         self._datatree_view = XarrayDataTreeView()
         self._datatree_view.setModel(model)
@@ -1030,6 +1030,7 @@ class XarrayGraph(QMainWindow):
         self.autoscale()
     
     def _on_datatree_selection_changed(self) -> None:
+        return
         print('\n'*2, 'v'*50)
 
         # # for filtering selected data_vars

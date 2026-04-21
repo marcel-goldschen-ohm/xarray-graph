@@ -1,5 +1,6 @@
-from xarray_graph.graph.Annotation import *
-from xarray_graph.graph.FilterControlPanel import FilterControlPanel
-from xarray_graph.graph.CurveFitControlPanel import CurveFitControlPanel
-from xarray_graph.graph.MeasureControlPanel import MeasureControlPanel
-from xarray_graph.graph.XarrayGraph import XarrayGraph
+
+from xarray_graph.graph.AxisRegion import XAxisRegion, YAxisRegion
+from xarray_graph.graph.PlotCurve import PlotCurve
+from xarray_graph.graph.View import View
+from xarray_graph.graph.Plot import Plot
+from xarray_graph.graph.PlotGrid import PlotGrid

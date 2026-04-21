@@ -29,14 +29,14 @@ class XarrayDataTreeViewer(QMainWindow):
         super().__init__(*args, **kwargs)
 
         # add to window manager
-        XarrayDataTreeViewer.window_mgr.addWindow(self)
+        self.window_mgr.addWindow(self)
 
         # global console
-        if XarrayDataTreeViewer.console is None:
+        if self.console is None:
             console = IPythonConsole()
             console.execute('import numpy as np', hidden=True)
             console.execute('import xarray as xr', hidden=True)
-            console.addVariables({'wm': XarrayDataTreeViewer.window_mgr})
+            console.addVariables({'wm': self.window_mgr})
             msg = """
             ----------------------------------------------------
             Variables:
@@ -47,7 +47,7 @@ class XarrayDataTreeViewer(QMainWindow):
             ----------------------------------------------------
             """
             console.printMessage(msg)
-            XarrayDataTreeViewer.console = console
+            type(self).console = console
         
         # datatree
         self._datatree_view = XarrayDataTreeView()
@@ -56,9 +56,9 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
 
         # setup
-        self._init_ui()
-        self._init_actions()
-        self._init_menubar()
+        self._initActions()
+        self._initMenubar()
+        self._initUI()
 
     def sizeHint(self) -> QSize:
         return super().sizeHint().expandedTo(QSize(1000, 800))
@@ -70,6 +70,10 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view.setTreeData(datatree)
         self.refresh()
 
+    def onSelectionChanged(self) -> None:
+        self._updateInfoView()
+        self._updateAttrsView()
+    
     def refresh(self) -> None:
         self._datatree_view.refresh()
         self.onSelectionChanged()
@@ -102,8 +106,8 @@ class XarrayDataTreeViewer(QMainWindow):
         
         QMessageBox.about(focus_widget, f'About {cls.__name__}', text)
 
-    # def settings(self) -> None:
-    #     print('settings') # TODO
+    def settings(self) -> None:
+        raise NotImplementedError('Settings dialog not implemented.')
     
     @classmethod
     def new(cls) -> XarrayDataTreeViewer:
@@ -220,35 +224,7 @@ class XarrayDataTreeViewer(QMainWindow):
         # close this window
         self.close()
    
-    def _init_ui(self) -> None:
-        """ Initialize UI elements and layout.
-        """
-        # selection info
-        self._info_view = infoTextEdit([])
-
-        # selected item attrs
-        self._attrs_view = KeyValueTreeView()
-
-        # selection info and attrs splitter
-        self._selection_splitter = CollapsibleSectionsSplitter()
-        self._selection_splitter.addSection('Info', self._info_view)
-        self._selection_splitter.addSection('Attrs', self._attrs_view)
-
-        # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
-        self._selection_splitter_wrapper = QWidget()
-        vbox = QVBoxLayout(self._selection_splitter_wrapper)
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(0)
-        vbox.addWidget(self._selection_splitter, stretch=10000)
-        vbox.addStretch(1)
-
-        # main layout
-        hsplitter = QSplitter(Qt.Orientation.Horizontal)
-        hsplitter.addWidget(self._datatree_view)
-        hsplitter.addWidget(self._selection_splitter_wrapper)
-        self.setCentralWidget(hsplitter)
-    
-    def _init_actions(self) -> None:
+    def _initActions(self) -> None:
 
         self._refresh_action = QAction(
             icon=qta.icon('msc.refresh'),
@@ -262,15 +238,15 @@ class XarrayDataTreeViewer(QMainWindow):
             iconVisibleInMenu=False,
             text=f'About {self.__class__.__name__}',
             toolTip=f'About {self.__class__.__name__}',
-            triggered=lambda checked: XarrayDataTreeViewer.about())
+            triggered=lambda checked: self.about())
 
-        # self._settings_action = QAction(
-        #     icon=qta.icon('msc.gear'),
-        #     iconVisibleInMenu=False,
-        #     text='Settings',
-        #     toolTip='Settings',
-        #     shortcut=QKeySequence.StandardKey.Preferences,
-        #     triggered=lambda checked: self.settings())
+        self._settings_action = QAction(
+            icon=qta.icon('msc.gear'),
+            iconVisibleInMenu=False,
+            text='Settings',
+            toolTip='Settings',
+            shortcut=QKeySequence.StandardKey.Preferences,
+            triggered=lambda checked: self.settings())
 
         self._new_action = QAction(
             iconVisibleInMenu=False,
@@ -278,7 +254,7 @@ class XarrayDataTreeViewer(QMainWindow):
             toolTip='New Window',
             checkable=False,
             shortcut=QKeySequence.StandardKey.New,
-            triggered=lambda: XarrayDataTreeViewer.new())
+            triggered=lambda: self.new())
 
         self._open_action = QAction(
             icon=qta.icon('fa5.folder-open'),
@@ -287,7 +263,7 @@ class XarrayDataTreeViewer(QMainWindow):
             toolTip='Open',
             checkable=False,
             shortcut=QKeySequence.StandardKey.Open,
-            triggered=lambda: XarrayDataTreeViewer.open())
+            triggered=lambda: self.open())
 
         self._open_zarr_dir_action = QAction(
             icon=qta.icon('fa5.folder-open'),
@@ -295,7 +271,7 @@ class XarrayDataTreeViewer(QMainWindow):
             text='Open Zarr Directory',
             toolTip='Open Zarr Directory',
             checkable=False,
-            triggered=lambda: XarrayDataTreeViewer.open(is_dir=True))
+            triggered=lambda: self.open(is_dir=True))
 
         self._save_action = QAction(
             icon=qta.icon('fa5.save'),
@@ -315,7 +291,7 @@ class XarrayDataTreeViewer(QMainWindow):
             shortcut=QKeySequence.StandardKey.SaveAs,
             triggered=lambda: self.saveAs())
     
-    def _init_menubar(self) -> None:
+    def _initMenubar(self) -> None:
         """ Main menubar.
         """
         menubar = self.menuBar()
@@ -343,24 +319,48 @@ class XarrayDataTreeViewer(QMainWindow):
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
 
         self._view_menu = menubar.addMenu('View')
-        self._view_menu.addAction(XarrayDataTreeViewer.console._console_action)
+        self._view_menu.addAction(self.console._console_action)
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._about_action)
-        # self._view_menu.addAction(self._settings_action)
+        self._view_menu.addAction(self._settings_action)
         self._view_menu.addAction(self._refresh_action)
 
         self._window_menu = menubar.addMenu('Window')
-        self._window_menu.addAction('Combine All', XarrayDataTreeViewer.combineWindows)
+        self._window_menu.addAction('Combine All', self.combineWindows)
         self._window_menu.addAction('Separate First Level Groups', self.separateFirstLevelGroups)
         self._window_menu.addSeparator()
-        self._window_menu.addAction('Bring All to Front', XarrayDataTreeViewer.window_mgr.bringAllVisibleWindowsToFront)
-        XarrayDataTreeViewer.window_mgr.updateWindowMenu(self._window_menu)
+        self._window_menu.addAction('Bring All to Front', self.window_mgr.bringAllVisibleWindowsToFront)
+        self.window_mgr.updateWindowMenu(self._window_menu)
     
-    def onSelectionChanged(self) -> None:
-        self._update_info_view()
-        self._update_attrs_view()
+    def _initUI(self) -> None:
+        """ Initialize UI elements and layout.
+        """
+        # selection info
+        self._info_view = infoTextEdit([])
+
+        # selected item attrs
+        self._attrs_view = KeyValueTreeView()
+
+        # selection info and attrs splitter
+        self._selection_splitter = CollapsibleSectionsSplitter()
+        self._selection_splitter.addSection('Info', self._info_view)
+        self._selection_splitter.addSection('Attrs', self._attrs_view)
+
+        # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
+        self._selection_splitter_wrapper = QWidget()
+        vbox = QVBoxLayout(self._selection_splitter_wrapper)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+        vbox.addWidget(self._selection_splitter, stretch=10000)
+        vbox.addStretch(1)
+
+        # main layout
+        hsplitter = QSplitter(Qt.Orientation.Horizontal)
+        hsplitter.addWidget(self._datatree_view)
+        hsplitter.addWidget(self._selection_splitter_wrapper)
+        self.setCentralWidget(hsplitter)
     
-    def _update_info_view(self) -> None:
+    def _updateInfoView(self) -> None:
         items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
         if not items:
             model: XarrayDataTreeModel = self._datatree_view.model()
@@ -368,7 +368,7 @@ class XarrayDataTreeViewer(QMainWindow):
         data = [item.data() for item in items]    
         infoTextEdit(data, text_edit_to_update=self._info_view)
     
-    def _update_attrs_view(self) -> None:
+    def _updateAttrsView(self) -> None:
         items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems()
         if not items:
             model: XarrayDataTreeModel = self._datatree_view.model()

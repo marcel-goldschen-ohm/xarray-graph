@@ -4,7 +4,8 @@
 from collections.abc import Iterator
 # import numpy as np
 import xarray as xr
-# import pint
+import pint
+import pint_xarray
 
 
 # metadata for serialization/deserialization
@@ -295,7 +296,7 @@ def recover_post_deserialization(dt: xr.DataTree) -> xr.DataTree:
 #     if isinstance(data, xr.DataArray):
 #         if 'units' not in data.attrs:
 #             return data
-#         quantity: pint.Quantity = data.values * ureg(data.attrs['units'])
+#         quantity: pint.Quantity = data.data * ureg(data.attrs['units'])
 #         quantity = quantity.to_base_units()
 #         da = data.copy(data=quantity.magnitude)
 #         da.attrs['units'] = str(quantity.units)

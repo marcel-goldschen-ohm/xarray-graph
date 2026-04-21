@@ -797,7 +797,7 @@ def test_live():
     model: XarrayDataTreeModel = window._datatree_view.model()
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
-    model.setDetailsColumnVisible(True)
+    model.setInfoColumnsVisible(True)
     model.setSharedDataHighlighted(True)
     model.setDebugInfoVisible(False)
     window._datatree_view._updateViewOptionsFromModel()
