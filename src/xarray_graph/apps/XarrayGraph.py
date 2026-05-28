@@ -3,30 +3,40 @@
 
 from __future__ import annotations
 from copy import deepcopy
+from functools import reduce
 import textwrap
 import numpy as np
-from functools import reduce
+import pandas as pd
 import cftime
 # to be able to read unit attributes following the CF conventions
 import cf_xarray.units  # noqa: F401  # must be imported before pint_xarray
 import xarray as xr
 import pint_xarray
+import pint
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
+import pyqtgraph as pg
 from xarray_graph.utils import xarray_utils
 from xarray_graph.apps import XarrayDataTreeViewer
 from xarray_graph.tree import XarrayDataTreeItem
 from xarray_graph.graph import *
-from xarray_graph.widgets import CollapsibleSectionsSplitter
+from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
+
+
+ROI_KEY = '_ROI_'
+MASK_KEY = '_mask_'
+CURVE_FIT_KEY = '_curve_fit_'
+NOTES_KEY = '_notes_'
 
 
 class XarrayGraph(XarrayDataTreeViewer):
     """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
     """
 
-    ureg = pint_xarray.unit_registry
+    # ureg = pint_xarray.unit_registry
+    ureg = pint.UnitRegistry()
 
     _default_settings = {
         'icon size': 24,
@@ -35,6 +45,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.refresh()
 
     def xdim(self) -> str | None:
         try:
@@ -50,8 +61,146 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._xdim = xdim
         self.refresh()
     
-    def onSelectionChanged(self) -> None:
+    def autoscale(self) -> None:
+        """ Autoscale all plots while preserving axis linking.
+        """
+        if not hasattr(self, '_plots'):
+            return
+        xlinked_views = []
+        xlinked_range = []
+        n_vars, n_rows, n_cols = self._plots.shape
+        for i in range(n_vars):
+            ylinked_views = []
+            ylinked_range = []
+            for row in range(n_rows):
+                for col in range(n_cols):
+                    plot = self._plots[i, row, col]
+                    view = plot.getViewBox()
+                    xlinked_view = view.linkedView(view.XAxis)
+                    ylinked_view = view.linkedView(view.YAxis)
+                    if (xlinked_view is None) and (ylinked_view is None):
+                        view.enableAutoRange()
+                    elif xlinked_view is None:
+                        view.enableAutoRange(axis=view.XAxis)
+                    elif ylinked_view is None:
+                        view.enableAutoRange(axis=view.YAxis)
+                    view.updateAutoRange()
+
+                    if xlinked_view is not None:
+                        xlim, ylim = view.childrenBounds()
+                        # print(xlim, ylim)
+                        if xlim is not None:
+                            xlinked_range.append(xlim)
+                        if xlinked_view not in xlinked_views:
+                            xlinked_views.append(xlinked_view)
+                            xlim, ylim = xlinked_view.childrenBounds()
+                            if xlim is not None:
+                                xlinked_range.append(xlim)
+                    if ylinked_view is not None:
+                        xlim, ylim = view.childrenBounds()
+                        if ylim is not None:
+                            ylinked_range.append(ylim)
+                        if ylinked_view not in ylinked_views:
+                            ylinked_views.append(ylinked_view)
+                            xlim, ylim = ylinked_view.childrenBounds()
+                            if ylim is not None:
+                                ylinked_range.append(ylim)
+            
+            if ylinked_views:
+                ylinked_range = np.array(ylinked_range)
+                ymin = np.min(ylinked_range)
+                ymax = np.max(ylinked_range)
+                for view in ylinked_views:
+                    view.setYRange(ymin, ymax)
+        
+        if xlinked_views:
+            xlinked_range = np.array(xlinked_range)
+            xmin = np.min(xlinked_range)
+            xmax = np.max(xlinked_range)
+            for view in xlinked_views:
+                view.setXRange(xmin, xmax)
+    
+    def notes(self) -> None:
+        pass # TODO
+    
+    def filter(self) -> None:
+        pass # TODO
+
+    def curveFit(self) -> None:
+        pass # TODO
+
+    def measure(self) -> None:
+        pass # TODO
+    
+    def settings(self) -> None:
+        pass # TODO
+    
+    def refresh(self):
+        super().refresh()
+        self.onDataTreeSelectionChanged()
+    
+    def replot(self) -> None:
+        """ Update all plots.
+        """
+        self.updatePlotData()
+    
+    def tileDimension(self, dim: str, orientation: Qt.Orientation | None) -> None:
+        """ Tile plots along coordinate dimension.
+        """
+        if getattr(self, '_vertical_tile_dimension', None) == dim:
+            self._vertical_tile_dimension = None
+        if getattr(self, '_horizontal_tile_dimension', None) == dim:
+            self._horizontal_tile_dimension = None
+        
+        if orientation == Qt.Orientation.Vertical:
+            self._vertical_tile_dimension = dim
+        elif orientation == Qt.Orientation.Horizontal:
+            self._horizontal_tile_dimension = dim
+        
+        if orientation is not None:
+            selected_coords = self._selection_visible_coords[dim]
+            if selected_coords.size == 1:
+                max_default_tile_size = self._settings.get('max default tile size', self._default_settings['max default tile size'])
+                dim_coords = self._selection_combined_coords[dim]
+                if dim_coords.size <= max_default_tile_size:
+                    selected_coords = dim_coords
+                else:
+                    i = np.where(dim_coords == selected_coords[0])[0][0]
+                    stop = min(i + max_default_tile_size, dim_coords.size)
+                    start = max(0, stop - max_default_tile_size)
+                    selected_coords = dim_coords[start:stop]
+                dim_iter_widget: DimIterWidget = self._dim_iter_widgets[dim]['widget']
+                dim_iter_widget.setSelectedCoords(selected_coords.values)
+        
+        self.refresh()
+    
+    def tiledDimensions(self) -> tuple[str | None, str | None, np.ndarray | None, np.ndarray | None]:
+        vdim = getattr(self, '_vertical_tile_dimension', None)
+        hdim = getattr(self, '_horizontal_tile_dimension', None)
+        coords = self._selection_visible_coords
+        if coords is None:
+            vdim, hdim = None, None
+        else:
+            if vdim:
+                if (vdim not in coords) or (coords[vdim].size <= 1):
+                    vdim = None
+            if hdim:
+                if (hdim not in coords) or (coords[hdim].size <= 1):
+                    hdim = None
+        vcoords = None if vdim is None else coords[vdim].values
+        hcoords = None if hdim is None else coords[hdim].values
+        return vdim, hdim, vcoords, hcoords
+    
+    def isDataPanelVisible(self) -> bool:
+        return self._datatree_ROIs_splitter.isVisible()
+    
+    def setDataPanelVisible(self, visible: bool) -> None:
+        self._datatree_ROIs_splitter.setVisible(visible)
+        self._data_action.setChecked(visible)
+    
+    def onDataTreeSelectionChanged(self) -> None:
         print('\n'*2, '>'*50)
+        # self._data_var_selection = pd.DataFrame(columns=['item', 'path', 'variable', 'dims', 'shared_dims', 'units'])
 
         # selected data_vars
         selected_items = self._datatree_view.selectedItems(ordered=True)
@@ -68,7 +217,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 if item not in self._selected_data_var_items:
                     self._selected_data_var_items.append(item)
         if not self._selected_data_var_items:
-            self._onInvalidSelection(
+            self._invalidSelection(
                 '''
                 Empty Selection
 
@@ -87,7 +236,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         dims_per_data_var = [np.array(list(data_var.dims)) for data_var in self._selected_data_vars]
         self._selection_shared_dims = reduce(np.intersect1d, dims_per_data_var).tolist() if dims_per_data_var else []
         if not self._selection_shared_dims:
-            self._onInvalidSelection(
+            self._invalidSelection(
                 '''
                 Alignment Conflict
 
@@ -101,29 +250,30 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         # ordered dimensions
         self._selection_ordered_dims = list(xarray_utils.ordered_dims_iter(self._selected_data_vars)) if self._selected_data_vars else []
+        shared_dims = self._selection_shared_dims
+        self._selection_shared_dims = [dim for dim in self._selection_ordered_dims if dim in shared_dims]
         # print(f'_selection_ordered_dims: {self._selection_ordered_dims}')
 
         # ensure xdim is one of the shared dimensions
         xdim = self.xdim()
-        if self._selection_shared_dims:
-            if xdim not in self._selection_shared_dims:
-                # try to preserve previous xdim
-                prev_xdim = getattr(self, '_prev_xdim', None)
-                if prev_xdim in self._selection_shared_dims:
-                    xdim = self._xdim = prev_xdim
-                else:
-                    self._prev_xdim = xdim
+        if xdim not in self._selection_shared_dims:
+            # try to preserve previous xdim
+            prev_xdim = getattr(self, '_prev_xdim', None)
+            if prev_xdim in self._selection_shared_dims:
+                xdim = self._xdim = prev_xdim
+            else:
+                self._prev_xdim = xdim
+                try:
                     xdim = self._xdim = self._selection_shared_dims[0]
-        else:
-            xdim = None
+                except IndexError:
+                    xdim = None
         print(f'xdim: {xdim}')
         
         # common units across selection
         # if units conflict, attempt to convert to base units using pint
         self._selection_units: dict[str, str] = {}
         names_with_units_conflict = set()
-        datetime_dtypes = set()
-        for data_var in self._selected_data_vars:
+        for i, data_var in enumerate(self._selected_data_vars):
             units = data_var.attrs.get('units', None)
             if units is not None:
                 existing_units = self._selection_units.get(data_var.name, None)
@@ -132,12 +282,14 @@ class XarrayGraph(XarrayDataTreeViewer):
                 elif units != existing_units:
                     names_with_units_conflict.add(data_var.name)
             coord: xr.DataArray
-            for name, coord in data_var.coords.items():
-                # check for datetime dtypes
-                if np.issubdtype(coord.dtype, np.datetime64):
-                    datetime_dtypes.add(coord.dtype)
-                elif isinstance(coord.data[0], cftime.datetime):
-                    datetime_dtypes.add(type(coord.data[0]))
+            for name, coord in tuple(data_var.coords.items()):
+                if np.issubdtype(coord.dtype, np.datetime64) or isinstance(coord.data[0], cftime.datetime):
+                    # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
+                    datetime_values_for_pyqtgraph = coord.values.astype('datetime64[s]').astype(int)
+                    coord = coord.copy(data=datetime_values_for_pyqtgraph)
+                    coord.attrs['units'] = 'datetime64[s]'
+                    self._selected_data_vars[i] = data_var.assign_coords({name: coord})
+                # check units for conflict
                 units = coord.attrs.get('units', None)
                 if units is not None:
                     existing_units = self._selection_units.get(name, None)
@@ -147,18 +299,24 @@ class XarrayGraph(XarrayDataTreeViewer):
                         names_with_units_conflict.add(name)
         if names_with_units_conflict:
             for i, data_var in enumerate(self._selected_data_vars):
-                if data_var.name in names_with_units_conflict and 'units' in data_var.attrs:
+                if (data_var.name in names_with_units_conflict) and ('units' in data_var.attrs):
                     try:
-                        qvar = data_var.pint.quantify()
-                        qdata = qvar.data.to_base_units()
+                        print('DATA_VAR UNITS CONFLICT:', data_var.name, data_var.attrs.get('units', None))
+                        data = data_var.data
+                        units = data_var.attrs.get('units', None)
+                        qdata = self.ureg.Quantity(data, units)
+                        print('QVAR UNITS:', qdata.units)
+                        qdata = qdata.to_base_units()
+                        print('BASE UNITS:', qdata.units)
                         units = str(qdata.units)
                         data_var = data_var.copy(deep=False, data=qdata.magnitude)
                         data_var.attrs['units'] = units
                         self._selected_data_vars[i] = data_var
                         self._selection_units[data_var.name] = units
+                        print('CONVERTED UNITS:', data_var.name, units)
                     except:
                         item = self._selected_data_var_items[i]
-                        self._onInvalidSelection(
+                        self._invalidSelection(
                             f'''
                             Units Conflict
 
@@ -172,17 +330,23 @@ class XarrayGraph(XarrayDataTreeViewer):
                 for coord in data_var.coords.values():
                     if coord.name in names_with_units_conflict and 'units' in coord.attrs:
                         try:
-                            qvar = coord.pint.quantify()
-                            qdata = qvar.data.to_base_units()
+                            print('COORD UNITS CONFLICT:', coord.name, coord.attrs.get('units', None))
+                            data = coord.data
+                            units = coord.attrs.get('units', None)
+                            qdata = self.ureg.Quantity(data, units)
+                            print('QVAR UNITS:', qdata.units)
+                            qdata = qdata.to_base_units()
+                            print('BASE UNITS:', qdata.units)
                             units = str(qdata.units)
                             coord = coord.copy(deep=False, data=qdata.magnitude)
                             coord.attrs['units'] = units
                             data_var = data_var.assign_coords({coord.name: coord})
                             self._selected_data_vars[i] = data_var
                             self._selection_units[coord.name] = units
+                            print('CONVERTED UNITS:', coord.name, units)
                         except:
                             item = self._selected_data_var_items[i]
-                            self._onInvalidSelection(
+                            self._invalidSelection(
                                 f'''
                                 Units Conflict
 
@@ -192,17 +356,6 @@ class XarrayGraph(XarrayDataTreeViewer):
                                 '''
                             )
                             return
-        if len(datetime_dtypes) > 1:
-            self._onInvalidSelection(
-                f'''
-                Datetime Type Conflict
-
-                All datetime coordinates across the selection must have the same dtype in order to be plotted together. If there are different datetime dtypes across the selection, then the selection is considered invalid.
-
-                Found conflicting datetime dtypes across selection: {', '.join(str(dt) for dt in datetime_dtypes)}
-                '''
-            )
-            return
         print(f'_selection_units: {self._selection_units}')
 
         # selection combined coords
@@ -211,18 +364,21 @@ class XarrayGraph(XarrayDataTreeViewer):
             coords_ds = xr.Dataset(
                 coords=data_var.coords
             )
+            for dim in data_var.dims:
+                if dim not in coords_ds.coords:
+                    coords_ds = coords_ds.assign_coords({dim: range(data_var.sizes[dim])})
             selected_coords.append(coords_ds)
         if selected_coords:
             try:
                 self._selection_combined_coords: xr.Dataset = xr.merge(selected_coords, compat='no_conflicts', join='outer')
-            except Exception as e:
-                self._onInvalidSelection(
+            except Exception as err:
+                self._invalidSelection(
                     f'''
                     Alignment Conflict
 
                     All selected data variables must align in order to be plotted together. If there are any alignment conflicts between coordinates of the same name across the selection, then the selection is considered invalid.
 
-                    Failed to merge combined coordinates for entire selection: {e}
+                    Failed to merge combined coordinates for entire selection: {err}
                     '''
                 )
                 return
@@ -234,18 +390,50 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._selected_data_var_unique_names = np.unique([var.name for var in self._selected_data_vars]).tolist()
         print(f'_selected_data_var_unique_names: {self._selected_data_var_unique_names}')
 
-        self._plot_grid.setVisible(True)
+        # if we got here, we have a valid selection
+        self._data_var_views_splitter.setVisible(True)
         self._message_label.setVisible(False)
+        self.updateDimItersInToolbar()
+        self.updateROIsView()
+        self.onDataSliceChanged()
    
-    def _onInvalidSelection(self, msg: str) -> None:
+    def _invalidSelection(self, msg: str) -> None:
         self._selected_data_var_items = []
         self._selected_data_vars = []
         self._selection_ordered_dims = []
         self._selection_units = {}
-        self._plot_grid.setVisible(False)
+        self._selection_combined_coords = None
+        self._selected_data_var_unique_names = []
+
+        self._data_var_views_splitter.setVisible(False)
         msg = textwrap.dedent(msg).strip()
         self._message_label.setText(msg)
         self._message_label.setVisible(True)
+
+        self.updateDimItersInToolbar()
+        self.updateROIsView()
+        self.onDataSliceChanged()
+    
+    def onDataSliceChanged(self) -> None:
+        """ Handle selection changes in dimension iterators.
+        """
+
+        # get coords for current slice of selected variables
+        if self._selection_combined_coords is None:
+            self._selection_visible_coords = None
+        else:
+            iter_coords = {}
+            for dim in self._dim_iter_widgets:
+                if self._dim_iter_widgets[dim]['active']:
+                    widget: DimIterWidget = self._dim_iter_widgets[dim]['widget']
+                    iter_coords[dim] = widget.selectedCoords()
+            if iter_coords:
+                self._selection_visible_coords: xr.Dataset = self._selection_combined_coords.sel(iter_coords)#, method='nearest')
+            else:
+                self._selection_visible_coords: xr.Dataset = self._selection_combined_coords
+        print(f'_selection_visible_coords: {self._selection_visible_coords}')
+        
+        self.updatePlotGrid()
     
     def onROISelectionChanged(self) -> None:
         pass # TODO
@@ -257,29 +445,329 @@ class XarrayGraph(XarrayDataTreeViewer):
             self._ROI_selection_button.setIcon(self._ROI_xrange_icon)
         self._ROI_selection_button.setChecked(True)
     
-    def autoscale(self) -> None:
-        pass # TODO
-    
-    def notes(self) -> None:
-        pass # TODO
-    
-    def filter(self) -> None:
-        pass # TODO
+    def updateDimItersInToolbar(self) -> None:
+        """ Update dimension iterator widgets in the top toolbar.
+        """
+        coords: xr.Dataset = self._selection_combined_coords
+        ordered_dims = self._selection_ordered_dims
+        vdim = getattr(self, '_vertical_tile_dimension', None)
+        hdim = getattr(self, '_horizontal_tile_dimension', None)
 
-    def curveFit(self) -> None:
-        pass # TODO
+        # remove dim iter actions from toolbar
+        # items are not deleted, so the current iteration state will be restored if the dim is reselected again
 
-    def measure(self) -> None:
-        pass # TODO
+        for dim in self._dim_iter_widgets:
+            # block spinbox signals so that _on_index_selection_changed is not called
+            # if the spinbox had focus and loses it here
+            if 'widget' in self._dim_iter_widgets[dim]:
+                widget: DimIterWidget = self._dim_iter_widgets[dim]['widget']
+                widget._spinbox.blockSignals(True)
+            for value in self._dim_iter_widgets[dim].values():
+                if isinstance(value, QAction):
+                    self._top_toolbar.removeAction(value)
+            self._dim_iter_widgets[dim]['active'] = False
+        
+        if self._selection_combined_coords is None:
+            # self._before_dim_iters_spacer.setText('Selected data variables are not aligned.')
+            self._before_dim_iters_separator_action.setVisible(True)
+            self._dim_iters_spacer_action.setVisible(True)
+            return
+        # else:
+        #     self._before_dim_iters_spacer.setText('')
+        
+        # update or create dim iter widgets and insert actions into toolbar
+        iter_dims = [dim for dim in ordered_dims if (dim != self.xdim()) and (coords.sizes[dim] > 1)]
+        for dim in iter_dims:
+            if dim not in self._dim_iter_widgets:
+                widget = DimIterWidget()
+                widget.setDim(dim)
+                widget._spinbox.indicesChanged.connect(lambda: self.onDataSliceChanged())
+                widget.xdimChanged.connect(self.setXDim)
+                widget.tileChanged.connect(self.tileDimension)
+                self._dim_iter_widgets[dim] = {'widget': widget}
+            
+            widget = self._dim_iter_widgets[dim]['widget']
+            widget.setCoords(coords[dim].values)
+            widget.updateTileButton(vdim, hdim)
+
+            if 'separatorAction' in self._dim_iter_widgets[dim]:
+                action = self._dim_iter_widgets[dim]['separatorAction']
+                self._top_toolbar.insertAction(self._after_dim_iters_separator_action, action)
+            else:
+                action = self._top_toolbar.insertSeparator(self._after_dim_iters_separator_action)
+                self._dim_iter_widgets[dim]['separatorAction'] = action
+
+            if 'widgetAction' in self._dim_iter_widgets[dim]:
+                action = self._dim_iter_widgets[dim]['widgetAction']
+                self._top_toolbar.insertAction(self._after_dim_iters_separator_action, action)
+            else:
+                action = self._top_toolbar.insertWidget(self._after_dim_iters_separator_action, widget)
+                self._dim_iter_widgets[dim]['widgetAction'] = action
+            
+            self._dim_iter_widgets[dim]['active'] = True
+            widget._spinbox.blockSignals(False)
+        
+        self._dim_iters_spacer_action.setVisible(len(iter_dims) == 0)
+        self._before_dim_iters_separator_action.setVisible(len(iter_dims) == 0)
     
-    def isDataPanelVisible(self) -> bool:
-        return self._datatree_ROIs_splitter.isVisible()
+    def updatePlotGrid(self) -> None:
+        """ Update plot grids for selected variables and current plot tiling.
+        """
+
+        # one plot grid per selected variable
+        n_data_var_names = len(self._selected_data_var_unique_names)
+        while self._data_var_views_splitter.count() < n_data_var_names:
+            grid = PlotGrid()
+            grid.setHasRegularLayout(True)
+            self._data_var_views_splitter.addWidget(grid)
+        while self._data_var_views_splitter.count() > n_data_var_names:
+            index = self._data_var_views_splitter.count() - 1
+            widget = self._data_var_views_splitter.widget(index)
+            widget.setParent(None)
+            widget.deleteLater()
+        
+        # grid tiling
+        vdim, hdim, vcoords, hcoords = self.tiledDimensions()
+        n_grid_rows, n_grid_cols = 1, 1
+        if vdim is not None:
+            n_grid_rows = vcoords.size
+        if hdim is not None:
+            n_grid_cols = hcoords.size
+
+        # tile grids and store plots in array (if needed)
+        if not hasattr(self, '_plots') or self._plots.shape != (n_data_var_names, n_grid_rows, n_grid_cols):
+            self._plots = np.empty((n_data_var_names, n_grid_rows, n_grid_cols), dtype=object)
+            self._plot_grids: list[PlotGrid] = [self._data_var_views_splitter.widget(i) for i in range(n_data_var_names)]
+            for i, grid in enumerate(self._plot_grids):
+                data_var_name = self._selected_data_var_unique_names[i]
+                if grid.rowCount() != n_grid_rows or grid.columnCount() != n_grid_cols:
+                    grid.setGrid(n_grid_rows, n_grid_cols)
+                for row in range(grid.rowCount()):
+                    for col in range(grid.columnCount()):
+                        plot: Plot = grid.getItem(row, col)
+                        self._plots[i, row, col] = plot
+                if i == n_data_var_names - 1:
+                    grid.setAxisLabelAndTickVisibility(xlabel_rows=[-1], xtick_rows=[-1], ylabel_columns=[0], ytick_columns=[0])
+                else:
+                    grid.setAxisLabelAndTickVisibility(xlabel_rows=[], xtick_rows=[-1], ylabel_columns=[0], ytick_columns=[0])
+                grid.applyRegularLayout()
+        
+        self.updatePlotMetadata()
+        self.updatePlotAxisLabels()
+        self.updatePlotAxisTickFont()
+        self.updatePlotAxisLinks()
+        self.replot()
     
-    def setDataPanelVisible(self, visible: bool) -> None:
-        self._datatree_ROIs_splitter.setVisible(visible)
-        self._data_action.setChecked(visible)
+    def updatePlotMetadata(self) -> None:
+        """ Update metadata stored in each plot.
+        """
+        vdim, hdim, vcoords, hcoords = self.tiledDimensions()
+        n_vars, n_grid_rows, n_grid_cols = self._plots.shape
+        for i in range(n_vars):
+            var_name = self._selected_data_var_unique_names[i]
+            # yunits = self._selection_units.get(var_name, None)
+            vis_coords = self._selection_visible_coords.copy(deep=False)  # TODO: may include extra coords? get rid of these?
+            
+            for row in range(n_grid_rows):
+                if vdim is not None:
+                    row_coords = vis_coords.sel({vdim: vcoords[row]})
+                else:
+                    row_coords = vis_coords
+                
+                for col in range(n_grid_cols):
+                    if hdim is not None:
+                        plot_coords = row_coords.sel({hdim: hcoords[col]})
+                    else:
+                        plot_coords = row_coords
+                    plot_coords_dict = {dim: arr.values for dim, arr in plot_coords.coords.items() if dim != self.xdim()}
+                    
+                    plot = self._plots[i, row, col]
+                    plot._metadata = {
+                        'data_vars': [var_name],
+                        'grid_row': row,
+                        'grid_col': col,
+                        'coords': plot_coords,
+                        'non_xdim_coord_permutations': coord_permutations(plot_coords_dict),
+                    }
     
-    def settings(self) -> None:
+    def updatePlotAxisLabels(self) -> None:
+        """ Update axis labels for each plot (use settings font).
+        """
+        xunits = self._selection_units.get(self.xdim(), None)
+        axis_label_fontsize = 12 #self._axis_label_fontsize_spinbox.value()
+        axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{axis_label_fontsize}pt'}
+
+        vdim, hdim, vcoords, hcoords = self.tiledDimensions()
+        n_vars, n_grid_rows, n_grid_cols = self._plots.shape
+        for i in range(n_vars):
+            var_name = self._selected_data_var_unique_names[i]
+            yunits = self._selection_units.get(var_name, None)
+            for row in range(n_grid_rows):
+                for col in range(n_grid_cols):
+                    plot = self._plots[i, row, col]
+                    if (i == n_vars - 1) and (row == n_grid_rows - 1):
+                        label = self.xdim()
+                        if (hdim is not None) and (n_grid_cols > 1):
+                            label += f'[{hcoords[col]}]'
+                        plot.setLabel('bottom', text=label, units=xunits, **axis_label_style)
+                    if col == 0:
+                        label = var_name
+                        if (vdim is not None) and (n_grid_rows > 1):
+                            label += f'[{vcoords[row]}]'
+                        plot.setLabel('left', text=label, units=yunits, **axis_label_style)
+
+    def updatePlotAxisTickFont(self) -> None:
+        """ Update axis tick labels for each plot (use settings font).
+        """
+        axis_tick_font = QFont()
+        axis_tick_fontsize = 10 #self._axis_tick_fontsize_spinbox.value()
+        axis_tick_font.setPointSize(axis_tick_fontsize)
+        
+        for plot in self._plots.flatten().tolist():
+            plot.getAxis('left').setTickFont(axis_tick_font)
+            plot.getAxis('bottom').setTickFont(axis_tick_font)
+
+    def updatePlotAxisLinks(self) -> None:
+        """ Update axis linking for selected variables and current plot tiling.
+        """
+        n_vars, n_grid_rows, n_grid_cols = self._plots.shape
+        for i in range(n_vars):
+            for row in range(n_grid_rows):
+                for col in range(n_grid_cols):
+                    plot = self._plots[i, row, col]
+                    if (i != 0) or (row != 0) or (col != 0):
+                        plot.setXLink(self._plots[0, 0, 0])
+                    if (row > 0) or (col > 0):
+                        plot.setYLink(self._plots[i, 0, 0])
+
+    def updatePlotData(self) -> None:
+        """ Update graphs in each plot to show current datatree selection.
+        """
+        dt: xr.DataTree = self.datatree()
+        xdim: str = self.xdim()
+        if (xdim is None) or (self._selection_combined_coords is None) or (xdim not in self._selection_combined_coords):
+            return
+        
+        # datetime xdim values?
+        is_xdim_datetime = self._selection_units.get(xdim, None) == 'datetime64[s]'
+
+        # categorical (string) xdim values?
+        is_xdim_categorical = False
+        all_xticks = None  # will use default ticks
+        all_xdata = self._selection_combined_coords[xdim].values
+        if not is_xdim_datetime and not np.issubdtype(all_xdata.dtype, np.number):
+            is_xdim_categorical = True
+            all_xtick_values = np.arange(len(all_xdata))
+            all_xtick_labels = all_xdata  # str xdim values
+            all_xticks = [list(zip(all_xtick_values, all_xtick_labels))]
+
+        bottomAxisChanged = False
+        for plot in self._plots.flatten().tolist():
+            view: View = plot.getViewBox()
+
+            # update bottom axis (datetime or not)
+            bottomAxis: pg.AxisItem = plot.getAxis('bottom')
+            if is_xdim_datetime and not isinstance(bottomAxis, pg.DateAxisItem):
+                bottomAxis = pg.DateAxisItem(orientation='bottom')
+                plot.setAxisItems({'bottom': bottomAxis})
+                bottomAxisChanged = True
+            elif not is_xdim_datetime and isinstance(bottomAxis, pg.DateAxisItem):
+                bottomAxis = pg.AxisItem(orientation='bottom')
+                plot.setAxisItems({'bottom': bottomAxis})
+                bottomAxisChanged = True
+
+            # set xticks (in case change between numerical and categorical)
+            bottomAxis.setTicks(all_xticks)
+            
+            # existing graphs in plot
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            masked_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'masked']
+            preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
+
+            data_count = 0
+            item: XarrayDataTreeItem
+            data_var: xr.DataArray
+            for item, data_var in zip(self._selected_data_var_items, self._selected_data_vars):
+                var_name = data_var.name
+                if var_name not in plot._metadata['data_vars']:
+                    continue
+                node: xr.DataTree = item.node()
+                
+                non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
+                if len(non_xdim_coord_permutations) == 0:
+                    non_xdim_coord_permutations = [{}]
+                for coords in non_xdim_coord_permutations:
+                    if not coords:
+                        data_var_slice = data_var
+                    else:
+                        index_coords = {dim: values for dim, values in coords.items() if dim in data_var.dims}
+                        nonindex_coords = {dim: values for dim, values in coords.items() if dim in data_var.coords and dim not in data_var.dims}
+                        if index_coords:
+                            data_var_slice = data_var.sel(index_coords)
+                        else:
+                            data_var_slice = data_var
+                        for name, coord in nonindex_coords.items():
+                            try:
+                                data_var_slice = data_var_slice.where(data_var_slice.coords[name] == coord, drop=True)
+                            except:
+                                pass
+                    data_var_slice = data_var_slice.reset_coords(drop=True).squeeze(drop=True)
+                    if xdim in data_var_slice.coords:
+                        xdim_coord_slice = data_var_slice.coords[xdim]
+                        xdata = xdim_coord_slice.values
+                    else:
+                        xdata = np.arange(data_var_slice.sizes[xdim])
+                    ydata = data_var_slice.values
+                    if np.all(np.isnan(ydata)):
+                        continue
+                    
+                    # categorical xdim values?
+                    if is_xdim_categorical:
+                        intersect, xdata_indices, all_xtick_labels_indices = np.intersect1d(xdata, all_xtick_labels, assume_unique=True, return_indices=True)
+                        xdata = np.sort(all_xtick_labels_indices)
+                        # xdim_coord_slice = data_var_slice.coords[xdim].copy(data=xdata)
+                    
+                    # graph data
+                    if len(data_graphs) > data_count:
+                        # update existing data in plot
+                        data_graph = data_graphs[data_count]
+                        data_graph.setData(x=xdata, y=ydata)
+                    else:
+                        # add new data to plot
+                        data_graph = PlotCurve(x=xdata, y=ydata)
+                        plot.addItem(data_graph)
+                        data_graphs.append(data_graph)
+                    data_count += 1
+                    data_graph._metadata = {
+                        'type': 'data',
+                        'data': data_var_slice,
+                        # 'mask': mask_slice,
+                        # 'path': var_path,
+                        'coords': coords,
+                    }
+                    data_graph.setZValue(1)
+
+                    # graph name is path plus non-xdim coords
+                    name = item.abspath()
+                    if coords:
+                        name += '[' + ','.join([f'{dim}={coords[dim]}' for dim in coords]) + ']'
+                    data_graph.setName(name)
+            
+            # remove extra graph items from plot
+            cleanup_graphs = [(data_graphs, data_count)]#, (masked_graphs, masked_count)]
+            for graphs, count in cleanup_graphs:
+                while len(graphs) > count:
+                    graph = graphs.pop()
+                    plot.removeItem(graph)
+                    graph.deleteLater()
+
+        if bottomAxisChanged:
+            self.updatePlotAxisLabels()
+            self.updatePlotAxisTickFont()
+            self.updatePlotAxisLinks()
+    
+    def updateROIsView(self) -> None:
         pass # TODO
     
     def _initActions(self) -> None:
@@ -406,21 +894,23 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._datatree_ROIs_splitter.addWidget(self._datatree_view)
         self._datatree_ROIs_splitter.addWidget(self._ROIs_view)
 
-        # graphs view
-        self._plot_grid = PlotGrid()
-        # self._plot_grid.setGrid(1, 1)
+        # data_var views splitter
+        self._data_var_views_splitter = QSplitter(Qt.Orientation.Vertical)
 
         # invalid selection label
         self._message_label = QLabel()
         self._message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._message_label.setWordWrap(True)
 
+        # toolbar dimension iterators
+        self._dim_iter_widgets: dict[str, dict] = {}
+
         # right side vbox
         panel = QWidget()
         vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(0)
-        vbox.addWidget(self._plot_grid)
+        vbox.addWidget(self._data_var_views_splitter)
         vbox.addWidget(self._message_label)
 
         # toolbars
@@ -475,13 +965,220 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         self._top_toolbar.addAction(self._data_action)
         self._before_dim_iters_separator_action = self._top_toolbar.addSeparator()
-        self._top_toolbar_spacer_action = self._top_toolbar.addWidget(self._dim_iters_spacer)
+        self._dim_iters_spacer_action = self._top_toolbar.addWidget(self._dim_iters_spacer)
         self._after_dim_iters_separator_action = self._top_toolbar.addSeparator()
         self._top_toolbar.addAction(self._notes_action)
         self._top_toolbar.addWidget(self._ROI_selection_button)
         self._top_toolbar.addAction(self._home_action)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._top_toolbar)
     
+
+class DimIterWidget(QWidget):
+
+    xdimChanged = Signal(str)
+    tileChanged = Signal(str, object)
+
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
+
+        color_on: QColor = QApplication.palette().color(QPalette.ColorRole.Text)
+        color_off = QColor(color_on)
+        color_off.setAlphaF(0.5)
+
+        self._pile_action = QAction(
+            parent = self, 
+            icon = qta.icon('ph.stack', color=color_off, color_on=color_on), 
+            text = 'Pile Traces', 
+            iconVisibleInMenu = True, 
+            checkable = True, 
+            checked = True,
+            triggered = self.pile,
+        )
+        self._tile_vertically_action = QAction(
+            parent = self, 
+            icon = qta.icon('mdi.reorder-horizontal', color=color_off, color_on=color_on), 
+            text = 'Tile Traces Vertically', 
+            iconVisibleInMenu = True, 
+            checkable = True, 
+            checked = False,
+            triggered = self.tileVertically,
+        )
+        self._tile_horizontally_action = QAction(
+            parent = self, 
+            icon = qta.icon('mdi.reorder-vertical', color=color_off, color_on=color_on), 
+            text = 'Tile Traces Horizontally', 
+            iconVisibleInMenu = True, 
+            checkable = True, 
+            checked = False,
+            triggered = self.tileHorizontally,
+        )
+
+        self._tile_menu = QMenu()
+        self._tile_menu.addAction(self._pile_action)
+        self._tile_menu.addAction(self._tile_vertically_action)
+        self._tile_menu.addAction(self._tile_horizontally_action)
+
+        self._tile_action_group = QActionGroup(self._tile_menu)
+        self._tile_action_group.addAction(self._pile_action)
+        self._tile_action_group.addAction(self._tile_vertically_action)
+        self._tile_action_group.addAction(self._tile_horizontally_action)
+        self._tile_action_group.setExclusive(True)
+
+        self._dim_label = QLabel('dim')
+        self._dim_label.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred))
+
+        self._size_label = QLabel(': n')
+        self._size_label.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred))
+        self._size_label_opacity_effect = QGraphicsOpacityEffect(self._size_label)
+        self._size_label_opacity_effect.setOpacity(0.5)
+        self._size_label.setGraphicsEffect(self._size_label_opacity_effect)
+
+        self._xdim_button = QToolButton(
+            icon=qta.icon('ph.arrow-line-down', color=color_off, color_on=color_on),
+            toolTip='Set as X-axis dimension',
+            pressed=self.setAsXDim,
+        )
+        self._xdim_button.setMaximumSize(QSize(20, 20))
+
+        self._tile_button = QToolButton(
+            icon=self._pile_action.icon(),
+            text='Tile traces',
+            toolTip='Tile traces',
+            popupMode=QToolButton.ToolButtonPopupMode.InstantPopup,
+        )
+        self._tile_button.setMaximumSize(QSize(20, 20))
+        self._tile_button.setMenu(self._tile_menu)
+        self._tile_button.setStyleSheet('QToolButton::menu-indicator { image: none; }')
+
+        self._spinbox = MultiValueSpinBox()
+        self._spinbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        grid = QGridLayout(self)
+        grid.setContentsMargins(5, 2, 5, 2)
+        grid.setSpacing(2)
+        grid.addWidget(self._dim_label, 0, 0)
+        grid.addWidget(self._size_label, 0, 1)
+        grid.addWidget(self._xdim_button, 0, 2)
+        grid.addWidget(self._tile_button, 0, 3)
+        grid.addWidget(self._spinbox, 1, 0, 1, 4)
+
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    
+    def dim(self) -> str:
+        return self._dim_label.text()
+    
+    def setDim(self, dim: str) -> None:
+        self._dim_label.setText(dim)
+    
+    def coords(self) -> np.ndarray:
+        return self._spinbox.indexedValues()
+    
+    def setCoords(self, coords: np.ndarray) -> None:
+        self._spinbox.blockSignals(True)
+        values = self._spinbox.selectedValues()
+        self._spinbox.setIndexedValues(coords)
+        if values.size > 0:
+            self._spinbox.setSelectedValues(values)
+        if self._spinbox.selectedValues().size == 0 and coords.size > 0:
+            self._spinbox.setIndices([0])
+        self._spinbox.blockSignals(False)
+        self._size_label.setText(f': {coords.size}')
+    
+    def selectedCoords(self) -> np.ndarray:
+        return self._spinbox.selectedValues()
+    
+    def setSelectedCoords(self, coords: np.ndarray) -> None:
+        self._spinbox.blockSignals(True)
+        self._spinbox.setSelectedValues(coords)
+        self._spinbox.blockSignals(False)
+    
+    def updateTileButton(self, vertical_tile_dim: str | None = None, horizontal_tile_dim: str | None = None) -> None:
+        dim = self.dim()
+        if vertical_tile_dim == dim:
+            self._tile_vertically_action.setChecked(True)
+            self._tile_button.setIcon(self._tile_vertically_action.icon())
+        elif horizontal_tile_dim == dim:
+            self._tile_horizontally_action.setChecked(True)
+            self._tile_button.setIcon(self._tile_horizontally_action.icon())
+        else:
+            self._pile_action.setChecked(True)
+            self._tile_button.setIcon(self._pile_action.icon())
+    
+    def setAsXDim(self) -> None:
+        self.xdimChanged.emit(self.dim())
+
+    def pile(self) -> None:
+        self._pile_action.setChecked(True)
+        self._tile_button.setIcon(self._pile_action.icon())
+        self.tileChanged.emit(self.dim(), None)
+    
+    def tileVertically(self) -> None:
+        self._tile_vertically_action.setChecked(True)
+        self._tile_button.setIcon(self._tile_vertically_action.icon())
+        self.tileChanged.emit(self.dim(), Qt.Orientation.Vertical)
+    
+    def tileHorizontally(self) -> None:
+        self._tile_horizontally_action.setChecked(True)
+        self._tile_button.setIcon(self._tile_horizontally_action.icon())
+        self.tileChanged.emit(self.dim(), Qt.Orientation.Horizontal)
+
+
+class IgnoreLettersKeyPressFilter(QObject):
+
+    def eventFilter(self, object, event):
+        if event.type() == QEvent.Type.KeyPress:
+            if event.text().isalpha():
+                # Do not handle letters A-Z
+                return True
+        return False
+
+
+def coord_permutations(coords: dict) -> list[dict]:
+    """ return list of all permutations of coords along each dimension
+
+    Example:
+        coords = {'subject': [0, 1], 'trial': [0, 1, 2]}
+        coord_permutations(coords) = [
+            {'subject': 0, 'trial': 0},
+            {'subject': 0, 'trial': 1},
+            {'subject': 0, 'trial': 2},
+            {'subject': 1, 'trial': 0},
+            {'subject': 1, 'trial': 1},
+            {'subject': 1, 'trial': 2},
+        ]
+    """
+    if not coords:
+        return []
+    for dim in coords:
+        # ensure coords[dim] is iterable
+        try:
+            iter(coords[dim])
+        except:
+            # in case coords[dim] is a scalar
+            coords[dim] = [coords[dim]]
+    permutations: list[dict] = []
+    dims = list(coords)
+    index = {dim: 0 for dim in dims}
+    while index is not None:
+        try:
+            # coord for index
+            coord = {dim: coords[dim][i] for dim, i in index.items()}
+            # store coord
+            permutations.append(coord)
+        except:
+            pass
+        # next index
+        for dim in reversed(dims):
+            if index[dim] + 1 < len(coords[dim]):
+                index[dim] += 1
+                break
+            elif dim == dims[0]:
+                index = None
+                break
+            else:
+                index[dim] = 0
+    return permutations
+
 
 def test_live():
     app = QApplication()
@@ -507,6 +1204,9 @@ def test_live():
     window.setDatatree(dt)
     window._datatree_view.showAll()
     window.show()
+
+    # for unit in window.ureg:
+    #     print(unit)
 
     app.exec()
 

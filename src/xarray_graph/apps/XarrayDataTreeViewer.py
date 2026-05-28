@@ -53,7 +53,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view = XarrayDataTreeView()
         model = XarrayDataTreeModel()
         self._datatree_view.setModel(model)
-        self._datatree_view.selectionWasChanged.connect(self.onSelectionChanged)
+        self._datatree_view.selectionWasChanged.connect(self.onDataTreeSelectionChanged)
 
         # setup
         self._initActions()
@@ -70,13 +70,13 @@ class XarrayDataTreeViewer(QMainWindow):
         self._datatree_view.setTreeData(datatree)
         self.refresh()
 
-    def onSelectionChanged(self) -> None:
+    def onDataTreeSelectionChanged(self) -> None:
         self._updateInfoView()
         self._updateAttrsView()
     
     def refresh(self) -> None:
         self._datatree_view.refresh()
-        self.onSelectionChanged()
+        self.onDataTreeSelectionChanged()
     
     @staticmethod
     def refreshAllWindows():
