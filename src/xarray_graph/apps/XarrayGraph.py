@@ -25,10 +25,10 @@ from xarray_graph.graph import *
 from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
 
 
-ROI_KEY = '_ROI_'
-MASK_KEY = '_mask_'
-CURVE_FIT_KEY = '_curve_fit_'
-NOTES_KEY = '_notes_'
+ROI_KEY = 'XG_ROI'
+MASK_KEY = 'XG_MASK'
+CURVE_FIT_KEY = 'XG_CURVE_FIT'
+NOTES_KEY = 'XG_NOTES'
 
 
 class XarrayGraph(XarrayDataTreeViewer):
@@ -199,7 +199,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._data_action.setChecked(visible)
     
     def onDataTreeSelectionChanged(self) -> None:
-        print('\n'*2, '>'*50)
+        print('\n'*2, 'onDataTreeSelectionChanged...')
         # self._data_var_selection = pd.DataFrame(columns=['item', 'path', 'variable', 'dims', 'shared_dims', 'units'])
 
         # selected data_vars
@@ -358,12 +358,13 @@ class XarrayGraph(XarrayDataTreeViewer):
                             return
         print(f'_selection_units: {self._selection_units}')
 
-        # selection combined coords
+        # selection combined coords (index (dim) coords only)
         selected_coords = []
         for data_var in self._selected_data_vars:
+            non_index_coords = [name for name in data_var.coords.keys() if name not in data_var.dims]
             coords_ds = xr.Dataset(
                 coords=data_var.coords
-            )
+            ).drop_vars(non_index_coords)
             for dim in data_var.dims:
                 if dim not in coords_ds.coords:
                     coords_ds = coords_ds.assign_coords({dim: range(data_var.sizes[dim])})
@@ -417,6 +418,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def onDataSliceChanged(self) -> None:
         """ Handle selection changes in dimension iterators.
         """
+        print('\n'*2, 'onDataSliceChanged...')
 
         # get coords for current slice of selected variables
         if self._selection_combined_coords is None:
@@ -513,6 +515,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotGrid(self) -> None:
         """ Update plot grids for selected variables and current plot tiling.
         """
+        print('\n'*2, 'updatePlotGrid...')
 
         # one plot grid per selected variable
         n_data_var_names = len(self._selected_data_var_unique_names)
@@ -561,12 +564,13 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotMetadata(self) -> None:
         """ Update metadata stored in each plot.
         """
+        print('updatePlotMetadata...')
         vdim, hdim, vcoords, hcoords = self.tiledDimensions()
         n_vars, n_grid_rows, n_grid_cols = self._plots.shape
         for i in range(n_vars):
             var_name = self._selected_data_var_unique_names[i]
             # yunits = self._selection_units.get(var_name, None)
-            vis_coords = self._selection_visible_coords.copy(deep=False)  # TODO: may include extra coords? get rid of these?
+            vis_coords = self._selection_visible_coords.copy(deep=False)
             
             for row in range(n_grid_rows):
                 if vdim is not None:
@@ -581,6 +585,10 @@ class XarrayGraph(XarrayDataTreeViewer):
                         plot_coords = row_coords
                     plot_coords_dict = {dim: arr.values for dim, arr in plot_coords.coords.items() if dim != self.xdim()}
                     
+                    print(f'var_name: {var_name}')
+                    print(f'plot_coords: {plot_coords}')
+                    print(f'plot_coords_dict: {plot_coords_dict}')
+                    
                     plot = self._plots[i, row, col]
                     plot._metadata = {
                         'data_vars': [var_name],
@@ -593,6 +601,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotAxisLabels(self) -> None:
         """ Update axis labels for each plot (use settings font).
         """
+        print('updatePlotAxisLabels...')
         xunits = self._selection_units.get(self.xdim(), None)
         axis_label_fontsize = 12 #self._axis_label_fontsize_spinbox.value()
         axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{axis_label_fontsize}pt'}
@@ -619,6 +628,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotAxisTickFont(self) -> None:
         """ Update axis tick labels for each plot (use settings font).
         """
+        print('updatePlotAxisTickFont...')
         axis_tick_font = QFont()
         axis_tick_fontsize = 10 #self._axis_tick_fontsize_spinbox.value()
         axis_tick_font.setPointSize(axis_tick_fontsize)
@@ -630,6 +640,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotAxisLinks(self) -> None:
         """ Update axis linking for selected variables and current plot tiling.
         """
+        print('updatePlotAxisLinks...')
         n_vars, n_grid_rows, n_grid_cols = self._plots.shape
         for i in range(n_vars):
             for row in range(n_grid_rows):
@@ -643,6 +654,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotData(self) -> None:
         """ Update graphs in each plot to show current datatree selection.
         """
+        print('\n'*2, 'updatePlotData...')
         dt: xr.DataTree = self.datatree()
         xdim: str = self.xdim()
         if (xdim is None) or (self._selection_combined_coords is None) or (xdim not in self._selection_combined_coords):
@@ -689,15 +701,18 @@ class XarrayGraph(XarrayDataTreeViewer):
             item: XarrayDataTreeItem
             data_var: xr.DataArray
             for item, data_var in zip(self._selected_data_var_items, self._selected_data_vars):
+                print(f'Plotting data variable: {item.abspath()}...')
                 var_name = data_var.name
                 if var_name not in plot._metadata['data_vars']:
                     continue
                 node: xr.DataTree = item.node()
+                # data_var = data_var.reset_coords(drop=True)
                 
                 non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
                 if len(non_xdim_coord_permutations) == 0:
                     non_xdim_coord_permutations = [{}]
                 for coords in non_xdim_coord_permutations:
+                    print(f'  coords: {coords}...')
                     if not coords:
                         data_var_slice = data_var
                     else:
@@ -715,13 +730,15 @@ class XarrayGraph(XarrayDataTreeViewer):
                     data_var_slice = data_var_slice.reset_coords(drop=True).squeeze(drop=True)
                     if xdim in data_var_slice.coords:
                         xdim_coord_slice = data_var_slice.coords[xdim]
-                        xdata = xdim_coord_slice.values
+                        xdata: np.ndarray = xdim_coord_slice.values
                     else:
-                        xdata = np.arange(data_var_slice.sizes[xdim])
-                    ydata = data_var_slice.values
+                        xdata: np.ndarray = np.arange(data_var_slice.sizes[xdim])
+                    ydata: np.ndarray = data_var_slice.values
                     if np.all(np.isnan(ydata)):
                         continue
-                    
+                    print(f'    xdata: {xdata}')
+                    print(f'    ydata: {ydata}')
+
                     # categorical xdim values?
                     if is_xdim_categorical:
                         intersect, xdata_indices, all_xtick_labels_indices = np.intersect1d(xdata, all_xtick_labels, assume_unique=True, return_indices=True)
@@ -763,6 +780,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     graph.deleteLater()
 
         if bottomAxisChanged:
+            print('Bottom axis type changed, updating axis links...')
             self.updatePlotAxisLabels()
             self.updatePlotAxisTickFont()
             self.updatePlotAxisLinks()
@@ -1200,13 +1218,12 @@ def test_live():
     dt['test/lon'].attrs['units'] = 'degE'
 
     
-    window = XarrayGraph()
-    window.setDatatree(dt)
-    window._datatree_view.showAll()
-    window.show()
+    # window = XarrayGraph()
+    # window.setDatatree(dt)
+    # window._datatree_view.showAll()
+    # window.show()
 
-    # for unit in window.ureg:
-    #     print(unit)
+    XarrayGraph.open('examples/WinWCP.wcp')
 
     app.exec()
 
