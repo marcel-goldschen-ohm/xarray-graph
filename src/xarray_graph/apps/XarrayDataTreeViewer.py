@@ -208,25 +208,36 @@ class XarrayDataTreeViewer(QMainWindow):
         for window in tuple(windows):
             if window is not combined_window:
                 window.close()
+
+        # this seems to be needed
+        XarrayDataTreeViewer.window_mgr.updateAllWindowMenus()
         
         return combined_window
     
-    def separateFirstLevelGroups(self) -> None:
+    @classmethod
+    def separateFirstLevelGroups(cls, window: XarrayDataTreeViewer = None) -> None:
         """ Separate first level groups into multiple windows.
         """
-        dt: xr.DataTree = self.datatree()
+        if window is None:
+            window = XarrayDataTreeViewer.window_mgr.activeWindow()
+        if window is None:
+            return
+        dt: xr.DataTree = window.datatree()
         groups: tuple[xr.DataTree] = tuple(dt.children.values())
         if not groups:
             return
         
         for group in groups:
-            window: XarrayDataTreeViewer = XarrayDataTreeViewer.new()
-            window.setWindowTitle(group.name)
+            new_window: XarrayDataTreeViewer = cls.new()
+            new_window.setWindowTitle(group.name)
             group.orphan()
-            window.setDatatree(group)
+            new_window.setDatatree(group)
         
-        # close this window
-        self.close()
+        # close old window
+        window.close()
+
+        # this seems to be needed
+        XarrayDataTreeViewer.window_mgr.updateAllWindowMenus()
    
     def _initActions(self) -> None:
 

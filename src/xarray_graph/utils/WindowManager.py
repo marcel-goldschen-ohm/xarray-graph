@@ -43,6 +43,12 @@ class WindowManager(QObject):
         window_dict = {window.windowTitle(): window for window in self.windows()}
         return window_dict[key]
     
+    def activeWindow(self) -> QMainWindow | None:
+        active_window: QMainWindow = QApplication.instance().activeWindow()
+        if active_window in self.windows():
+            return active_window
+        return None
+    
     def ls(self) -> str:
         print('\n'.join(f'{i}: {window.windowTitle()}' for i, window in enumerate(self.windows())))
     
