@@ -7,7 +7,7 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import numpy as np
 import pyqtgraph as pg
-from xarray_graph.graph import XAxisRegion, YAxisRegion#, PlotCurve
+from xarray_graph.graph import VLine, HLine, XAxisRegion, YAxisRegion#, PlotCurve
 
 
 class View(pg.ViewBox):
@@ -38,14 +38,6 @@ class View(pg.ViewBox):
         #     ( 77, 190, 238),
         #     (162,  20,  47),
         # ]
-
-        # ROI styles
-        self._ROI_pen = pg.mkPen(QColor(237, 135, 131), width=1)
-        self._ROI_hoverPen = pg.mkPen(QColor(255, 0, 0), width=2)
-        self._ROI_handlePen = self._ROI_pen
-        self._ROI_handleHoverPen = self._ROI_hoverPen
-        self._ROI_brush = pg.mkBrush(QColor(237, 135, 131, 51))
-        self._ROI_hoverBrush = pg.mkBrush(QColor(237, 135, 131, 128))
     
     # def colormap(self):
     #     return self._colormap
@@ -108,24 +100,28 @@ class View(pg.ViewBox):
             if self._drawingItemsOfType is not None:
                 if self._drawingItemsOfType == XAxisRegion:
                     limits = [posInAxesCoords.x(), posInAxesCoords.x()]
-                    newItem = XAxisRegion(values=limits, pen=self._ROI_pen, hoverPen=self._ROI_hoverPen, brush=self._ROI_brush, hoverBrush=self._ROI_hoverBrush)
+                    newItem = XAxisRegion(values=limits)
                 elif self._drawingItemsOfType == YAxisRegion:
                     limits = [posInAxesCoords.y(), posInAxesCoords.y()]
-                    newItem = YAxisRegion(values=limits, pen=self._ROI_pen, hoverPen=self._ROI_hoverPen, brush=self._ROI_brush, hoverBrush=self._ROI_hoverBrush)
+                    newItem = YAxisRegion(values=limits)
+                elif self._drawingItemsOfType == VLine:
+                    newItem = VLine(pos=posInAxesCoords.x())
+                elif self._drawingItemsOfType == HLine:
+                    newItem = HLine(pos=posInAxesCoords.y())
                 elif self._drawingItemsOfType in [pg.RectROI, pg.EllipseROI, pg.CircleROI, pg.LineSegmentROI]:
-                    newItem = self._drawingItemsOfType(pos=posInAxesCoords, size=[0, 0], invertible=True, pen=self._ROI_pen, hoverPen=self._ROI_hoverPen, handlePen=self._ROI_handlePen, handleHoverPen=self._ROI_handleHoverPen)
-                # elif issubclass(self._drawingItemsOfType, pg.PlotDataItem):
-                #     if isinstance(self._itemBeingDrawn, pg.PlotDataItem):
-                #         # add point to existing Graph
-                #         x, y = self._itemBeingDrawn.getOriginalDataset()
-                #         x = np.append(x, posInAxesCoords.x())
-                #         y = np.append(y, posInAxesCoords.y())
-                #         self._itemBeingDrawn.setData(x, y)
-                #         event.accept()
-                #         return
-                #     else:
-                #         newItem = PlotCurve(pen=self._ROI_pen, symbol='o', symbolPen=self._ROI_pen, symbolBrush=self._ROI_brush)
-                #         newItem.setData([posInAxesCoords.x()], [posInAxesCoords.y()])
+                    newItem = self._drawingItemsOfType(pos=posInAxesCoords, size=[0, 0], invertible=True)
+                elif issubclass(self._drawingItemsOfType, pg.PlotDataItem):
+                    if isinstance(self._itemBeingDrawn, pg.PlotDataItem):
+                        # add point to existing Graph
+                        x, y = self._itemBeingDrawn.getOriginalDataset()
+                        x = np.append(x, posInAxesCoords.x())
+                        y = np.append(y, posInAxesCoords.y())
+                        self._itemBeingDrawn.setData(x, y)
+                        event.accept()
+                        return
+                    else:
+                        newItem = self._drawingItemsOfType()
+                        newItem.setData([posInAxesCoords.x()], [posInAxesCoords.y()])
                 if newItem is not None:
                     self._itemBeingDrawn = newItem
                     self.addItem(self._itemBeingDrawn)
@@ -139,9 +135,8 @@ class View(pg.ViewBox):
         if event.button() == Qt.MouseButton.LeftButton:
             # finished drawing region/event?
             if  self._itemBeingDrawn is not None:
-                if type(self._itemBeingDrawn) in [XAxisRegion, YAxisRegion, pg.RectROI, pg.EllipseROI, pg.CircleROI, pg.LineSegmentROI]:
-                    self.sigItemAdded.emit(self._itemBeingDrawn)
-                    self._itemBeingDrawn = None
+                self.sigItemAdded.emit(self._itemBeingDrawn)
+                self._itemBeingDrawn = None
                 event.accept()
                 return
         
@@ -160,6 +155,10 @@ class View(pg.ViewBox):
                 elif isinstance(self._itemBeingDrawn, YAxisRegion):
                     limits = sorted([startPosInAxesCoords.y(), posInAxesCoords.y()])
                     self._itemBeingDrawn.setRegion(limits)
+                elif isinstance(self._itemBeingDrawn, VLine):
+                    self._itemBeingDrawn.setPos(posInAxesCoords.x())
+                elif isinstance(self._itemBeingDrawn, HLine):
+                    self._itemBeingDrawn.setPos(posInAxesCoords.y())
                 elif type(self._itemBeingDrawn) in [pg.RectROI, pg.EllipseROI, pg.CircleROI]:
                     self._itemBeingDrawn.setSize(posInAxesCoords - self._itemBeingDrawn.pos())
                 elif isinstance(self._itemBeingDrawn, pg.LineSegmentROI):

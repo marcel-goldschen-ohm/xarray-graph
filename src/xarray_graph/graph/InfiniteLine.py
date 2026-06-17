@@ -10,10 +10,10 @@ import pyqtgraph as pg
 # from xarray_graph.widgets import ColorButton
 
 
-class AxisRegion(pg.LinearRegionItem):
-    """ LinearRegionItem with context menu, optional text label, and style dialog.
+class InfiniteLine(pg.InfiniteLine):
+    """ InfiniteLine with context menu, optional text label, and style dialog.
     
-    self.sigRegionChangeFinished is emitted when the item is moved or resized.
+    self.sigPositionChangeFinished is emitted when the item is moved.
     """
 
     sigRegionDragFinished = Signal(object)
@@ -21,33 +21,27 @@ class AxisRegion(pg.LinearRegionItem):
     sigRequestDeletion = Signal(object)
 
     def __init__(self, *args, **kwargs):
-        if 'orientation' not in kwargs:
-            kwargs['orientation'] = 'vertical'
-        if 'brush' not in kwargs:
-            kwargs['brush'] = pg.mkBrush(QColor(237, 135, 131, 51))
-        if 'hoverBrush' not in kwargs:
-            kwargs['hoverBrush'] = pg.mkBrush(QColor(237, 135, 131, 128))
+        if 'angle' not in kwargs:
+            kwargs['angle'] = 90
         if 'pen' not in kwargs:
             kwargs['pen'] = pg.mkPen(QColor(237, 135, 131), width=1)
         if 'hoverPen' not in kwargs:
             kwargs['hoverPen'] = pg.mkPen(QColor(255, 0, 0), width=2)
-        if 'swapMode' not in kwargs:
-            kwargs['swapMode'] = 'push'  # keeps label on left side
-        pg.LinearRegionItem.__init__(self, *args, **kwargs)
+        pg.InfiniteLine.__init__(self, *args, **kwargs)
 
-        self._textLabelItem: pg.InfLineLabel = pg.InfLineLabel(self.lines[0], text='', movable=True, position=1, anchors=[(0,0), (0,0)])
-        self._textLabelItem.setVisible(False)
-        self.setFontColor(QColor.fromRgbF(0.15, 0.15, 0.15))
+        # self._textLabelItem: pg.InfLineLabel = pg.InfLineLabel(self.lines[0], text='', movable=True, position=1, anchors=[(0,0), (0,0)])
+        # self._textLabelItem.setVisible(False)
+        # self.setFontColor(QColor.fromRgbF(0.15, 0.15, 0.15))
 
-        self.lines[0].sigClicked.connect(self.onEdgeClicked)
-        self.lines[1].sigClicked.connect(self.onEdgeClicked)
+        # self.lines[0].sigClicked.connect(self.onEdgeClicked)
+        # self.lines[1].sigClicked.connect(self.onEdgeClicked)
 
-        self._group = ''
+        # self._group = ''
 
-        # update label position when region is moved or resized
-        # TODO: disallow dragging label outside of viewbox
-        self.sigRegionChanged.connect(self.updateLabelPosition)
-        # self.sigRegionChangeFinished.connect(lambda self=self: self.storeState())
+        # # update label position when region is moved or resized
+        # # TODO: disallow dragging label outside of viewbox
+        # self.sigRegionChanged.connect(self.updateLabelPosition)
+        # # self.sigRegionChangeFinished.connect(lambda self=self: self.storeState())
 
         # self.setZValue(11)
     
@@ -148,34 +142,34 @@ class AxisRegion(pg.LinearRegionItem):
     #     self.lineMoved(1)
     #     self.lineMoveFinished()
 
-    def mouseDragEvent(self, event):
-        """ Add new signal for when drag is finished.
-        """
-        if not self.movable or event.button() != Qt.MouseButton.LeftButton:
-            return
-        event.accept()
+    # def mouseDragEvent(self, event):
+    #     """ Add new signal for when drag is finished.
+    #     """
+    #     if not self.movable or event.button() != Qt.MouseButton.LeftButton:
+    #         return
+    #     event.accept()
         
-        if event.isStart():
-            bdp = event.buttonDownPos()
-            self.cursorOffsets = [l.pos() - bdp for l in self.lines]
-            self.startPositions = [l.pos() for l in self.lines]
-            self.moving = True
+    #     if event.isStart():
+    #         bdp = event.buttonDownPos()
+    #         self.cursorOffsets = [l.pos() - bdp for l in self.lines]
+    #         self.startPositions = [l.pos() for l in self.lines]
+    #         self.moving = True
             
-        if not self.moving:
-            return
+    #     if not self.moving:
+    #         return
             
-        self.blockLineSignal = True  # only want to update once
-        for i, l in enumerate(self.lines):
-            l.setPos(self.cursorOffsets[i] + event.pos())
-        self.prepareGeometryChange()
-        self.blockLineSignal = False
+    #     self.blockLineSignal = True  # only want to update once
+    #     for i, l in enumerate(self.lines):
+    #         l.setPos(self.cursorOffsets[i] + event.pos())
+    #     self.prepareGeometryChange()
+    #     self.blockLineSignal = False
         
-        if event.isFinish():
-            self.moving = False
-            self.sigRegionChangeFinished.emit(self)
-            self.sigRegionDragFinished.emit(self)
-        else:
-            self.sigRegionChanged.emit(self)
+    #     if event.isFinish():
+    #         self.moving = False
+    #         self.sigRegionChangeFinished.emit(self)
+    #         self.sigRegionDragFinished.emit(self)
+    #     else:
+    #         self.sigRegionChanged.emit(self)
     
     # def group(self):
     #     return self._group
@@ -183,104 +177,86 @@ class AxisRegion(pg.LinearRegionItem):
     # def setGroup(self, group):
     #     self._group = group
     
-    def faceColor(self) -> QColor:
-        return self.brush.color()
+    def pen(self) -> QPen:
+        return self.pen
     
-    def setFaceColor(self, color: QColor):
-        self.brush.setColor(color)
+    def setPen(self, pen: QPen):
+        self.pen = pen
     
-    def edgePen(self) -> QPen:
-        return self.lines[0].pen
+    def color(self) -> QColor:
+        return self.pen.color()
     
-    def setEdgePen(self, pen: QPen):
-        self.lines[0].pen = pen
-        self.lines[1].pen = pen
+    def setColor(self, color: QColor):
+        self.pen.setColor(color)
     
-    def edgeColor(self) -> QColor:
-        return self.lines[0].pen.color()
+    def width(self) -> float:
+        return self.pen.width()
     
-    def setEdgeColor(self, color: QColor):
-        self.lines[0].pen.setColor(color)
-        self.lines[1].pen.setColor(color)
+    def setWidth(self, width: float):
+        self.pen.setWidth(width)
     
-    def edgeWidth(self) -> float:
-        return self.lines[0].pen.width()
+    def hoverPen(self) -> QPen:
+        return self.hoverPen
     
-    def setEdgeWidth(self, width: float):
-        self.lines[0].pen.setWidth(width)
-        self.lines[1].pen.setWidth(width)
+    def setHoverPen(self, pen: QPen):
+        self.hoverPen = pen
     
-    def faceHoverColor(self) -> QColor:
-        return self.hoverBrush.color()
+    def hoverColor(self) -> QColor:
+        return self.hoverPen.color()
     
-    def setFaceHoverColor(self, color: QColor):
-        self.hoverBrush.setColor(color)
+    def setHoverColor(self, color: QColor):
+        self.hoverPen.setColor(color)
     
-    def edgeHoverPen(self) -> QPen:
-        return self.lines[0].hoverPen
+    def hoverWidth(self) -> float:
+        return self.hoverPen.width()
     
-    def setEdgeHoverPen(self, pen: QPen):
-        self.lines[0].hoverPen = pen
-        self.lines[1].hoverPen = pen
-    
-    def edgeHoverColor(self) -> QColor:
-        return self.lines[0].hoverPen.color()
-    
-    def setEdgeHoverColor(self, color: QColor):
-        self.lines[0].hoverPen.setColor(color)
-        self.lines[1].hoverPen.setColor(color)
-    
-    def edgeHoverWidth(self) -> float:
-        return self.lines[0].hoverPen.width()
-    
-    def setEdgeHoverWidth(self, width: float):
-        self.lines[0].hoverPen.setWidth(width)
-        self.lines[1].hoverPen.setWidth(width)
+    def setHoverWidth(self, width: float):
+        self.hoverPen.setWidth(width)
 
-    def text(self):
-        try:
-            return self._textLabelItem.format
-        except:
-            return ''
+    # def text(self):
+    #     try:
+    #         return self._textLabelItem.format
+    #     except:
+    #         return ''
 
-    def setText(self, text: str):
-        self._textLabelItem.setFormat(text)
-        self._textLabelItem.setVisible(text != '')
+    # def setText(self, text: str):
+    #     self._textLabelItem.setFormat(text)
+    #     self._textLabelItem.setVisible(text != '')
     
-    def font(self) -> QFont:
-        return self._textLabelItem.textItem.font()
+    # def font(self) -> QFont:
+    #     return self._textLabelItem.textItem.font()
     
-    def setFont(self, font: QFont):
-        self._textLabelItem.setFont(font)
+    # def setFont(self, font: QFont):
+    #     self._textLabelItem.setFont(font)
     
-    def fontSize(self) -> int:
-        return self._textLabelItem.textItem.font().pointSize()
+    # def fontSize(self) -> int:
+    #     return self._textLabelItem.textItem.font().pointSize()
     
-    def setFontSize(self, size):
-        font = self._textLabelItem.textItem.font()
-        font.setPointSize(size)
-        self._textLabelItem.setFont(font)
+    # def setFontSize(self, size):
+    #     font = self._textLabelItem.textItem.font()
+    #     font.setPointSize(size)
+    #     self._textLabelItem.setFont(font)
     
-    def fontColor(self) -> QColor:
-        return self._textLabelItem.color
+    # def fontColor(self) -> QColor:
+    #     return self._textLabelItem.color
     
-    def setFontColor(self, color: QColor):
-        self._textLabelItem.setColor(color)
+    # def setFontColor(self, color: QColor):
+    #     self._textLabelItem.setColor(color)
     
     # def copyFormat(self, other: AxisRegion):
     #     self.setFormat(other.getFormat())
     
-    def updateLabelPosition(self):
-        if self._textLabelItem is not None:
-            self._textLabelItem.updatePosition()
-            pos = self._textLabelItem.orthoPos
-            if pos < 0.05:
-                self._textLabelItem.setPosition(0.05)
+    # def updateLabelPosition(self):
+    #     if self._textLabelItem is not None:
+    #         self._textLabelItem.updatePosition()
+    #         pos = self._textLabelItem.orthoPos
+    #         if pos < 0.05:
+    #             self._textLabelItem.setPosition(0.05)
     
-    def onEdgeClicked(self, line, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.RightButton:
-            if self.raiseContextMenu(event):
-                event.accept()
+    # def onEdgeClicked(self, line, event: QMouseEvent):
+    #     if event.button() == Qt.MouseButton.RightButton:
+    #         if self.raiseContextMenu(event):
+    #             event.accept()
     
     def mouseClickEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.RightButton:
@@ -318,20 +294,20 @@ class AxisRegion(pg.LinearRegionItem):
     #     self.sigEditingFinished.emit(self)
 
 
-class XAxisRegion(AxisRegion):
-    """ Vertical AxisRegionItem for x-axis ROI. """
+class VLine(InfiniteLine):
+    """ Vertical InfiniteLine. """
 
     def __init__(self, *args, **kwargs):
-        kwargs['orientation'] = 'vertical'
-        AxisRegion.__init__(self, *args, **kwargs)
+        kwargs['angle'] = 90
+        InfiniteLine.__init__(self, *args, **kwargs)
 
 
-class YAxisRegion(AxisRegion):
-    """ Horizontal AxisRegionItem for y-axis ROI. """
+class HLine(InfiniteLine):
+    """ Horizontal InfiniteLine. """
 
     def __init__(self, *args, **kwargs):
-        kwargs['orientation'] = 'horizontal'
-        AxisRegion.__init__(self, *args, **kwargs)
+        kwargs['angle'] = 0
+        InfiniteLine.__init__(self, *args, **kwargs)
 
 
 # class AxisRegionPanel(QWidget):
@@ -602,7 +578,9 @@ class YAxisRegion(AxisRegion):
 def test_live():
     app = QApplication()
 
-    ui = AxisRegionPanel()
+    ui = pg.PlotWidget()
+    line = InfiniteLine(pos=0.5, pen=pg.mkPen('r', width=2), hoverPen=pg.mkPen('g', width=3))
+    ui.addItem(line)
     ui.show()
 
     app.exec()

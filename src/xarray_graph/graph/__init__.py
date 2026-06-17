@@ -1,4 +1,5 @@
 
+from xarray_graph.graph.InfiniteLine import VLine, HLine
 from xarray_graph.graph.AxisRegion import XAxisRegion, YAxisRegion
 from xarray_graph.graph.PlotCurve import PlotCurve
 from xarray_graph.graph.View import View

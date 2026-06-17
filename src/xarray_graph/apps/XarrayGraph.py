@@ -61,6 +61,9 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._xdim = xdim
         self.refresh()
     
+    def selectedROIType(self) -> str:
+        return self._ROI_action_group.checkedAction().text()
+    
     def autoscale(self) -> None:
         """ Autoscale all plots while preserving axis linking.
         """
@@ -441,12 +444,15 @@ class XarrayGraph(XarrayDataTreeViewer):
         pass # TODO
    
     def onROITypeChanged(self) -> None:
-        if self._ROI_event_action.isChecked():
-            self._ROI_selection_button.setIcon(self._ROI_event_icon)
-        elif self._ROI_xrange_action.isChecked():
-            self._ROI_selection_button.setIcon(self._ROI_xrange_icon)
-        self._ROI_selection_button.setChecked(True)
+        self._ROI_selection_button.setIcon(self._ROI_action_group.checkedAction().icon())
+        self.stopDrawingROIs()
+        self.startDrawingROIs()
     
+    def onROIAdded(self, roiItem: XAxisRegion) -> None:
+        print('ROI added:', roiItem)
+        # TODO...
+        self.stopDrawingROIs()
+
     def updateDimItersInToolbar(self) -> None:
         """ Update dimension iterator widgets in the top toolbar.
         """
@@ -788,6 +794,26 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updateROIsView(self) -> None:
         pass # TODO
     
+    def startDrawingROIs(self) -> None:
+        roiType = self.selectedROIType()
+        roiToGraphicsItemTypeMap = {
+            'Event': VLine,
+            'Range': XAxisRegion,
+        }
+        graphicsItemType = roiToGraphicsItemTypeMap.get(roiType, None)
+        if graphicsItemType is None:
+            return
+        for plot in self._plots.flatten().tolist():
+            plot.vb.sigItemAdded.connect(self.onROIAdded)
+            plot.vb.startDrawingItemsOfType(graphicsItemType)
+        self._ROI_selection_button.setChecked(True)
+    
+    def stopDrawingROIs(self) -> None:
+        for plot in self._plots.flatten().tolist():
+            plot.vb.stopDrawingItems()
+            plot.vb.sigItemAdded.disconnect(self.onROIAdded)
+        self._ROI_selection_button.setChecked(False)
+
     def _initActions(self) -> None:
         super()._initActions()
 
@@ -914,6 +940,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         # data_var views splitter
         self._data_var_views_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._plots = np.empty((0, 0, 0), dtype=object)
 
         # invalid selection label
         self._message_label = QLabel()
@@ -967,6 +994,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROI_selection_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.onROITypeChanged() # set initial icon
         self._ROI_selection_button.setChecked(False)
+        self._ROI_selection_button.toggled.connect(lambda checked: self.startDrawingROIs() if checked else self.stopDrawingROIs())
 
         # toolbar
         self._top_toolbar = QToolBar()
