@@ -41,8 +41,12 @@ class XarrayDataTreeViewer(QMainWindow):
             ----------------------------------------------------
             Variables:
             wm -> WindowManager
+            
             e.g., window = wm['window title'] or wm[index]
                   datatree = window.datatree()
+            
+            wm.dir() or wm.ls() -> List all windows with their titles and indices for easy access.
+            
             Modules loaded at startup: numpy as np, xarray as xr
             ----------------------------------------------------
             """

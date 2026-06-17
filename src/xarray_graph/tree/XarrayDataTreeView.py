@@ -16,6 +16,7 @@ from qtpy.QtWidgets import *
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeModel, KeyValueTreeView
+from xarray_graph.widgets import CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeView(TreeView):
@@ -67,7 +68,7 @@ class XarrayDataTreeView(TreeView):
         )
 
         self._showInfoColumnsAction = QAction(
-            text = 'Show Dimensions & Units',
+            text = 'Show Dimensions && Units',
             icon = qta.icon('fa6s.info'),
             iconVisibleInMenu=True,
             checkable = True,
@@ -352,15 +353,18 @@ class XarrayDataTreeView(TreeView):
     def keyPressEvent(self, event: QKeyEvent):
         if (event.key() == Qt.Key.Key_I) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
             items: list[XarrayDataTreeItem] = self.selectedItems()
-            if items:
+            if not items:
+                model: XarrayDataTreeModel = self.model()
+                items = [model.rootItem()]
+            if len(items) == 1:
+                data = items[0].data()
+                title = items[0].path()
+                infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
+            else:
                 # ensure items are in tree order
                 items = AbstractTreeItem.orderedItems(items)
-                if len(items) == 1:
-                    data = items[0].data()
-                    title = items[0].path()
-                else:
-                    data = [item.data() for item in items]
-                    title = 'Selected'
+                data = [item.data() for item in items]
+                title = 'Selected'
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             return
         return super().keyPressEvent(event)
@@ -371,6 +375,30 @@ class XarrayDataTreeView(TreeView):
         if size.height() > hmin:
             size.setHeight(max(hmin, size.height() - 100))
         return size
+
+
+# class InfoAttrsWidget(QWidget):
+    
+#     def __init__(self, data: xr.DataTree | xr.Dataset | xr.DataArray, parent: QWidget = None, font_size: int = None) -> None:
+#         super().__init__(parent)
+
+#         self._info_text_edit = infoTextEdit(data, font_size=font_size)
+
+#         self._attrs_view = KeyValueTreeView()
+#         self._attrs_view.setAlternatingRowColors(True)
+#         self._attrs_view.setTreeData(data.attrs)
+#         self._attrs_view.showAll()
+
+#         self._selection_splitter = CollapsibleSectionsSplitter()
+#         self._selection_splitter.addSection('Info', self._info_text_edit)
+#         self._selection_splitter.addSection('Attrs', self._attrs_view)
+
+#         # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
+#         vbox = QVBoxLayout(self)
+#         vbox.setContentsMargins(0, 0, 0, 0)
+#         vbox.setSpacing(0)
+#         vbox.addWidget(self._selection_splitter, stretch=10000)
+#         vbox.addStretch(1)
 
 
 def makeDialog(parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None) -> QDialog:

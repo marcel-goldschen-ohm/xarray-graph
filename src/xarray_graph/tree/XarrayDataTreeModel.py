@@ -441,6 +441,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # check name conflict
             name_conflict = None
             item_name = item.name()
+            if item_name is None:
+                item_name = xarray_utils.unique_name('Node', parent_keys)
+                item.setName(item_name)
             if '/' in item_name:
                 name_conflict = f'"{item_name}" is not a valid DataTree name, which cannot contain "/".'
             elif item_name in parent_keys:
@@ -478,6 +481,26 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     item.setName(new_name)
                 elif action == 'Skip':
                     continue
+                
+            # test insertion in copy to make sure it is valid
+            try:
+                parent_node_copy: xr.DataTree = parent_item._node.copy(deep=False)
+                parent_node_copy[item.name()] = item.data()
+            except Exception as err:
+                conflict = f'Failed to insert "{item.path()}" in "{parent_item.path()}: {err}".'
+            if conflict:
+                if skip_all_conflicts:
+                    continue
+                parent_widget: QWidget = QApplication.focusWidget()
+                title = 'Conflict'
+                text = conflict
+                dlg = ConflictDialog(parent_widget, title, text)
+                if dlg.exec() == QDialog.DialogCode.Rejected:
+                    # abort
+                    break
+                # skip
+                skip_all_conflicts = dlg.skipAll()
+                continue
 
             # insert item
             row_for_item = XarrayDataTreeItem._findInsertionIndex(parent_item, item, row)
@@ -525,72 +548,93 @@ class XarrayDataTreeModel(AbstractTreeModel):
         skip_all_conflicts = False
         name_conflict_default_action = None
         for src_item in src_items:
-            # check conflicts
             conflict = None
-            if dst_parent_item.hasAncestor(src_item):
-                conflict = f'Cannot move "{src_item.path()}" to its own descendent "{dst_parent_item.path()}".'
-            elif dst_parent_item._node.has_data and src_item._node.has_data:
-                # check alignment conflict
-                try:
-                    src_data = src_item.data()
-                    if isinstance(src_data, xr.DataTree):
-                        src_data = src_data.dataset
-                    xr.align(dst_parent_item._node.dataset, src_data, join='exact')
-                except:
-                    conflict = f'"{src_item.path()}" is not aligned with "{dst_parent_item.path()}".'
-            if conflict:
-                if skip_all_conflicts:
-                    continue
-                parent_widget: QWidget = QApplication.focusWidget()
-                title = 'Conflict'
-                text = conflict
-                dlg = ConflictDialog(parent_widget, title, text)
-                if dlg.exec() == QDialog.DialogCode.Rejected:
-                    # abort
-                    break
-                # skip
-                skip_all_conflicts = dlg.skipAll()
-                continue
-
-            # check name conflict
-            name_conflict = None
-            src_item_name = src_item.name()
-            if '/' in src_item_name:
-                name_conflict = f'"{src_item_name}" is not a valid DataTree name, which cannot contain "/".'
-            elif src_item_name in dst_parent_keys:
-                name_conflict = f'"{src_item_name}" already exists in "{dst_parent_item.path()}".'
-            if name_conflict:
-                action = name_conflict_default_action
-                if action is None:
+            if src_parent_item is not dst_parent_item:
+                # check conflicts
+                if dst_parent_item.hasAncestor(src_item):
+                    conflict = f'Cannot move "{src_item.path()}" to its own descendent "{dst_parent_item.path()}".'
+                elif dst_parent_item._node.has_data and src_item._node.has_data:
+                    # check alignment conflict
+                    try:
+                        src_data = src_item.data()
+                        if isinstance(src_data, xr.DataTree):
+                            src_data = src_data.dataset
+                        xr.align(dst_parent_item._node.dataset, src_data, join='exact')
+                    except:
+                        conflict = f'"{src_item.path()}" is not aligned with "{dst_parent_item.path()}".'
+                if conflict:
+                    if skip_all_conflicts:
+                        continue
                     parent_widget: QWidget = QApplication.focusWidget()
-                    title = 'Name Conflict'
-                    text = name_conflict
-                    dlg = NameConflictDialog(parent_widget, title, text)
-                    dlg._merge_button.setEnabled(False) # TODO
+                    title = 'Conflict'
+                    text = conflict
+                    dlg = ConflictDialog(parent_widget, title, text)
                     if dlg.exec() == QDialog.DialogCode.Rejected:
                         # abort
                         break
-                    action = dlg.selectedAction()
-                    if dlg.applyToAll():
-                        name_conflict_default_action = action
-                if action == 'Overwrite':
-                    # remove item to be overwritten in dst parent
-                    dst_item_to_remove: XarrayDataTreeItem = dst_parent_item[src_item_name]
-                    row_to_remove = dst_item_to_remove.row()
-                    success = super().removeRows(row_to_remove, 1, dst_parent_index)
-                    if not success:
-                        # skip
+                    # skip
+                    skip_all_conflicts = dlg.skipAll()
+                    continue
+
+                # check name conflict
+                name_conflict = None
+                src_item_name = src_item.name()
+                if '/' in src_item_name:
+                    name_conflict = f'"{src_item_name}" is not a valid DataTree name, which cannot contain "/".'
+                elif src_item_name in dst_parent_keys:
+                    name_conflict = f'"{src_item_name}" already exists in "{dst_parent_item.path()}".'
+                if name_conflict:
+                    action = name_conflict_default_action
+                    if action is None:
+                        parent_widget: QWidget = QApplication.focusWidget()
+                        title = 'Name Conflict'
+                        text = name_conflict
+                        dlg = NameConflictDialog(parent_widget, title, text)
+                        dlg._merge_button.setEnabled(False) # TODO
+                        if dlg.exec() == QDialog.DialogCode.Rejected:
+                            # abort
+                            break
+                        action = dlg.selectedAction()
+                        if dlg.applyToAll():
+                            name_conflict_default_action = action
+                    if action == 'Overwrite':
+                        # remove item to be overwritten in dst parent
+                        dst_item_to_remove: XarrayDataTreeItem = dst_parent_item[src_item_name]
+                        row_to_remove = dst_item_to_remove.row()
+                        success = super().removeRows(row_to_remove, 1, dst_parent_index)
+                        if not success:
+                            # skip
+                            continue
+                        if row_to_remove < dst_row:
+                            dst_row -= 1
+                    elif action == 'Merge':
+                        # TODO
+                        pass
+                    elif action == 'Keep Both':
+                        # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
+                        new_name = xarray_utils.unique_name(src_item_name, dst_parent_keys + src_parent_keys)
+                        src_item.setName(new_name)
+                    elif action == 'Skip':
                         continue
-                    if row_to_remove < dst_row:
-                        dst_row -= 1
-                elif action == 'Merge':
-                    # TODO
-                    pass
-                elif action == 'Keep Both':
-                    # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
-                    new_name = xarray_utils.unique_name(src_item_name, dst_parent_keys + src_parent_keys)
-                    src_item.setName(new_name)
-                elif action == 'Skip':
+                
+                # test move in copy to make sure it is valid
+                try:
+                    dst_parent_node_copy: xr.DataTree = dst_parent_item._node.copy(deep=False)
+                    dst_parent_node_copy[src_item.name()] = src_item.data()
+                except Exception as err:
+                    conflict = f'Failed to move "{src_item.path()}" to "{dst_parent_item.path()}: {err}".'
+                if conflict:
+                    if skip_all_conflicts:
+                        continue
+                    parent_widget: QWidget = QApplication.focusWidget()
+                    title = 'Conflict'
+                    text = conflict
+                    dlg = ConflictDialog(parent_widget, title, text)
+                    if dlg.exec() == QDialog.DialogCode.Rejected:
+                        # abort
+                        break
+                    # skip
+                    skip_all_conflicts = dlg.skipAll()
                     continue
 
             # move src_item

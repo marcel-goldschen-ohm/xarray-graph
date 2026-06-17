@@ -43,6 +43,12 @@ class WindowManager(QObject):
         window_dict = {window.windowTitle(): window for window in self.windows()}
         return window_dict[key]
     
+    def ls(self) -> str:
+        print('\n'.join(f'{i}: {window.windowTitle()}' for i, window in enumerate(self.windows())))
+    
+    def dir(self) -> str:
+        return self.ls()
+    
     def windowEventFilter(self) -> QObject:
         return self._window_event_filter
     

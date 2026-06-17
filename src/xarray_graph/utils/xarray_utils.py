@@ -68,6 +68,21 @@ def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include
     return keys
 
 
+# def move_item(src_parent_node: xr.DataTree, src_key: str, dst_parent_node: xr.DataTree, dst_key: str) -> bool:
+#     # test move in a copy
+#     try:
+#         src_parent_node_copy = src_parent_node.copy(deep=False)
+#         dst_parent_node_copy = dst_parent_node.copy(deep=False)
+#         dst_parent_node_copy[dst_key] = src_parent_node_copy[src_key]
+#         src_parent_node_copy = src_parent_node_copy.drop(src_key)
+#         # if successful, perform move on original nodes
+#         dst_parent_node[dst_key] = src_parent_node[src_key]
+#         src_parent_node.drop(src_key, inplace=True)
+#     except Exception:
+#         return False
+#     return True
+
+
 def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
     branch_root: xr.DataTree = aligned_root(node)
     branch_root.dataset = branch_root.to_dataset().rename_dims(dims_dict)

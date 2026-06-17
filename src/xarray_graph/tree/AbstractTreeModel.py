@@ -258,14 +258,14 @@ class AbstractTreeModel(QAbstractItemModel):
                 QMessageBox.warning(parent_widget, title, text)
                 return False
 
-        # # cannot insert item into one of its own descendents
-        # for item in items:
-        #     if parent_item.hasAncestor(item):
-        #         parent_widget: QWidget = QApplication.focusWidget()
-        #         title = 'Invalid Insert'
-        #         text = f'Cannot insert item "{item.path()}" into its own descendent "{parent_item.path()}".'
-        #         QMessageBox.warning(parent_widget, title, text)
-        #         return False
+        # cannot insert item into one of its own descendents
+        for item in items:
+            if parent_item.hasAncestor(item):
+                parent_widget: QWidget = QApplication.focusWidget()
+                title = 'Invalid Insert'
+                text = f'Cannot insert item "{item.path()}" into its own descendent "{parent_item.path()}".'
+                QMessageBox.warning(parent_widget, title, text)
+                return False
 
         count: int = len(items)
         self.beginInsertRows(parent_index, row, row + count - 1)
@@ -295,11 +295,11 @@ class AbstractTreeModel(QAbstractItemModel):
         items_to_move: list[AbstractTreeItem] = src_parent_item.children[src_row: src_row + count]
         
         for item in items_to_move:
-            if dst_parent_item is item or dst_parent_item.hasAncestor(item):
+            ok, msg = self.isItemTransferValid(item, self, dst_parent_item, dst_row)
+            if not ok:
                 parent_widget: QWidget = QApplication.focusWidget()
                 title = 'Invalid Move'
-                text = f'Cannot move item "{item.path()}" to its own descendent "{dst_parent_item.path()}".'
-                QMessageBox.warning(parent_widget, title, text)
+                QMessageBox.warning(parent_widget, title, msg)
                 return False
         
         self.beginMoveRows(src_parent_index, src_row, src_row + count - 1, dst_parent_index, dst_row)
@@ -353,11 +353,25 @@ class AbstractTreeModel(QAbstractItemModel):
         if dst_model is self:
             return self.moveItems(src_items, dst_parent_item, dst_row)
         
+        src_parent_items: list[AbstractTreeItem] = [item.parent for item in src_items]
+        src_rows: list[int] = [item.siblingIndex() for item in src_items]
         if self.removeItems(src_items):
             if dst_model.insertItems(src_items, dst_row, dst_parent_item):
                 return True
-            # TODO: re-insert src_items back to their original positions to avoid leaving the model in a corrupted state if insertion fails
+            # re-insert src_items back to their original positions to avoid leaving the model in a corrupted state if insertion fails
+            for src_item, src_parent_item, src_row in zip(src_items, src_parent_items, src_rows):
+                self.insertItems([src_item], src_row, src_parent_item)
         return False
+    
+    def isItemTransferValid(self, src_item: AbstractTreeItem, dst_model: AbstractTreeModel, dst_parent_item: AbstractTreeItem, dst_row: int) -> tuple[bool, str]:
+        """ Check if transferring src_item to dst_parent_item would be valid. Does not actually perform the transfer.
+
+        Reimplement this in a subclass to check for specific constraints on valid item transfers.
+        """
+        if dst_parent_item is src_item or dst_parent_item.hasAncestor(src_item):
+            text = f'Cannot transfer item "{src_item.path()}" to its own descendent "{dst_parent_item.path()}".'
+            return False, text
+        return True, ''
 
     @staticmethod
     def _branchRootItemsOnly(items: list[AbstractTreeItem]) -> list[AbstractTreeItem]:
