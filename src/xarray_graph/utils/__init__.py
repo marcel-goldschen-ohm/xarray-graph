@@ -1,2 +1,3 @@
 from xarray_graph.utils.IPythonConsole import IPythonConsole
 from xarray_graph.utils.WindowManager import WindowManager
+from xarray_graph.utils.Annotation import annotation_label

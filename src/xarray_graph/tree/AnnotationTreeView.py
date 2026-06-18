@@ -1,6 +1,4 @@
 """ Tree view for a `AnnotationTreeModel` with drag-and-drop, context menu, and mouse wheel expand/collapse.
-
-TODO:
 """
 
 from __future__ import annotations
@@ -10,7 +8,8 @@ from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
 import qtawesome as qta
-from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel, TreeView
+from xarray_graph.utils import xarray_utils
+from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel, TreeView, KeyValueTreeModel, KeyValueTreeView
 
 
 class AnnotationTreeView(TreeView):
@@ -32,36 +31,6 @@ class AnnotationTreeView(TreeView):
 
         self._paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self)
         self._paste_shortcut.activated.connect(lambda: self.pasteCopy())
-
-        self._showTypeColumnAction = QAction(
-            text = 'Show Type Column',
-            icon = qta.icon('fa6s.info'),
-            iconVisibleInMenu=True,
-            checkable = True,
-            checked = False,
-            toolTip = 'Show data type column in the tree view. Uncheck to hide column.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
-        )
-    
-    def setModel(self, model: AnnotationTreeModel, updateViewOptionsFromModel: bool = True) -> None:
-        super().setModel(model)
-        if updateViewOptionsFromModel:
-            self._updateViewOptionsFromModel()
-        else:
-            self._updateModelFromViewOptions()
-
-    def _updateViewOptionsFromModel(self):
-        model: AnnotationTreeModel = self.model()
-        
-        self._showTypeColumnAction.blockSignals(True)
-        self._showTypeColumnAction.setChecked(model.isTypesColumnVisible())
-        self._showTypeColumnAction.blockSignals(False)
-
-    def _updateModelFromViewOptions(self):
-        model: AnnotationTreeModel = self.model()
-        self.storeViewState()
-        model.setTypesColumnVisible(self._showTypeColumnAction.isChecked())
-        self.restoreViewState()
     
     def annotations(self) -> list[dict] | dict[str, list[dict]]:
         model: AnnotationTreeModel = self.model()
@@ -87,8 +56,8 @@ class AnnotationTreeView(TreeView):
         for item in self.selectedItems():
             leaf: AnnotationTreeItem
             for leaf in item.subtree_leaves():
-                if leaf.is_annotation():
-                    annotation: dict = leaf.data
+                if leaf.isAnnotation():
+                    annotation: dict = leaf._data
                     if annotation not in annotations:
                         annotations.append(annotation)
         return annotations
@@ -104,8 +73,8 @@ class AnnotationTreeView(TreeView):
         for item in root.subtree_leaves():
             if item is root:
                 continue
-            if item.is_annotation():
-                annotation: dict = item.data
+            if item.isAnnotation():
+                annotation: dict = item._data
                 if annotation in annotations:
                     index: QModelIndex = model.indexFromItem(item)
                     toSelect.select(index, index)
@@ -122,6 +91,10 @@ class AnnotationTreeView(TreeView):
 
         # item that was clicked on
         item: AnnotationTreeItem = model.itemFromIndex(index)
+
+        if item.isAnnotation():
+            menu.addAction(QAction('Edit', parent=menu, triggered=lambda checked, item=item: self.editAnnotation(item)))
+            menu.addSeparator()
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -142,9 +115,10 @@ class AnnotationTreeView(TreeView):
         menu.addAction(QAction('Remove', parent=menu, triggered=lambda checked: self.removeSelectedItems(), enabled=has_selection))
         
         # insert new item
-        if item.is_annotation_list():
+        if item.isRoot() or item.parent.isRoot():
+            parent_item: AnnotationTreeItem = item if item.isRoot() else item.parent
             menu.addSeparator()
-            menu.addAction(QAction('New Group', parent=menu, triggered=lambda checked, parent_item=item, row=len(item.children): self.insertNewGroup(parent_item, row)))
+            menu.addAction(QAction('New Group', parent=menu, triggered=lambda checked, parent_item=parent_item, row=len(parent_item.children): self.insertNewGroup(parent_item, row)))
         
         # group selected
         if has_selection:
@@ -159,10 +133,6 @@ class AnnotationTreeView(TreeView):
         if model.columnCount() > 1:
             menu.addAction(self._resizeAllColumnsToContentsAction)
             menu.addAction(self._showAllAction)
-        
-        # Options
-        menu.addSeparator()
-        menu.addAction(self._showTypeColumnAction)
 
         # refresh
         menu.addSeparator()
@@ -183,7 +153,7 @@ class AnnotationTreeView(TreeView):
         if not items:
             return
         # copy the annotation dicts
-        AnnotationTreeView._copied_annotations = [deepcopy(item.data) for item in items]
+        AnnotationTreeView._copied_annotations = [deepcopy(item._data) for item in items if item.isAnnotation()]
     
     def pasteCopy(self, parent_item: AnnotationTreeItem = None) -> None:
         model: AnnotationTreeModel = self.model()
@@ -197,81 +167,104 @@ class AnnotationTreeView(TreeView):
             if not items:
                 return
             parent_item = items[0]
-            if parent_item.is_annotation():
+            if parent_item.isAnnotation():
                 parent_item = parent_item.parent
         # paste items
         row: int = len(parent_item.children)
-        model.insertAnnotations(annotations, row, parent_item)
+        # TODO...
+        # model.insertAnnotations(annotations, row, parent_item)
     
     def hasCopy(self) -> bool:
         if AnnotationTreeView._copied_annotations:
             return True
         return False
     
+    def editAnnotation(self, item: AnnotationTreeItem) -> None:
+        if not item.isAnnotation():
+            return
+        annotation: dict = item._data
+        model = KeyValueTreeModel()
+        model.setTreeData(annotation)
+        view = KeyValueTreeView()
+        view.setAlternatingRowColors(True)
+        view.setModel(model)
+        view.showAll()
+        
+        dialog = QDialog(parent=self)
+        dialog.setWindowTitle('Edit Annotation')
+        vbox = QVBoxLayout(dialog)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(10)
+        vbox.addWidget(view)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dialog)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        vbox.addWidget(button_box)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.refresh()
+    
     def insertNewGroup(self, parent_item: AnnotationTreeItem, row: int) -> None:
-        if not parent_item.is_annotation_list():
+        if not parent_item.isRoot():
             return
         model: AnnotationTreeModel = self.model()
-        annotation_list: list[dict] = parent_item.data
-        group_names = list(set([ann['group'] for ann in annotation_list if ann.get('group', None)]))
+        annotations: list[dict] = parent_item._data
+        group_names = list(set([ann['group'] for ann in annotations if ann.get('group', None)]))
         # in case we have any empty group nodes
         child_item: AnnotationTreeItem
         for child_item in parent_item.children:
-            if child_item.is_annotation_group():
-                group_name = child_item.data
+            if child_item.isGroup():
+                group_name = child_item.group()
                 if group_name not in group_names:
                     group_names.append(group_name)
         # insert new empty group node with unique name
-        group_name = model.uniqueName('New Group', group_names)
-        # new_item = AnnotationTreeItem(group_name)
-        # model.insertItems([new_item], row, parent_item)
-        model.insertGroups([group_name], row, parent_item)
+        group_name = xarray_utils.unique_name('Group', group_names)
+        new_item = AnnotationTreeItem([], group_name)
+        model.insertItems([new_item], row, parent_item)
     
     def groupSelected(self) -> None:
-        items: list[AnnotationTreeItem] = self.selectedItems()
-        if not items:
-            return
-        title = 'Group'
-        label = 'Group name:'
-        group, ok = QInputDialog.getText(self, title, label)
-        group = group.strip()
-        if not ok or not group:
-            return
-        for item in items:
-            if item.is_annotation():
-                item.data['group'] = group
-        self.refresh()
+        pass # TODO
+        # items: list[AnnotationTreeItem] = self.selectedItems()
+        # if not items:
+        #     return
+        # title = 'Group'
+        # label = 'Group name:'
+        # group, ok = QInputDialog.getText(self, title, label)
+        # group = group.strip()
+        # if not ok or not group:
+        #     return
+        # for item in items:
+        #     if item.is_annotation():
+        #         item.data['group'] = group
+        # self.refresh()
     
     def ungroupSelected(self) -> None:
-        items: list[AnnotationTreeItem] = self.selectedItems()
-        if not items:
-            return
-        for item in items:
-            if item.is_annotation():
-                if 'group' in item.data:
-                    del item.data['group']
-        self.refresh()
+        pass # TODO
+        # items: list[AnnotationTreeItem] = self.selectedItems()
+        # if not items:
+        #     return
+        # for item in items:
+        #     if item.is_annotation():
+        #         if 'group' in item.data:
+        #             del item.data['group']
+        # self.refresh()
 
 
 def test_live():
 
-    data = {
-        'List 1': [
-            {'type': 'vregion', 'position': {'lat': [0, 1]}},
-            {'type': 'hregion', 'position': {'lon': [2, 3]}},
-        ],
-        'List 2': [
-            {'type': 'region', 'position': {'lat': [4, 5], 'lon': [6, 7]}, 'group': 'Group A'},
-            {'type': 'hregion', 'position': {'lon': [6, 7]}, 'group': 'Group A'},
-            {'type': 'vregion', 'position': {'lat': [8, 9]}, 'group': 'Group B'},
-        ],
-    }
+    annotations = [
+        {'type': 'region', 'position': {'lat': [0, 1]}},
+        {'type': 'region', 'position': {'lon': [2, 3]}},
+        {'type': 'region', 'position': {'lat': [4, 5], 'lon': [6, 7]}, 'group': 'Group A'},
+        {'type': 'region', 'position': {'lon': [6, 7]}, 'group': 'Group A', 'text': 'some text\nsecond line'},
+        {'type': 'region', 'position': {'lat': [8, 9]}, 'group': 'Group B'},
+    ]
 
     app = QApplication()
 
     model = AnnotationTreeModel()
-    model.setAnnotations(data)
-    # model.setAnnotations(data['List 2'])
+    model.setAnnotations(annotations)
 
     view = AnnotationTreeView()
     view.setModel(model)
@@ -301,7 +294,7 @@ def test_live():
     app.exec()
 
     # print(model.rootItem())
-    print(data)
+    print(annotations)
 
 if __name__ == '__main__':
     test_live()

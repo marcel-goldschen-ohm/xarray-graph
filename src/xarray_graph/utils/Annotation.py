@@ -32,6 +32,11 @@ Example annotations:
     'type': 'polyline',
     'position': [[10, 20, 30, ...], [30, 40, 50, ...], ...],  # unnamed dimensions
 }
+{
+    'type': 'region',
+    'position': {'time': [10, 20], 'lat': [30, 40], ...},
+    'text': 'region in the time-lat plane',
+}
 """
 
 
