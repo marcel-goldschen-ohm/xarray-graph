@@ -159,12 +159,12 @@ class View(pg.ViewBox):
                     self._itemBeingDrawn.setPos(posInAxesCoords.x())
                 elif isinstance(self._itemBeingDrawn, HLine):
                     self._itemBeingDrawn.setPos(posInAxesCoords.y())
-                elif type(self._itemBeingDrawn) in [pg.RectROI, pg.EllipseROI, pg.CircleROI]:
-                    self._itemBeingDrawn.setSize(posInAxesCoords - self._itemBeingDrawn.pos())
-                elif isinstance(self._itemBeingDrawn, pg.LineSegmentROI):
-                    state = self._itemBeingDrawn.getState()
-                    state['points'] = [pg.Point(startPosInAxesCoords), pg.Point(posInAxesCoords)]
-                    self._itemBeingDrawn.setState(state)
+                # elif type(self._itemBeingDrawn) in [pg.RectROI, pg.EllipseROI, pg.CircleROI]:
+                #     self._itemBeingDrawn.setSize(posInAxesCoords - self._itemBeingDrawn.pos())
+                # elif isinstance(self._itemBeingDrawn, pg.LineSegmentROI):
+                #     state = self._itemBeingDrawn.getState()
+                #     state['points'] = [pg.Point(startPosInAxesCoords), pg.Point(posInAxesCoords)]
+                #     self._itemBeingDrawn.setState(state)
                 event.accept()
                 return
         
@@ -199,18 +199,22 @@ class View(pg.ViewBox):
 
 def test_live():
     import numpy as np
-    import xarray_graph.graph.pyqtgraph_ext as pgx
+    from xarray_graph.graph import Plot, Figure
     app = QApplication()
 
-    plot = pgx.Figure(viewBox=View())
-    # !!! MUST get view ref after plot creation, WTF!?
-    view: pgx.View = plot.getViewBox()
-    line = pgx.Graph(y=np.random.randn(1000))
-    plot.addItem(line)
+    fig = Figure()
+    print(fig)
+    plot: Plot = fig.getPlotItem()
+    print(plot)
+    view: View = plot.getViewBox()
+    print(view)
+    item = pg.PlotDataItem(y=np.random.randn(1000))
+    print(item)
+    plot.addItem(item)
     plot.setWindowTitle('pyqtgraph-tools')
-    plot.show()
+    fig.show()
 
-    view.startDrawingItemsOfType(pgx.Graph)
+    view.startDrawingItemsOfType(XAxisRegion)
     QTimer.singleShot(3000, lambda: view.stopDrawingItems())
 
     app.exec()

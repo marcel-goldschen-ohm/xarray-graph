@@ -5,3 +5,4 @@ from xarray_graph.graph.PlotCurve import PlotCurve
 from xarray_graph.graph.View import View
 from xarray_graph.graph.Plot import Plot
 from xarray_graph.graph.PlotGrid import PlotGrid
+from xarray_graph.graph.Figure import Figure

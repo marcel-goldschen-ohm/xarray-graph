@@ -20,7 +20,7 @@ import qtawesome as qta
 import pyqtgraph as pg
 from xarray_graph.utils import xarray_utils
 from xarray_graph.apps import XarrayDataTreeViewer
-from xarray_graph.tree import XarrayDataTreeItem
+from xarray_graph.tree import XarrayDataTreeItem, AnnotationTreeItem, AnnotationTreeModel, AnnotationTreeView
 from xarray_graph.graph import *
 from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
 
@@ -61,6 +61,43 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._xdim = xdim
         self.refresh()
     
+    def rois(self) -> list[dict]:
+        """ Get list of ROI annotations.
+        """
+        dt = self.datatree()
+        if ROI_KEY not in dt.attrs:
+            dt.attrs[ROI_KEY] = []
+        return dt.attrs[ROI_KEY]
+    
+    def setRois(self, rois: list[dict]) -> None:
+        """ Set list of ROI annotations.
+        """
+        dt = self.datatree()
+        dt.attrs[ROI_KEY] = rois
+    
+    def addRoisToPlots(self, rois: list[dict], plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+        for plot in plots:
+            for roi in rois:
+                atype = roi.get('type', None)
+                if atype == 'region':
+                    item = XAxisRegion()
+                    item._ROI = roi
+                    self._updateRoiPlotItemFromData(item, roi)
+                    self._setupRoiPlotItem(item)
+                    plot.vb.addItem(item)
+    
+    def removeRoisFromPlots(self, rois: list[dict] = None, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+        for plot in plots:
+            roi_items = [item for item in plot.vb.allChildren() if hasattr(item, '_ROI')]
+            for item in roi_items:
+                if rois is None or item._ROI in rois:
+                    plot.vb.removeItem(item)
+                    item.deleteLater()
+
     def selectedROIType(self) -> str:
         return self._ROI_action_group.checkedAction().text()
     
@@ -441,17 +478,73 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.updatePlotGrid()
     
     def onROISelectionChanged(self) -> None:
-        pass # TODO
+        self.updatePlotRois()
    
     def onROITypeChanged(self) -> None:
         self._ROI_selection_button.setIcon(self._ROI_action_group.checkedAction().icon())
         self.stopDrawingROIs()
         self.startDrawingROIs()
     
-    def onROIAdded(self, roiItem: XAxisRegion) -> None:
-        print('ROI added:', roiItem)
-        # TODO...
+    def onROIAdded(self, roiItem: QGraphicsObject) -> None:
+        if type(roiItem) is XAxisRegion:
+            roi = {
+                'type': 'region',
+                'position': {
+                    self.xdim(): sorted(roiItem.getRegion())
+                },
+                'movable': True
+            }
+        elif type(roiItem) is VLine:
+            roi = {
+                'type': 'region',
+                'position': {
+                    self.xdim(): roiItem.value()
+                },
+                'movable': True
+            }
+        else:
+            return
+        print(f"new ROI added: {roi}, item: {roiItem} region={roiItem.getRegion()}")
+        
+        roiItem._ROI = roi
+        view: View = roiItem.getViewBox()
+        view.removeItem(roiItem)
+        roiItem.deleteLater()
+
+        rois = self.rois()
+        rois.append(roi)
         self.stopDrawingROIs()
+        self.updateROIsView() # overkill, but works for now
+        selectedROIs: list[dict] = self._ROIs_view.selectedAnnotations()
+        selectedROIs.append(roi)
+        self._ROIs_view.setSelectedAnnotations(selectedROIs)
+        self.updatePlotRois() # overkill, but works for now
+
+    def _onRoiPlotItemChanged(self, roiItem: QGraphicsObject) -> None:
+        """ Handle changes to ROI plot object.
+        """
+        roi = getattr(roiItem, '_ROI', None)
+        if roi is None:
+            return
+        
+        self._updateRoiDataFromPlotItem(roiItem, roi)
+
+        # update same ROI in other plots
+        for plot in self._plots.flatten().tolist():
+            like_items = [item for item in plot.vb.allChildren() if (getattr(item, '_ROI', None) is roi) and (item is not roiItem)]
+            for like_item in like_items:
+                self._updateRoiDataFromPlotItem(like_item, roi)
+        
+        # update ROI tree view (only item for ROI)
+        model: AnnotationTreeModel = self._ROIs_view.model()
+        for roiItem in model.rootItem().subtree_depth_first():
+            if getattr(roiItem, '_data', None) is roi:
+                index: QModelIndex = model.indexFromItem(roiItem)
+                model.dataChanged.emit(index, index)
+                break
+        
+        # if self._curve_fit_live_preview_enabled() and self._curve_fit_depends_on_ROIs():
+        #     self._update_curve_fit_preview()
 
     def updateDimItersInToolbar(self) -> None:
         """ Update dimension iterator widgets in the top toolbar.
@@ -791,8 +884,51 @@ class XarrayGraph(XarrayDataTreeViewer):
             self.updatePlotAxisTickFont()
             self.updatePlotAxisLinks()
     
+    def updatePlotRois(self) -> None:
+        plots = self._plots.flatten().tolist()
+        selectedRois = self._ROIs_view.selectedAnnotations()
+
+        # remove all current ROI objects
+        self.removeRoisFromPlots(plots=plots)
+        
+        # add selected ROI objects
+        self.addRoisToPlots(selectedRois, plots)
+
+    def _updateRoiPlotItemFromData(self, roiItem: QGraphicsObject, data: dict) -> None:
+        """ Apply ROI data to plotted ROI object.
+        """
+        if isinstance(roiItem, XAxisRegion):
+            roiItem.setRegion(data['position'][self.xdim()])
+            roiItem.setMovable(data.get('movable', False))
+            roiItem.setText(data.get('text', ''))
+            # item.setFormat(data.get('format', {}))
+
+    def _updateRoiDataFromPlotItem(self, roiItem: QGraphicsObject, data: dict) -> None:
+        """ Update ROI data from plotted ROI object.
+        """
+        if isinstance(roiItem, XAxisRegion):
+            data['position'] = {self.xdim(): sorted(roiItem.getRegion())}
+            data['movable'] = roiItem.movable
+            data['text'] = roiItem.text()
+            # data['format'] = item.getFormat()
+    
+    def _setupRoiPlotItem(self, item) -> None:
+        """ Signals/Slots and properties for ROI plot item.
+        """
+        if isinstance(item, XAxisRegion):
+            item.sigRegionChanged.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            item.sigRegionDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            item.sigEditingFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            # item.sigDeletionRequested.connect(lambda item=item: self.deleteROIs(item._ROI))
+            item.sigRegionDragFinished.connect(lambda: self.updateROIsView())
+            item.sigEditingFinished.connect(lambda: self.updateROIsView())
+            item.setZValue(0)
+    
     def updateROIsView(self) -> None:
-        pass # TODO
+        rois = self.rois()
+        selectedRois = [roi for roi in self._ROIs_view.selectedAnnotations() if roi in rois]
+        self._ROIs_view.setAnnotations(rois)
+        self._ROIs_view.setSelectedAnnotations(selectedRois)
     
     def startDrawingROIs(self) -> None:
         roiType = self.selectedROIType()
@@ -804,14 +940,16 @@ class XarrayGraph(XarrayDataTreeViewer):
         if graphicsItemType is None:
             return
         for plot in self._plots.flatten().tolist():
-            plot.vb.sigItemAdded.connect(self.onROIAdded)
-            plot.vb.startDrawingItemsOfType(graphicsItemType)
+            view: View = plot.getViewBox()
+            view.sigItemAdded.connect(self.onROIAdded)
+            view.startDrawingItemsOfType(graphicsItemType)
         self._ROI_selection_button.setChecked(True)
     
     def stopDrawingROIs(self) -> None:
         for plot in self._plots.flatten().tolist():
-            plot.vb.stopDrawingItems()
-            plot.vb.sigItemAdded.disconnect(self.onROIAdded)
+            view: View = plot.getViewBox()
+            view.stopDrawingItems()
+            view.sigItemAdded.disconnect(self.onROIAdded)
         self._ROI_selection_button.setChecked(False)
 
     def _initActions(self) -> None:
@@ -930,8 +1068,11 @@ class XarrayGraph(XarrayDataTreeViewer):
         """ Initialize UI elements and layout.
         """
         # ROIs view
-        self._ROIs_view = QTreeView()
-        # self._ROIs_view.selectionWasChanged.connect(self.onROISelectionChanged)
+        self._ROIs_view = AnnotationTreeView()
+        model = AnnotationTreeModel()
+        model.setColumnLabels(['ROI'])
+        self._ROIs_view.setModel(model)
+        self._ROIs_view.selectionWasChanged.connect(self.onROISelectionChanged)
 
         # datatree and ROI views splitter
         self._datatree_ROIs_splitter = QSplitter(Qt.Orientation.Vertical)

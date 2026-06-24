@@ -57,10 +57,15 @@ def annotation_label(annotation: dict) -> str:
         return ''
     dim_labels: list[str] = []
     for dim, data in pos.items():
+        if not isinstance(data, (list, tuple)):
+            data = [data]
         data_labels: list[str] = [f'{val: .3g}'.strip() for val in data]
         if len(data_labels) > 3:
             data_labels = data_labels[:1] + ['...'] + data_labels[-1:]
-        dim_label = f'{dim}: ({', '.join(data_labels)})'
+        if len(data_labels) == 1:
+            dim_label = f'{dim}: {data_labels[0]}'
+        else:
+            dim_label = f'{dim}: ({', '.join(data_labels)})'
         dim_labels.append(dim_label)
     label = ', '.join(dim_labels)
     return label

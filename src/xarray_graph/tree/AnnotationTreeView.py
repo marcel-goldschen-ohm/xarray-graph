@@ -31,6 +31,10 @@ class AnnotationTreeView(TreeView):
 
         self._paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self)
         self._paste_shortcut.activated.connect(lambda: self.pasteCopy())
+
+        self.setAlternatingRowColors(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDragAndDropEnabled(True)
     
     def annotations(self) -> list[dict] | dict[str, list[dict]]:
         model: AnnotationTreeModel = self.model()
@@ -274,26 +278,9 @@ def test_live():
     view.showAll()
     view.raise_()
 
-    # from copy import deepcopy
-    # data2 = deepcopy(data)
-
-    # root2 = KeyValueTreeItem(data2)
-
-    # model2 = KeyValueTreeModel()
-    # model2.setTypesColumnVisible(True)
-    # model2.setRootItem(root2)
-
-    # view2 = KeyValueTreeView()
-    # view2.setModel(model2)
-    # view2.show()
-    # view2.resize(QSize(800, 800))
-    # view2.move(QPoint(950, 100))
-    # view2.showAll()
-    # view2.raise_()
-
     app.exec()
 
-    # print(model.rootItem())
+    print(model.rootItem())
     print(annotations)
 
 if __name__ == '__main__':

@@ -123,6 +123,16 @@ class AnnotationTreeItem(AbstractTreeItem):
             for i, annotation in enumerate(annotations_to_insert):
                 root._data.insert(root_index + i, annotation)
         
+        # update inserted annotation group
+        if self is root:
+            for annotation in annotations_to_insert:
+                if 'group' in annotation:
+                    del annotation['group']
+        else:
+            group = self.group()
+            for annotation in annotations_to_insert:
+                annotation['group'] = group
+        
         # Update item linkage
         self.children.insert(index, item)
         item.parent = self
