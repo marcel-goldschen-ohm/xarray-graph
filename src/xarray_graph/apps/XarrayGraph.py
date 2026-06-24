@@ -47,6 +47,10 @@ class XarrayGraph(XarrayDataTreeViewer):
         super().__init__(*args, **kwargs)
         self.refresh()
 
+    def setDatatree(self, datatree: xr.DataTree) -> None:
+        super().setDatatree(datatree)
+        self._notes_view.setPlainText(datatree.attrs.get(NOTES_KEY, ''))
+
     def xdim(self) -> str | None:
         try:
             return self._xdim
@@ -54,10 +58,10 @@ class XarrayGraph(XarrayDataTreeViewer):
             return None
     
     def setXDim(self, xdim: str | None) -> None:
-        # try:
-        #     self._prev_xdim = self._xdim
-        # except AttributeError:
-        #     pass
+        try:
+            self._prev_xdim = self._xdim
+        except AttributeError:
+            pass
         self._xdim = xdim
         self.refresh()
     
@@ -122,10 +126,10 @@ class XarrayGraph(XarrayDataTreeViewer):
             ylinked_range = []
             for row in range(n_rows):
                 for col in range(n_cols):
-                    plot = self._plots[i, row, col]
-                    view = plot.getViewBox()
-                    xlinked_view = view.linkedView(view.XAxis)
-                    ylinked_view = view.linkedView(view.YAxis)
+                    plot: pg.PlotItem = self._plots[i, row, col]
+                    view: pg.ViewBox = plot.getViewBox()
+                    xlinked_view: pg.ViewBox = view.linkedView(view.XAxis)
+                    ylinked_view: pg.ViewBox = view.linkedView(view.YAxis)
                     if (xlinked_view is None) and (ylinked_view is None):
                         view.enableAutoRange()
                     elif xlinked_view is None:
@@ -169,7 +173,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 view.setXRange(xmin, xmax)
     
     def notes(self) -> None:
-        pass # TODO
+        self._notes_view.show()
     
     def filter(self) -> None:
         pass # TODO
@@ -557,6 +561,14 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         # if self._curve_fit_live_preview_enabled() and self._curve_fit_depends_on_ROIs():
         #     self._update_curve_fit_preview()
+
+    def _onNotesChanged(self) -> None:
+        """ Handle the event when the notes text edit is changed.
+
+        !!! This is overkill, but it works for now.
+        """
+        dt = self.datatree()
+        dt.attrs[NOTES_KEY] = self._notes_view.toPlainText()
 
     def updateDimItersInToolbar(self) -> None:
         """ Update dimension iterator widgets in the top toolbar.
@@ -1143,6 +1155,11 @@ class XarrayGraph(XarrayDataTreeViewer):
         hsplitter.addWidget(self._datatree_ROIs_splitter)
         hsplitter.addWidget(panel)
         self.setCentralWidget(hsplitter)
+
+        # notes
+        self._notes_view = QTextEdit()
+        self._notes_view.setWindowTitle('Notes')
+        self._notes_view.textChanged.connect(self._onNotesChanged)
     
     def _initTopToolbar(self) -> None:
         icon_size = self._settings.get('icon size', 24)
