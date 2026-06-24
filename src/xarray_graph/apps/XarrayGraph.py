@@ -82,7 +82,15 @@ class XarrayGraph(XarrayDataTreeViewer):
             for roi in rois:
                 atype = roi.get('type', None)
                 if atype == 'region':
-                    item = XAxisRegion()
+                    pos = roi['position'].get(self.xdim())
+                    if pos is None:
+                        continue
+                    if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                        item = XAxisRegion()
+                    elif np.isscalar(pos):
+                        item = VLine()
+                    else:
+                        continue
                     item._ROI = roi
                     self._updateRoiPlotItemFromData(item, roi)
                     self._setupRoiPlotItem(item)
@@ -504,20 +512,24 @@ class XarrayGraph(XarrayDataTreeViewer):
             }
         else:
             return
-        print(f"new ROI added: {roi}, item: {roiItem} region={roiItem.getRegion()}")
         
         roiItem._ROI = roi
-        view: View = roiItem.getViewBox()
-        view.removeItem(roiItem)
-        roiItem.deleteLater()
+        # view: View = roiItem.getViewBox()
+        # view.removeItem(roiItem)
+        # roiItem.deleteLater()
 
         rois = self.rois()
         rois.append(roi)
         self.stopDrawingROIs()
-        self.updateROIsView() # overkill, but works for now
         selectedROIs: list[dict] = self._ROIs_view.selectedAnnotations()
         selectedROIs.append(roi)
-        self._ROIs_view.setSelectedAnnotations(selectedROIs)
+        # Defer tree/model selection updates until the current graphics-scene event stack returns.
+        QTimer.singleShot(0, lambda selectedROIs=selectedROIs: self._finishAddingRoi(selectedROIs))
+
+    def _finishAddingRoi(self, selectedROIs: list[dict]) -> None:
+        self.updateROIsView() # overkill, but works for now
+        with QSignalBlocker(self._ROIs_view):
+            self._ROIs_view.setSelectedAnnotations(selectedROIs)
         self.updatePlotRois() # overkill, but works for now
 
     def _onRoiPlotItemChanged(self, roiItem: QGraphicsObject) -> None:
@@ -537,9 +549,9 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         # update ROI tree view (only item for ROI)
         model: AnnotationTreeModel = self._ROIs_view.model()
-        for roiItem in model.rootItem().subtree_depth_first():
-            if getattr(roiItem, '_data', None) is roi:
-                index: QModelIndex = model.indexFromItem(roiItem)
+        for item in model.rootItem().subtree_depth_first():
+            if getattr(item, '_data', None) is roi:
+                index: QModelIndex = model.indexFromItem(item)
                 model.dataChanged.emit(index, index)
                 break
         
@@ -898,9 +910,18 @@ class XarrayGraph(XarrayDataTreeViewer):
         """ Apply ROI data to plotted ROI object.
         """
         if isinstance(roiItem, XAxisRegion):
-            roiItem.setRegion(data['position'][self.xdim()])
+            region = data['position'][self.xdim()]
+            print(f"Setting region: {region}")
+            roiItem.setRegion(region)
             roiItem.setMovable(data.get('movable', False))
             roiItem.setText(data.get('text', ''))
+            # item.setFormat(data.get('format', {}))
+        elif isinstance(roiItem, VLine):
+            pos = data['position'][self.xdim()]
+            print(f"Setting position: {pos}")
+            roiItem.setValue(pos)
+            roiItem.setMovable(data.get('movable', False))
+            # roiItem.setText(data.get('text', ''))
             # item.setFormat(data.get('format', {}))
 
     def _updateRoiDataFromPlotItem(self, roiItem: QGraphicsObject, data: dict) -> None:
@@ -911,7 +932,12 @@ class XarrayGraph(XarrayDataTreeViewer):
             data['movable'] = roiItem.movable
             data['text'] = roiItem.text()
             # data['format'] = item.getFormat()
-    
+        elif isinstance(roiItem, VLine):
+            data['position'] = {self.xdim(): roiItem.value()}
+            data['movable'] = roiItem.movable
+            # data['text'] = roiItem.text()
+            # data['format'] = item.getFormat()
+
     def _setupRoiPlotItem(self, item) -> None:
         """ Signals/Slots and properties for ROI plot item.
         """
@@ -923,7 +949,15 @@ class XarrayGraph(XarrayDataTreeViewer):
             item.sigRegionDragFinished.connect(lambda: self.updateROIsView())
             item.sigEditingFinished.connect(lambda: self.updateROIsView())
             item.setZValue(0)
-    
+        elif isinstance(item, VLine):
+            item.sigPositionChanged.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            # item.sigPositionDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            # item.sigEditingFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            # item.sigDeletionRequested.connect(lambda item=item: self.deleteROIs(item._ROI))
+            # item.sigPositionDragFinished.connect(lambda: self.updateROIsView())
+            # item.sigEditingFinished.connect(lambda: self.updateROIsView())
+            item.setZValue(0)
+
     def updateROIsView(self) -> None:
         rois = self.rois()
         selectedRois = [roi for roi in self._ROIs_view.selectedAnnotations() if roi in rois]
@@ -943,14 +977,16 @@ class XarrayGraph(XarrayDataTreeViewer):
             view: View = plot.getViewBox()
             view.sigItemAdded.connect(self.onROIAdded)
             view.startDrawingItemsOfType(graphicsItemType)
-        self._ROI_selection_button.setChecked(True)
+        with QSignalBlocker(self._ROI_selection_button):
+            self._ROI_selection_button.setChecked(True)
     
     def stopDrawingROIs(self) -> None:
         for plot in self._plots.flatten().tolist():
             view: View = plot.getViewBox()
             view.stopDrawingItems()
             view.sigItemAdded.disconnect(self.onROIAdded)
-        self._ROI_selection_button.setChecked(False)
+        with QSignalBlocker(self._ROI_selection_button):
+            self._ROI_selection_button.setChecked(False)
 
     def _initActions(self) -> None:
         super()._initActions()
