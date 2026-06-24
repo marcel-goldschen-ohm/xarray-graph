@@ -35,12 +35,12 @@ class AnnotationTreeItem(AbstractTreeItem):
         if isinstance(self._data, list):
             groups = {}
             for child_data in self._data:
-                group = child_data.get('group', None)
+                group = child_data.get('group', '')
                 if group in groups:
                     groups[group].append(child_data)
                 else:
                     groups[group] = [child_data]
-            ungrouped = groups.pop(None, [])
+            ungrouped = groups.pop('', [])
             for group, group_data in groups.items():
                 child = AnnotationTreeItem(group_data, group=group, parent=self)
                 for grandchild_data in group_data:
@@ -49,19 +49,24 @@ class AnnotationTreeItem(AbstractTreeItem):
                 child = AnnotationTreeItem(child_data, parent=self)
     
     def group(self) -> str | None:
-        if self.isGroup():
+        if self.isRoot():
+            return None
+        elif self.isGroup():
             return self._group
+        elif self.isAnnotation():
+            return self._data.get('group', None)
     
     def setGroup(self, group: str) -> None:
-        if not self.isGroup():
-            return
-        for data in self._data:
-            data['group'] = group
-        self._group = group
+        if self.isGroup():
+            for data in self._data:
+                data['group'] = group
+            self._group = group
+        elif self.isAnnotation():
+            self._data['group'] = group
     
     def name(self) -> str:
         if self.isGroup():
-            return str(self.group())
+            return str(self.group() or '')
         elif self.isAnnotation():
             return annotation_label(self._data)
     
@@ -86,14 +91,16 @@ class AnnotationTreeItem(AbstractTreeItem):
             parent._data.remove(annotation)
 
         # Remove from root flat list of annotations
-        if parent is not self.root():
-            root: AnnotationTreeItem = self.root()
+        root: AnnotationTreeItem = self.root()
+        if parent is not root:
             for annotation in annotations_to_remove:
                 root._data.remove(annotation)
         
         # Update item linkage
         self.parent.children.remove(self)
         self.parent = None
+
+        print('Orphaned item annotation(s):', self._data)
     
     def insertChild(self, index: int, item: AnnotationTreeItem) -> None:
         if not self.isGroup():
@@ -124,14 +131,9 @@ class AnnotationTreeItem(AbstractTreeItem):
                 root._data.insert(root_index + i, annotation)
         
         # update inserted annotation group
-        if self is root:
-            for annotation in annotations_to_insert:
-                if 'group' in annotation:
-                    del annotation['group']
-        else:
-            group = self.group()
-            for annotation in annotations_to_insert:
-                annotation['group'] = group
+        if item.isAnnotation():
+            group = self.group() or ''
+            item._data['group'] = group
         
         # Update item linkage
         self.children.insert(index, item)

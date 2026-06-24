@@ -228,31 +228,28 @@ class AnnotationTreeView(TreeView):
         model.insertItems([new_item], row, parent_item)
     
     def groupSelected(self) -> None:
-        pass # TODO
-        # items: list[AnnotationTreeItem] = self.selectedItems()
-        # if not items:
-        #     return
-        # title = 'Group'
-        # label = 'Group name:'
-        # group, ok = QInputDialog.getText(self, title, label)
-        # group = group.strip()
-        # if not ok or not group:
-        #     return
-        # for item in items:
-        #     if item.is_annotation():
-        #         item.data['group'] = group
-        # self.refresh()
+        items: list[AnnotationTreeItem] = self.selectedItems()
+        if not items:
+            return
+        title = 'Group'
+        label = 'Group name:'
+        group, ok = QInputDialog.getText(self, title, label)
+        group = group.strip()
+        if not ok or not group:
+            return
+        for item in items:
+            if item.isAnnotation():
+                item._data['group'] = group
+        self.refresh()
     
     def ungroupSelected(self) -> None:
-        pass # TODO
-        # items: list[AnnotationTreeItem] = self.selectedItems()
-        # if not items:
-        #     return
-        # for item in items:
-        #     if item.is_annotation():
-        #         if 'group' in item.data:
-        #             del item.data['group']
-        # self.refresh()
+        items: list[AnnotationTreeItem] = self.selectedItems()
+        if not items:
+            return
+        for item in items:
+            if item.isAnnotation():
+                item._data['group'] = ''
+        self.refresh()
 
 
 def test_live():
