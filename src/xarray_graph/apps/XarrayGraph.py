@@ -65,54 +65,6 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._xdim = xdim
         self.refresh()
     
-    def rois(self) -> list[dict]:
-        """ Get list of ROI annotations.
-        """
-        dt = self.datatree()
-        if ROI_KEY not in dt.attrs:
-            dt.attrs[ROI_KEY] = []
-        return dt.attrs[ROI_KEY]
-    
-    def setRois(self, rois: list[dict]) -> None:
-        """ Set list of ROI annotations.
-        """
-        dt = self.datatree()
-        dt.attrs[ROI_KEY] = rois
-    
-    def addRoisToPlots(self, rois: list[dict], plots: list[Plot] = None) -> None:
-        if plots is None:
-            plots = self._plots.flatten().tolist()
-        for plot in plots:
-            for roi in rois:
-                atype = roi.get('type', None)
-                if atype == 'region':
-                    pos = roi['position'].get(self.xdim())
-                    if pos is None:
-                        continue
-                    if isinstance(pos, (list, tuple)) and len(pos) == 2:
-                        item = XAxisRegion()
-                    elif np.isscalar(pos):
-                        item = VLine()
-                    else:
-                        continue
-                    item._ROI = roi
-                    self._updateRoiPlotItemFromData(item, roi)
-                    self._setupRoiPlotItem(item)
-                    plot.vb.addItem(item)
-    
-    def removeRoisFromPlots(self, rois: list[dict] = None, plots: list[Plot] = None) -> None:
-        if plots is None:
-            plots = self._plots.flatten().tolist()
-        for plot in plots:
-            roi_items = [item for item in plot.vb.allChildren() if hasattr(item, '_ROI')]
-            for item in roi_items:
-                if rois is None or item._ROI in rois:
-                    plot.vb.removeItem(item)
-                    item.deleteLater()
-
-    def selectedROIType(self) -> str:
-        return self._ROI_action_group.checkedAction().text()
-    
     def autoscale(self) -> None:
         """ Autoscale all plots while preserving axis linking.
         """
@@ -172,6 +124,142 @@ class XarrayGraph(XarrayDataTreeViewer):
             for view in xlinked_views:
                 view.setXRange(xmin, xmax)
     
+    def rois(self) -> list[dict]:
+        """ Get list of ROI annotations.
+        """
+        dt = self.datatree()
+        if ROI_KEY not in dt.attrs:
+            dt.attrs[ROI_KEY] = []
+        return dt.attrs[ROI_KEY]
+    
+    def setRois(self, rois: list[dict]) -> None:
+        """ Set list of ROI annotations.
+        """
+        dt = self.datatree()
+        dt.attrs[ROI_KEY] = rois
+    
+    def selectedRois(self) -> list[dict]:
+        return self._ROIs_view.selectedAnnotations()
+    
+    def setSelectedRois(self, rois: list[dict]) -> None:
+        self._ROIs_view.setSelectedAnnotations(rois)
+    
+    def addRoisToPlots(self, rois: list[dict], plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+        for plot in plots:
+            for roi in rois:
+                atype = roi.get('type', None)
+                if atype == 'region':
+                    pos = roi['position'].get(self.xdim())
+                    if pos is None:
+                        continue
+                    if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                        item = XAxisRegion()
+                    elif np.isscalar(pos):
+                        item = VLine()
+                    else:
+                        continue
+                    item._ROI = roi
+                    self._updateRoiPlotItemFromData(item, roi)
+                    self._setupRoiPlotItem(item)
+                    plot.vb.addItem(item)
+    
+    def removeRoisFromPlots(self, rois: list[dict] = None, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+        for plot in plots:
+            roi_items = [item for item in plot.vb.allChildren() if hasattr(item, '_ROI')]
+            for item in roi_items:
+                if rois is None or item._ROI in rois:
+                    plot.vb.removeItem(item)
+                    item.deleteLater()
+
+    def selectedRoiType(self) -> str:
+        return self._ROI_action_group.checkedAction().text()
+    
+    def isRoisVisible(self) -> bool:
+        return self._view_ROIs_action.isChecked()
+    
+    def setIsRoisVisible(self, visible: bool) -> None:
+        self._view_ROIs_action.setChecked(visible)
+        self.replot()
+
+    def mask(self) -> None:
+        """ Mask selected traces or ROIs within selected traces.
+        """
+        print("Masking...")
+
+        if self.isRoisVisible():
+            rois = self.selectedRois()
+        else:
+            rois = []
+        
+        xdim = self.xdim()
+        for node in self._selected_branch_root_nodes:
+            dims = tuple(node.sizes.keys())
+            sizes = tuple(node.sizes.values())
+            if MASK_KEY not in node.data_vars:
+                node.dataset = node.to_dataset().assign({MASK_KEY: xr.DataArray(np.full(sizes, False, dtype=bool), dims=dims)})
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            if rois:
+                xdata = node[xdim].values
+                xmask = np.full(xdata.shape, False, dtype=bool)
+                for roi in rois:
+                    if roi['type'] != 'region':
+                        continue
+                    try:
+                        lb, ub = roi['position'][xdim]
+                    except:
+                        continue
+                    xmask[(xdata >= lb) & (xdata <= ub)] = True
+                coords[xdim] = xdata[xmask]
+            node.data_vars[MASK_KEY].loc[coords] = True
+        
+        self.refresh()
+
+    def unmask(self) -> None:
+        """ Unmask selected traces or ROIs within selected traces.
+        """
+        print("Unmasking...")
+        
+        if self.isRoisVisible():
+            rois = self.selectedRois()
+        else:
+            rois = []
+        
+        xdim = self.xdim()
+        for node in self._selected_branch_root_nodes:
+            dims = tuple(node.sizes.keys())
+            sizes = tuple(node.sizes.values())
+            if MASK_KEY not in node.data_vars:
+                continue
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            if rois:
+                xdata = node[xdim].values
+                xmask = np.full(xdata.shape, False, dtype=bool)
+                for roi in rois:
+                    if roi['type'] != 'region':
+                        continue
+                    try:
+                        lb, ub = roi['position'][xdim]
+                    except:
+                        continue
+                    xmask[(xdata >= lb) & (xdata <= ub)] = True
+                coords[xdim] = xdata[xmask]
+            node.data_vars[MASK_KEY].loc[coords] = False
+            if not np.any(node.data_vars[MASK_KEY].values):
+                node.dataset = node.to_dataset().drop_vars(MASK_KEY)
+        
+        self.replot()
+
+    def isMaskedVisible(self) -> bool:
+        return self._view_masked_action.isChecked()
+    
+    def setIsMaskedVisible(self, visible: bool) -> None:
+        self._view_masked_action.setChecked(visible)
+        self.refresh()
+
     def notes(self) -> None:
         self._notes_view.show()
     
@@ -283,7 +371,17 @@ class XarrayGraph(XarrayDataTreeViewer):
         # print(f'_selected_data_vars:')
         # for item in self._selected_data_var_items:
         #     print(f'  {item.abspath()}')
-        
+
+        self._selected_nodes: list[xr.DataTree] = [item.node() for item in self._selected_data_var_items]
+        self._selected_branch_root_nodes: list[xr.DataTree] = []
+        for node in self._selected_nodes:
+            branch_root_node = xarray_utils.aligned_root(node)
+            if branch_root_node not in self._selected_branch_root_nodes:
+                self._selected_branch_root_nodes.append(branch_root_node)
+        # print(f'_selected_branch_root_nodes:')
+        # for node in self._selected_branch_root_nodes:
+        #     print(f'  {node.path}')
+
         # shared dimensions across selection
         dims_per_data_var = [np.array(list(data_var.dims)) for data_var in self._selected_data_vars]
         self._selection_shared_dims = reduce(np.intersect1d, dims_per_data_var).tolist() if dims_per_data_var else []
@@ -489,15 +587,15 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         self.updatePlotGrid()
     
-    def onROISelectionChanged(self) -> None:
+    def onRoiSelectionChanged(self) -> None:
         self.updatePlotRois()
    
-    def onROITypeChanged(self) -> None:
+    def onRoiTypeChanged(self) -> None:
         self._ROI_selection_button.setIcon(self._ROI_action_group.checkedAction().icon())
-        self.stopDrawingROIs()
-        self.startDrawingROIs()
+        self.stopDrawingRois()
+        self.startDrawingRois()
     
-    def onROIAdded(self, roiItem: QGraphicsObject) -> None:
+    def onRoiAdded(self, roiItem: QGraphicsObject) -> None:
         if type(roiItem) is XAxisRegion:
             roi = {
                 'type': 'region',
@@ -524,7 +622,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         rois = self.rois()
         rois.append(roi)
-        self.stopDrawingROIs()
+        self.stopDrawingRois()
         selectedROIs: list[dict] = self._ROIs_view.selectedAnnotations()
         selectedROIs.append(roi)
         # Defer tree/model selection updates until the current graphics-scene event stack returns.
@@ -821,6 +919,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
 
             data_count = 0
+            masked_count = 0
+            preview_count = 0
             item: XarrayDataTreeItem
             data_var: xr.DataArray
             for item, data_var in zip(self._selected_data_var_items, self._selected_data_vars):
@@ -831,25 +931,33 @@ class XarrayGraph(XarrayDataTreeViewer):
                 node: xr.DataTree = item.node()
                 # data_var = data_var.reset_coords(drop=True)
                 
+                mask = None
+                if var_name != MASK_KEY:
+                    node_ = node
+                    while node_.has_data:
+                        if MASK_KEY in node_.data_vars:
+                            mask = node_.data_vars[MASK_KEY]
+                            break
+                        if node_.parent is None:
+                            break
+                        node_ = node_.parent
+                
                 non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
                 if len(non_xdim_coord_permutations) == 0:
                     non_xdim_coord_permutations = [{}]
                 for coords in non_xdim_coord_permutations:
                     print(f'  coords: {coords}...')
-                    if not coords:
-                        data_var_slice = data_var
+                    index_coords = {dim: values for dim, values in coords.items() if dim in data_var.dims}
+                    nonindex_coords = {dim: values for dim, values in coords.items() if dim in data_var.coords and dim not in data_var.dims}
+                    if index_coords:
+                        data_var_slice = data_var.sel(index_coords)
                     else:
-                        index_coords = {dim: values for dim, values in coords.items() if dim in data_var.dims}
-                        nonindex_coords = {dim: values for dim, values in coords.items() if dim in data_var.coords and dim not in data_var.dims}
-                        if index_coords:
-                            data_var_slice = data_var.sel(index_coords)
-                        else:
-                            data_var_slice = data_var
-                        for name, coord in nonindex_coords.items():
-                            try:
-                                data_var_slice = data_var_slice.where(data_var_slice.coords[name] == coord, drop=True)
-                            except:
-                                pass
+                        data_var_slice = data_var
+                    for name, coord in nonindex_coords.items():
+                        try:
+                            data_var_slice = data_var_slice.where(data_var_slice.coords[name] == coord, drop=True)
+                        except:
+                            pass
                     data_var_slice = data_var_slice.reset_coords(drop=True).squeeze(drop=True)
                     if xdim in data_var_slice.coords:
                         xdim_coord_slice = data_var_slice.coords[xdim]
@@ -867,6 +975,25 @@ class XarrayGraph(XarrayDataTreeViewer):
                         intersect, xdata_indices, all_xtick_labels_indices = np.intersect1d(xdata, all_xtick_labels, assume_unique=True, return_indices=True)
                         xdata = np.sort(all_xtick_labels_indices)
                         # xdim_coord_slice = data_var_slice.coords[xdim].copy(data=xdata)
+                    
+                    # mask data?
+                    mask_slice = None
+                    if (mask is not None) and (var_name != MASK_KEY):
+                        if index_coords:
+                            mask_slice = mask.sel(index_coords)
+                        else:
+                            mask_slice = mask
+                        for name, coord in nonindex_coords.items():
+                            try:
+                                mask_slice = mask_slice.where(mask_slice.coords[name] == coord, drop=True)
+                            except:
+                                pass
+                        mask_slice = mask_slice.reset_coords(drop=True).squeeze(drop=True)
+                        # if not self.isMaskedVisible():
+                        # xdata = xdata.copy() # don't overwrite original data
+                        ydata = ydata.copy() # don't overwrite original data
+                        # xdata[mask_slice.values] = np.nan
+                        ydata[mask_slice.values] = np.nan
                     
                     # graph data
                     if len(data_graphs) > data_count:
@@ -976,8 +1103,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROIs_view.setAnnotations(rois)
         self._ROIs_view.setSelectedAnnotations(selectedRois)
     
-    def startDrawingROIs(self) -> None:
-        roiType = self.selectedROIType()
+    def startDrawingRois(self) -> None:
+        roiType = self.selectedRoiType()
         roiToGraphicsItemTypeMap = {
             'Event': VLine,
             'Range': XAxisRegion,
@@ -987,16 +1114,16 @@ class XarrayGraph(XarrayDataTreeViewer):
             return
         for plot in self._plots.flatten().tolist():
             view: View = plot.getViewBox()
-            view.sigItemAdded.connect(self.onROIAdded)
+            view.sigItemAdded.connect(self.onRoiAdded)
             view.startDrawingItemsOfType(graphicsItemType)
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(True)
     
-    def stopDrawingROIs(self) -> None:
+    def stopDrawingRois(self) -> None:
         for plot in self._plots.flatten().tolist():
             view: View = plot.getViewBox()
             view.stopDrawingItems()
-            view.sigItemAdded.disconnect(self.onROIAdded)
+            view.sigItemAdded.disconnect(self.onRoiAdded)
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(False)
 
@@ -1026,6 +1153,27 @@ class XarrayGraph(XarrayDataTreeViewer):
             shortcut=QKeySequence('A'),
             triggered=lambda: self.autoscale()
         )
+
+        self._notes_action = QAction(
+            icon=qta.icon('mdi6.text-box-edit-outline'),
+            iconVisibleInMenu=True,
+            text='Notes',
+            toolTip='Notes',
+            checkable=False,
+            # shortcut=QKeySequence('N'),
+            # shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.notes()
+        )
+
+        self._view_ROIs_action = QAction(
+            text='ROIs',
+            toolTip='Show ROIs',
+            checkable=True,
+            checked=True,
+            shortcut=QKeySequence('W'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.replot()
+        )
         
         self._ROI_event_action = QAction(
             icon=qta.icon('fa6s.arrow-down-long'),
@@ -1036,7 +1184,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=False,
             shortcut=QKeySequence('E'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.onROITypeChanged()
+            triggered=lambda checked: self.onRoiTypeChanged()
         )
         self._ROI_event_icon = qta.icon('fa6s.arrow-down-long', color=faded_text_color, color_on=text_color)
 
@@ -1049,17 +1197,36 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=True,
             shortcut=QKeySequence('R'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.onROITypeChanged()
+            triggered=lambda checked: self.onRoiTypeChanged()
         )
         self._ROI_xrange_icon = qta.icon('mdi.arrow-expand-horizontal', color=faded_text_color, color_on=text_color)
 
-        self._notes_action = QAction(
-            icon=qta.icon('mdi6.text-box-edit-outline'),
-            iconVisibleInMenu=True,
-            text='Notes',
-            toolTip='Notes',
+        self._mask_action = QAction(
+            text='Mask',
+            toolTip='Mask',
             checkable=False,
-            triggered=lambda checked: self.notes()
+            shortcut=QKeySequence('M'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.mask()
+        )
+
+        self._unmask_action = QAction(
+            text='Unmask',
+            toolTip='Unmask',
+            checkable=False,
+            shortcut=QKeySequence('U'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.unmask()
+        )
+
+        self._view_masked_action = QAction(
+            text='Masked',
+            toolTip='Show Masked',
+            checkable=True,
+            checked=False,
+            # shortcut=QKeySequence('Y'),
+            # shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.refresh()
         )
 
         self._filter_action = QAction(
@@ -1102,8 +1269,15 @@ class XarrayGraph(XarrayDataTreeViewer):
     def _initMenubar(self) -> None:
         super()._initMenubar()
 
-        sep = self._view_menu.insertSeparator(self.console._console_action)
-        self._view_menu.insertAction(sep, self._notes_action)
+        self._view_menu.insertAction(self.console._console_action, self._notes_action)
+        sep = self._view_menu.insertSeparator(self._notes_action)
+        self._view_menu.insertAction(sep, self._view_masked_action)
+        self._view_menu.insertAction(self._view_masked_action, self._view_ROIs_action)
+
+        self._selection_menu = QMenu('Selection')
+        self._selection_menu.addAction(self._mask_action)
+        self._selection_menu.addAction(self._unmask_action)
+        self.menuBar().insertMenu(self._view_menu.menuAction(), self._selection_menu)
 
         self._operations_menu = QMenu('Operations')
         self._operations_menu.addAction(self._filter_action)
@@ -1120,7 +1294,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         model = AnnotationTreeModel()
         model.setColumnLabels(['ROI'])
         self._ROIs_view.setModel(model)
-        self._ROIs_view.selectionWasChanged.connect(self.onROISelectionChanged)
+        self._ROIs_view.selectionWasChanged.connect(self.onRoiSelectionChanged)
 
         # datatree and ROI views splitter
         self._datatree_ROIs_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -1186,9 +1360,9 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROI_selection_button.setCheckable(True)
         self._ROI_selection_button.setMenu(self._ROI_menu)
         self._ROI_selection_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self.onROITypeChanged() # set initial icon
+        self.onRoiTypeChanged() # set initial icon
         self._ROI_selection_button.setChecked(False)
-        self._ROI_selection_button.toggled.connect(lambda checked: self.startDrawingROIs() if checked else self.stopDrawingROIs())
+        self._ROI_selection_button.toggled.connect(lambda checked: self.startDrawingRois() if checked else self.stopDrawingRois())
 
         # toolbar
         self._top_toolbar = QToolBar()
