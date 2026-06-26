@@ -6,13 +6,14 @@ from copy import deepcopy
 from functools import reduce
 import textwrap
 import numpy as np
-import pandas as pd
+# import pandas as pd
 import cftime
 # to be able to read unit attributes following the CF conventions
-import cf_xarray.units  # noqa: F401  # must be imported before pint_xarray
+# import cf_xarray.units  # noqa: F401  # must be imported before pint_xarray
 import xarray as xr
-import pint_xarray
+# import pint_xarray
 import pint
+from pint.facets.plain import ScaleConverter
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
@@ -29,6 +30,8 @@ ROI_KEY = 'XG_ROI'
 MASK_KEY = 'XG_MASK'
 CURVE_FIT_KEY = 'XG_CURVE_FIT'
 NOTES_KEY = 'XG_NOTES'
+TO_BASE_UNITS_KEY = 'XG_TO_BASE_UNITS'
+MASK_COLOR = (200, 200, 200)
 
 
 class XarrayGraph(XarrayDataTreeViewer):
@@ -36,7 +39,8 @@ class XarrayGraph(XarrayDataTreeViewer):
     """
 
     # ureg = pint_xarray.unit_registry
-    ureg = pint.UnitRegistry()
+    ureg = pint.UnitRegistry()#auto_reduce_dimensions=True)
+    ureg.formatter.default_format = "~P"
 
     _default_settings = {
         'icon size': 24,
@@ -188,8 +192,6 @@ class XarrayGraph(XarrayDataTreeViewer):
     def mask(self) -> None:
         """ Mask selected traces or ROIs within selected traces.
         """
-        print("Masking...")
-
         if self.isRoisVisible():
             rois = self.selectedRois()
         else:
@@ -221,8 +223,6 @@ class XarrayGraph(XarrayDataTreeViewer):
     def unmask(self) -> None:
         """ Unmask selected traces or ROIs within selected traces.
         """
-        print("Unmasking...")
-        
         if self.isRoisVisible():
             rois = self.selectedRois()
         else:
@@ -259,6 +259,60 @@ class XarrayGraph(XarrayDataTreeViewer):
     def setIsMaskedVisible(self, visible: bool) -> None:
         self._view_masked_action.setChecked(visible)
         self.refresh()
+
+    def interpolate(self) -> None:
+        if not self.isRoisVisible():
+            return
+        rois = self.selectedRois()
+        xdim = self.xdim()
+        for roi in rois:
+            if roi['type'] != 'region':
+                continue
+            try:
+                lb, ub = roi['position'][xdim]
+            except:
+                continue
+            for data_var, item in zip(self._selected_data_vars, self._selected_data_var_items):
+                actual_data_var: xr.DataArray = item.data()
+                # TODO
+
+    def zero(self) -> None:
+        if not self.isRoisVisible():
+            return
+        rois = self.selectedRois()
+        xdim = self.xdim()
+        for roi in rois:
+            if roi['type'] != 'region':
+                continue
+            try:
+                lb, ub = roi['position'][xdim]
+            except:
+                continue
+            for item in self._selected_data_var_items:
+                data_var: xr.DataArray = item.data()
+                new_data_var = xr.where(
+                    (data_var[xdim] >= lb) & (data_var[xdim] <= ub), 
+                    0,  # value if true
+                    data_var   # value if false
+                )
+                item.node().dataset = item.node().to_dataset().assign({item.data().name: new_data_var})
+        self.refresh() # overkill
+
+    def setConstant(self) -> None:
+        if not self.isRoisVisible():
+            return
+        rois = self.selectedRois()
+        xdim = self.xdim()
+        for roi in rois:
+            if roi['type'] != 'region':
+                continue
+            try:
+                lb, ub = roi['position'][xdim]
+            except:
+                continue
+            for data_var, item in zip(self._selected_data_vars, self._selected_data_var_items):
+                actual_data_var: xr.DataArray = item.data()
+                # TODO
 
     def notes(self) -> None:
         self._notes_view.show()
@@ -339,8 +393,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._data_action.setChecked(visible)
     
     def onDataTreeSelectionChanged(self) -> None:
-        print('\n'*2, 'onDataTreeSelectionChanged...')
-        # self._data_var_selection = pd.DataFrame(columns=['item', 'path', 'variable', 'dims', 'shared_dims', 'units'])
+        print('\n\nonDataTreeSelectionChanged...')
 
         # selected data_vars
         selected_items = self._datatree_view.selectedItems(ordered=True)
@@ -368,19 +421,24 @@ class XarrayGraph(XarrayDataTreeViewer):
             )
             return
         self._selected_data_vars: list[xr.DataArray] = [item.data() for item in self._selected_data_var_items]
-        # print(f'_selected_data_vars:')
-        # for item in self._selected_data_var_items:
-        #     print(f'  {item.abspath()}')
+        print(f'  _selected_data_var_items:')
+        for item in self._selected_data_var_items:
+            print(f'    {item.abspath()}')
 
-        self._selected_nodes: list[xr.DataTree] = [item.node() for item in self._selected_data_var_items]
         self._selected_branch_root_nodes: list[xr.DataTree] = []
-        for node in self._selected_nodes:
+        evaluated_node_paths: list[str] = []
+        branch_root_node_paths: list[str] = []
+        for node in [item.node() for item in self._selected_data_var_items]:
+            if node.path in evaluated_node_paths:
+                continue
+            evaluated_node_paths.append(node.path)
             branch_root_node = xarray_utils.aligned_root(node)
-            if branch_root_node not in self._selected_branch_root_nodes:
+            if branch_root_node.path not in branch_root_node_paths:
                 self._selected_branch_root_nodes.append(branch_root_node)
-        # print(f'_selected_branch_root_nodes:')
-        # for node in self._selected_branch_root_nodes:
-        #     print(f'  {node.path}')
+                branch_root_node_paths.append(branch_root_node.path)
+        print(f'  _selected_branch_root_nodes:')
+        for node in self._selected_branch_root_nodes:
+            print(f'    {node.path}')
 
         # shared dimensions across selection
         dims_per_data_var = [np.array(list(data_var.dims)) for data_var in self._selected_data_vars]
@@ -396,13 +454,13 @@ class XarrayGraph(XarrayDataTreeViewer):
                 '''
             )
             return
-        # print(f'_selection_shared_dims: {self._selection_shared_dims}')
+        print(f'  _selection_shared_dims: {self._selection_shared_dims}')
         
         # ordered dimensions
         self._selection_ordered_dims = list(xarray_utils.ordered_dims_iter(self._selected_data_vars)) if self._selected_data_vars else []
         shared_dims = self._selection_shared_dims
         self._selection_shared_dims = [dim for dim in self._selection_ordered_dims if dim in shared_dims]
-        # print(f'_selection_ordered_dims: {self._selection_ordered_dims}')
+        print(f'  _selection_ordered_dims: {self._selection_ordered_dims}')
 
         # ensure xdim is one of the shared dimensions
         xdim = self.xdim()
@@ -417,96 +475,179 @@ class XarrayGraph(XarrayDataTreeViewer):
                     xdim = self._xdim = self._selection_shared_dims[0]
                 except IndexError:
                     xdim = None
-        print(f'xdim: {xdim}')
-        
-        # common units across selection
-        # if units conflict, attempt to convert to base units using pint
+        print(f'  xdim: {xdim}')
+
+        # convert selection to non-prefixed units for plotting in pyqtgraph
         self._selection_units: dict[str, str] = {}
-        names_with_units_conflict = set()
         for i, data_var in enumerate(self._selected_data_vars):
+            name = data_var.name
+            data_var_changed = False
             units = data_var.attrs.get('units', None)
+            # print(f'  {name}: {units}')
             if units is not None:
-                existing_units = self._selection_units.get(data_var.name, None)
-                if existing_units is None:
-                    self._selection_units[data_var.name] = units
-                elif units != existing_units:
-                    names_with_units_conflict.add(data_var.name)
-            coord: xr.DataArray
+                try:
+                    qdata = self.ureg.Quantity(data_var.data, units)
+                    # qbase = qdata.to_base_units()
+                    qbase = XarrayGraph.drop_prefixes(qdata)
+                    base_units = str(qbase.units)
+                    # print(f'  {name}: {units} -> {base_units}')
+                    data_var = data_var.copy(deep=False, data=qbase.magnitude)
+                    data_var.attrs['units'] = base_units
+                    conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
+                    data_var.attrs[TO_BASE_UNITS_KEY] = conversion_factor
+                    data_var_changed = True
+                    units = base_units
+                except:
+                    pass
+            
+            if units is not None:
+                if name not in self._selection_units:
+                    self._selection_units[name] = units
+                elif units != self._selection_units[name]:
+                    self._invalidSelection(
+                        f'''
+                        Units Conflict
+
+                        All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
+
+                        Data variables "{name}" have conflicting units.
+                        '''
+                    )
+                    return
+            
             for name, coord in tuple(data_var.coords.items()):
+                units = coord.attrs.get('units', None)
                 if np.issubdtype(coord.dtype, np.datetime64) or isinstance(coord.data[0], cftime.datetime):
                     # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
                     datetime_values_for_pyqtgraph = coord.values.astype('datetime64[s]').astype(int)
                     coord = coord.copy(data=datetime_values_for_pyqtgraph)
                     coord.attrs['units'] = 'datetime64[s]'
-                    self._selected_data_vars[i] = data_var.assign_coords({name: coord})
-                # check units for conflict
-                units = coord.attrs.get('units', None)
-                if units is not None:
-                    existing_units = self._selection_units.get(name, None)
-                    if existing_units is None:
-                        self._selection_units[name] = units
-                    elif units != existing_units:
-                        names_with_units_conflict.add(name)
-        if names_with_units_conflict:
-            for i, data_var in enumerate(self._selected_data_vars):
-                if (data_var.name in names_with_units_conflict) and ('units' in data_var.attrs):
+                    data_var = data_var.assign_coords({name: coord})
+                    data_var_changed = True
+                    units = 'datetime64[s]'
+                elif units is not None:
                     try:
-                        print('DATA_VAR UNITS CONFLICT:', data_var.name, data_var.attrs.get('units', None))
-                        data = data_var.data
-                        units = data_var.attrs.get('units', None)
-                        qdata = self.ureg.Quantity(data, units)
-                        print('QVAR UNITS:', qdata.units)
-                        qdata = qdata.to_base_units()
-                        print('BASE UNITS:', qdata.units)
-                        units = str(qdata.units)
-                        data_var = data_var.copy(deep=False, data=qdata.magnitude)
-                        data_var.attrs['units'] = units
-                        self._selected_data_vars[i] = data_var
-                        self._selection_units[data_var.name] = units
-                        print('CONVERTED UNITS:', data_var.name, units)
+                        qdata = self.ureg.Quantity(coord.data, units)
+                        # qbase = qdata.to_base_units()
+                        qbase = XarrayGraph.drop_prefixes(qdata)
+                        base_units = str(qbase.units)
+                        # print(f'  {name}: {units} -> {base_units}')
+                        coord = coord.copy(deep=False, data=qbase.magnitude)
+                        coord.attrs['units'] = base_units
+                        conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
+                        coord.attrs[TO_BASE_UNITS_KEY] = conversion_factor
+                        data_var = data_var.assign_coords({name: coord})
+                        data_var_changed = True
+                        units = base_units
                     except:
-                        item = self._selected_data_var_items[i]
+                        pass
+                
+                if units is not None:    
+                    if name not in self._selection_units:
+                        self._selection_units[name] = units
+                    elif units != self._selection_units[name]:
                         self._invalidSelection(
                             f'''
                             Units Conflict
 
                             All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
 
-                            Failed to convert data variable "{item.abspath()}" to base units.
+                            Coordinate "{name}" of variable "{data_var.name}" has conflicting units.
                             '''
                         )
                         return
-                coord: xr.DataArray
-                for coord in data_var.coords.values():
-                    if coord.name in names_with_units_conflict and 'units' in coord.attrs:
-                        try:
-                            print('COORD UNITS CONFLICT:', coord.name, coord.attrs.get('units', None))
-                            data = coord.data
-                            units = coord.attrs.get('units', None)
-                            qdata = self.ureg.Quantity(data, units)
-                            print('QVAR UNITS:', qdata.units)
-                            qdata = qdata.to_base_units()
-                            print('BASE UNITS:', qdata.units)
-                            units = str(qdata.units)
-                            coord = coord.copy(deep=False, data=qdata.magnitude)
-                            coord.attrs['units'] = units
-                            data_var = data_var.assign_coords({coord.name: coord})
-                            self._selected_data_vars[i] = data_var
-                            self._selection_units[coord.name] = units
-                            print('CONVERTED UNITS:', coord.name, units)
-                        except:
-                            item = self._selected_data_var_items[i]
-                            self._invalidSelection(
-                                f'''
-                                Units Conflict
+            
+            if data_var_changed:
+                self._selected_data_vars[i] = data_var
 
-                                All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
+        # # common units across selection
+        # # if units conflict, attempt to convert to base units using pint
+        # self._selection_units: dict[str, str] = {}
+        # names_with_units_conflict = set()
+        # for i, data_var in enumerate(self._selected_data_vars):
+        #     units = data_var.attrs.get('units', None)
+        #     if units is not None:
+        #         existing_units = self._selection_units.get(data_var.name, None)
+        #         if existing_units is None:
+        #             self._selection_units[data_var.name] = units
+        #         elif units != existing_units:
+        #             names_with_units_conflict.add(data_var.name)
+        #     coord: xr.DataArray
+        #     for name, coord in tuple(data_var.coords.items()):
+        #         if np.issubdtype(coord.dtype, np.datetime64) or isinstance(coord.data[0], cftime.datetime):
+        #             # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
+        #             datetime_values_for_pyqtgraph = coord.values.astype('datetime64[s]').astype(int)
+        #             coord = coord.copy(data=datetime_values_for_pyqtgraph)
+        #             coord.attrs['units'] = 'datetime64[s]'
+        #             self._selected_data_vars[i] = data_var.assign_coords({name: coord})
+        #         # check units for conflict
+        #         units = coord.attrs.get('units', None)
+        #         if units is not None:
+        #             existing_units = self._selection_units.get(name, None)
+        #             if existing_units is None:
+        #                 self._selection_units[name] = units
+        #             elif units != existing_units:
+        #                 names_with_units_conflict.add(name)
+        # if names_with_units_conflict:
+        #     for i, data_var in enumerate(self._selected_data_vars):
+        #         if (data_var.name in names_with_units_conflict) and ('units' in data_var.attrs):
+        #             try:
+        #                 # print('DATA_VAR UNITS CONFLICT:', data_var.name, data_var.attrs.get('units', None))
+        #                 data = data_var.data
+        #                 units = data_var.attrs.get('units', None)
+        #                 qdata = self.ureg.Quantity(data, units)
+        #                 # print('QVAR UNITS:', qdata.units)
+        #                 qdata = qdata.to_base_units()
+        #                 # print('BASE UNITS:', qdata.units)
+        #                 units = str(qdata.units)
+        #                 data_var = data_var.copy(deep=False, data=qdata.magnitude)
+        #                 data_var.attrs['units'] = units
+        #                 self._selected_data_vars[i] = data_var
+        #                 self._selection_units[data_var.name] = units
+        #                 # print('CONVERTED UNITS:', data_var.name, units)
+        #             except:
+        #                 item = self._selected_data_var_items[i]
+        #                 self._invalidSelection(
+        #                     f'''
+        #                     Units Conflict
 
-                                Failed to convert coordinate "{coord.name}" in data variable "{item.abspath()}" to base units.
-                                '''
-                            )
-                            return
-        print(f'_selection_units: {self._selection_units}')
+        #                     All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
+
+        #                     Failed to convert data variable "{item.abspath()}" to base units.
+        #                     '''
+        #                 )
+        #                 return
+        #         coord: xr.DataArray
+        #         for coord in data_var.coords.values():
+        #             if coord.name in names_with_units_conflict and 'units' in coord.attrs:
+        #                 try:
+        #                     # print('COORD UNITS CONFLICT:', coord.name, coord.attrs.get('units', None))
+        #                     data = coord.data
+        #                     units = coord.attrs.get('units', None)
+        #                     qdata = self.ureg.Quantity(data, units)
+        #                     # print('QVAR UNITS:', qdata.units)
+        #                     qdata = qdata.to_base_units()
+        #                     # print('BASE UNITS:', qdata.units)
+        #                     units = str(qdata.units)
+        #                     coord = coord.copy(deep=False, data=qdata.magnitude)
+        #                     coord.attrs['units'] = units
+        #                     data_var = data_var.assign_coords({coord.name: coord})
+        #                     self._selected_data_vars[i] = data_var
+        #                     self._selection_units[coord.name] = units
+        #                     # print('CONVERTED UNITS:', coord.name, units)
+        #                 except:
+        #                     item = self._selected_data_var_items[i]
+        #                     self._invalidSelection(
+        #                         f'''
+        #                         Units Conflict
+
+        #                         All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
+
+        #                         Failed to convert coordinate "{coord.name}" in data variable "{item.abspath()}" to base units.
+        #                         '''
+        #                     )
+        #                     return
+        # # print(f'_selection_units: {self._selection_units}')
 
         # selection combined coords (index (dim) coords only)
         selected_coords = []
@@ -535,11 +676,11 @@ class XarrayGraph(XarrayDataTreeViewer):
                 return
         else:
             self._selection_combined_coords = None
-        print(f'_selection_combined_coords: {self._selection_combined_coords}')
+        # print(f'  _selection_combined_coords: {self._selection_combined_coords}')
         
         # unique data_var names
         self._selected_data_var_unique_names = np.unique([var.name for var in self._selected_data_vars]).tolist()
-        print(f'_selected_data_var_unique_names: {self._selected_data_var_unique_names}')
+        print(f'  _selected_data_var_unique_names: {self._selected_data_var_unique_names}')
 
         # if we got here, we have a valid selection
         self._data_var_views_splitter.setVisible(True)
@@ -583,7 +724,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 self._selection_visible_coords: xr.Dataset = self._selection_combined_coords.sel(iter_coords)#, method='nearest')
             else:
                 self._selection_visible_coords: xr.Dataset = self._selection_combined_coords
-        print(f'_selection_visible_coords: {self._selection_visible_coords}')
+        # print(f'_selection_visible_coords: {self._selection_visible_coords}')
         
         self.updatePlotGrid()
     
@@ -806,9 +947,9 @@ class XarrayGraph(XarrayDataTreeViewer):
                         plot_coords = row_coords
                     plot_coords_dict = {dim: arr.values for dim, arr in plot_coords.coords.items() if dim != self.xdim()}
                     
-                    print(f'var_name: {var_name}')
-                    print(f'plot_coords: {plot_coords}')
-                    print(f'plot_coords_dict: {plot_coords_dict}')
+                    # print(f'var_name: {var_name}')
+                    # print(f'plot_coords: {plot_coords}')
+                    # print(f'plot_coords_dict: {plot_coords_dict}')
                     
                     plot = self._plots[i, row, col]
                     plot._metadata = {
@@ -924,7 +1065,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             item: XarrayDataTreeItem
             data_var: xr.DataArray
             for item, data_var in zip(self._selected_data_var_items, self._selected_data_vars):
-                print(f'Plotting data variable: {item.abspath()}...')
+                # print(f'Plotting data variable: {item.abspath()}...')
                 var_name = data_var.name
                 if var_name not in plot._metadata['data_vars']:
                     continue
@@ -946,7 +1087,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 if len(non_xdim_coord_permutations) == 0:
                     non_xdim_coord_permutations = [{}]
                 for coords in non_xdim_coord_permutations:
-                    print(f'  coords: {coords}...')
+                    # print(f'  coords: {coords}...')
                     index_coords = {dim: values for dim, values in coords.items() if dim in data_var.dims}
                     nonindex_coords = {dim: values for dim, values in coords.items() if dim in data_var.coords and dim not in data_var.dims}
                     if index_coords:
@@ -967,14 +1108,19 @@ class XarrayGraph(XarrayDataTreeViewer):
                     ydata: np.ndarray = data_var_slice.values
                     if np.all(np.isnan(ydata)):
                         continue
-                    print(f'    xdata: {xdata}')
-                    print(f'    ydata: {ydata}')
+                    # print(f'    xdata: {xdata}')
+                    # print(f'    ydata: {ydata}')
 
                     # categorical xdim values?
                     if is_xdim_categorical:
                         intersect, xdata_indices, all_xtick_labels_indices = np.intersect1d(xdata, all_xtick_labels, assume_unique=True, return_indices=True)
                         xdata = np.sort(all_xtick_labels_indices)
                         # xdim_coord_slice = data_var_slice.coords[xdim].copy(data=xdata)
+
+                    # graph name is path plus non-xdim coords
+                    name = item.abspath()
+                    if index_coords:
+                        name += '[' + ','.join([f'{dim}={index_coords[dim]}' for dim in index_coords]) + ']'
                     
                     # mask data?
                     mask_slice = None
@@ -989,11 +1135,32 @@ class XarrayGraph(XarrayDataTreeViewer):
                             except:
                                 pass
                         mask_slice = mask_slice.reset_coords(drop=True).squeeze(drop=True)
-                        # if not self.isMaskedVisible():
-                        # xdata = xdata.copy() # don't overwrite original data
+                        raw_ydata = ydata
                         ydata = ydata.copy() # don't overwrite original data
-                        # xdata[mask_slice.values] = np.nan
                         ydata[mask_slice.values] = np.nan
+
+                        # graph masked data
+                        if self.isMaskedVisible():
+                            if len(masked_graphs) > masked_count:
+                                # update existing data in plot
+                                masked_graph = masked_graphs[masked_count]
+                                masked_graph.setData(x=xdata, y=raw_ydata)
+                            else:
+                                # add new data to plot
+                                masked_graph = PlotCurve(x=xdata, y=raw_ydata)
+                                plot.addItem(masked_graph)
+                                masked_graphs.append(masked_graph)
+                            masked_count += 1
+                            masked_graph._metadata = {
+                                'type': 'masked',
+                                # 'data': data_var_slice,
+                                # 'mask': mask_slice,
+                                # 'path': var_path,
+                                'coords': coords,
+                            }
+                            masked_graph.setZValue(0)
+                            masked_graph.setName(name + ' masked')
+                            masked_graph.setPen(pg.mkPen(color=MASK_COLOR, width=1))
                     
                     # graph data
                     if len(data_graphs) > data_count:
@@ -1014,15 +1181,10 @@ class XarrayGraph(XarrayDataTreeViewer):
                         'coords': coords,
                     }
                     data_graph.setZValue(1)
-
-                    # graph name is path plus non-xdim coords
-                    name = item.abspath()
-                    if coords:
-                        name += '[' + ','.join([f'{dim}={coords[dim]}' for dim in coords]) + ']'
                     data_graph.setName(name)
             
             # remove extra graph items from plot
-            cleanup_graphs = [(data_graphs, data_count)]#, (masked_graphs, masked_count)]
+            cleanup_graphs = [(data_graphs, data_count), (masked_graphs, masked_count)]
             for graphs, count in cleanup_graphs:
                 while len(graphs) > count:
                     graph = graphs.pop()
@@ -1030,7 +1192,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     graph.deleteLater()
 
         if bottomAxisChanged:
-            print('Bottom axis type changed, updating axis links...')
+            # print('Bottom axis type changed, updating axis links...')
             self.updatePlotAxisLabels()
             self.updatePlotAxisTickFont()
             self.updatePlotAxisLinks()
@@ -1050,14 +1212,14 @@ class XarrayGraph(XarrayDataTreeViewer):
         """
         if isinstance(roiItem, XAxisRegion):
             region = data['position'][self.xdim()]
-            print(f"Setting region: {region}")
+            # print(f"Setting region: {region}")
             roiItem.setRegion(region)
             roiItem.setMovable(data.get('movable', False))
             roiItem.setText(data.get('text', ''))
             # item.setFormat(data.get('format', {}))
         elif isinstance(roiItem, VLine):
             pos = data['position'][self.xdim()]
-            print(f"Setting position: {pos}")
+            # print(f"Setting position: {pos}")
             roiItem.setValue(pos)
             roiItem.setMovable(data.get('movable', False))
             # roiItem.setText(data.get('text', ''))
@@ -1224,9 +1386,36 @@ class XarrayGraph(XarrayDataTreeViewer):
             toolTip='Show Masked',
             checkable=True,
             checked=False,
-            # shortcut=QKeySequence('Y'),
-            # shortcutVisibleInContextMenu=True,
+            shortcut=QKeySequence('Y'),
+            shortcutVisibleInContextMenu=True,
             triggered=lambda checked: self.refresh()
+        )
+
+        self._interpolate_action = QAction(
+            text='Interpolate',
+            toolTip='Interpolate',
+            checkable=False,
+            shortcut=QKeySequence('I'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.interpolate()
+        )
+
+        self._zero_action = QAction(
+            text='Zero',
+            toolTip='Zero',
+            checkable=False,
+            shortcut=QKeySequence('Z'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.zero()
+        )
+
+        self._set_constant_action = QAction(
+            text='Constant',
+            toolTip='Set to Constant',
+            checkable=False,
+            shortcut=QKeySequence('C'),
+            shortcutVisibleInContextMenu=True,
+            triggered=lambda checked: self.setConstant()
         )
 
         self._filter_action = QAction(
@@ -1277,6 +1466,10 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._selection_menu = QMenu('Selection')
         self._selection_menu.addAction(self._mask_action)
         self._selection_menu.addAction(self._unmask_action)
+        self._selection_menu.addSeparator()
+        self._selection_menu.addAction(self._interpolate_action)
+        self._selection_menu.addAction(self._zero_action)
+        self._selection_menu.addAction(self._set_constant_action)
         self.menuBar().insertMenu(self._view_menu.menuAction(), self._selection_menu)
 
         self._operations_menu = QMenu('Operations')
@@ -1386,6 +1579,34 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._top_toolbar.addAction(self._home_action)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._top_toolbar)
     
+    @staticmethod
+    def drop_prefixes(qty: pint.Quantity, ureg = None) -> pint.Quantity:
+        if ureg is None:
+            ureg = XarrayGraph.ureg
+
+        newunit = ureg.Unit("dimensionless")
+        conversion_factor = 1
+
+        for unit_name, power in qty._units.items():
+            unit = ureg._units[unit_name]
+            converter = unit.converter
+
+            if not isinstance(converter, ScaleConverter):
+                # this sample is assuming everything's in terms of scale conversion,
+                # but it seems possible there might be some affine transformation
+                # between a unit and its reference. Left as an exercise to the reader :)
+                raise ValueError(f"Unexpected converter type: {converter!r}")
+
+            if converter.scale == 1:
+                # no conversion necessary, just carry this unit along
+                newunit *= unit**power
+            else:
+                for name, p in unit.reference.items():
+                    newunit *= ureg.Unit(name)**power
+                conversion_factor *= converter.scale
+
+        return qty.m * conversion_factor * newunit
+    
 
 class DimIterWidget(QWidget):
 
@@ -1466,6 +1687,8 @@ class DimIterWidget(QWidget):
 
         self._spinbox = MultiValueSpinBox()
         self._spinbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._spinbox.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._spinbox.editingFinished.connect(lambda: self._spinbox.clearFocus())
 
         grid = QGridLayout(self)
         grid.setContentsMargins(5, 2, 5, 2)
