@@ -13,9 +13,10 @@ from qtpy.QtWidgets import *
 
 class MeasureControlPanel(QWidget):
 
-    measurementChanged = Signal()
+    measureChanged = Signal()
     previewToggled = Signal()
-    measurementRequested = Signal()
+    measureRequested = Signal()
+    panelClosed = Signal()
 
     ureg = pint.UnitRegistry()
     ureg.formatter.default_format = '~'  # short format for symbols (e.g., "A" instead of "ampere")
@@ -42,7 +43,7 @@ class MeasureControlPanel(QWidget):
         self._avg_plus_minus_samples_spinbox.setMinimum(0)
         self._avg_plus_minus_samples_spinbox.setSpecialValueText('None')
         self._avg_plus_minus_samples_spinbox.setValue(0)
-        self._avg_plus_minus_samples_spinbox.valueChanged.connect(lambda value: self.measurementChanged.emit())
+        self._avg_plus_minus_samples_spinbox.valueChanged.connect(lambda value: self.measureChanged.emit())
 
         self._avg_plus_minus_samples_group = QGroupBox()
         form = QFormLayout(self._avg_plus_minus_samples_group)
@@ -82,19 +83,19 @@ class MeasureControlPanel(QWidget):
 
         self._measure_in_ROIs_only_checkbox = QCheckBox('Measure within ROIs only')
         self._measure_in_ROIs_only_checkbox.setChecked(True)
-        self._measure_in_ROIs_only_checkbox.stateChanged.connect(lambda state: self.measurementChanged.emit())
+        self._measure_in_ROIs_only_checkbox.stateChanged.connect(lambda state: self.measureChanged.emit())
 
         self._measure_per_ROI_checkbox = QCheckBox('Measure for each ROI')
         self._measure_per_ROI_checkbox.setChecked(True)
         self._measure_in_ROIs_only_checkbox.setEnabled(not self._measure_per_ROI_checkbox.isChecked)
         self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self._measure_in_ROIs_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
-        self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self.measurementChanged.emit())
+        self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self.measureChanged.emit())
 
         self._preview_checkbox = QCheckBox('Preview', checked=True)
         self._preview_checkbox.stateChanged.connect(lambda state: self.previewToggled.emit())
 
         self._apply_button = QPushButton('Measure')
-        self._apply_button.pressed.connect(lambda: self.measurementRequested.emit())
+        self._apply_button.pressed.connect(lambda: self.measureRequested.emit())
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self._preview_checkbox)
@@ -122,31 +123,79 @@ class MeasureControlPanel(QWidget):
         measurement_type = self._type_combobox.currentText()
         self._avg_plus_minus_samples_group.setVisible(measurement_type in ['Min', 'Max'])
 
-        self.measurementChanged.emit()
+        self.measureChanged.emit()
     
-    def measure(self, x: np.ndarray, y: np.ndarray) -> float | tuple[float, float]:
+    def measure(self, x: np.ndarray, y: np.ndarray, xranges: list[tuple[float, float]]) -> np.ndarray:
         measurement_type = self._type_combobox.currentText()
+
+        mask = ~np.isnan(x) & ~np.isnan(y)
+        if not np.all(mask):
+            x = x[mask]
+            y = y[mask]
         
+        if xranges:
+            if self.isOutputPerRoi() and len(xranges) > 1:
+                measures = []
+                for xrange in xranges:
+                    measures.append(self.measure(x, y, [xrange]))
+                return np.array(measures).reshape(-1, 2)
+            else:
+                mask = np.full(len(x), False)
+                for lb, ub in xranges:
+                    mask[(x >= lb) & (x <= ub)] = True
+                x = x[mask]
+                y = y[mask]
+
         if measurement_type == 'Mean':
-            return np.nanmean(y)
+            mx = np.nanmean(x)
+            my = np.nanmean(y)
         elif measurement_type == 'Median':
-            return np.nanmedian(y)
+            mx = np.nanmean(x)
+            my = np.nanmedian(y)
         elif measurement_type == 'Min':
             i = np.argmin(y)
             n = self._avg_plus_minus_samples_spinbox.value()
+            mx = x[i]
             if n:
-                return x[i], np.nanmean(y[max(0, i-n):min(i+n, len(y))])
-            return x[i], y[i]
+                my = np.nanmean(y[max(0, i-n):min(i+n, len(y))])
+            else:
+                my = y[i]
         elif measurement_type == 'Max':
             i = np.argmax(y)
             n = self._avg_plus_minus_samples_spinbox.value()
+            mx = x[i]
             if n:
-                return x[i], np.nanmean(y[max(0, i-n):min(i+n, len(y))])
-            return x[i], y[i]
+                my = np.nanmean(y[max(0, i-n):min(i+n, len(y))])
+            else:
+                my = y[i]
         elif measurement_type == 'Standard Deviation':
-            return np.nanstd(y)
+            mx = np.nanmean(x)
+            my = np.nanstd(y)
         elif measurement_type == 'Variance':
-            return np.nanvar(y)
+            mx = np.nanmean(x)
+            my = np.nanvar(y)
+        
+        return np.array([mx, my]).reshape(1, 2)
+
+    def measureType(self) -> str:
+        return self._type_combobox.currentText()
+
+    def setMeasureType(self, measure_type: str):
+        self._type_combobox.setCurrentText(measure_type)
+
+    def isInputLimitedToRois(self) -> bool:
+        return self._measure_in_ROIs_only_checkbox.isChecked()
+    
+    def isOutputPerRoi(self) -> bool:
+        return self._measure_per_ROI_checkbox.isChecked()
+    
+    def isPreview(self) -> bool:
+        return self._preview_checkbox.isChecked()
+    
+    def closeEvent(self, event):
+        status = super().closeEvent(event)
+        QTimer.singleShot(0, self.panelClosed.emit)
+        return status
 
 
 def test_live():

@@ -127,6 +127,46 @@ class XarrayDataTreeView(TreeView):
             model.setTreeData(data)
             self.restoreViewState()
     
+    def isDataVarsVisible(self) -> bool:
+        model: XarrayDataTreeModel = self.model()
+        return model.isDataVarsVisible()
+    
+    def setDataVarsVisible(self, visible: bool) -> None:
+        model: XarrayDataTreeModel = self.model()
+        model.setDataVarsVisible(visible)
+        with QSignalBlocker(self._showDataVarsAction):
+            self._showDataVarsAction.setChecked(visible)
+    
+    def isCoordsVisible(self) -> bool:
+        model: XarrayDataTreeModel = self.model()
+        return model.isCoordsVisible()
+    
+    def setCoordsVisible(self, visible: bool) -> None:
+        model: XarrayDataTreeModel = self.model()
+        model.setCoordsVisible(visible)
+        with QSignalBlocker(self._showCoordsAction):
+            self._showCoordsAction.setChecked(visible)
+    
+    def isInheritedCoordsVisible(self) -> bool:
+        model: XarrayDataTreeModel = self.model()
+        return model.isInheritedCoordsVisible()
+    
+    def setInheritedCoordsVisible(self, visible: bool) -> None:
+        model: XarrayDataTreeModel = self.model()
+        model.setInheritedCoordsVisible(visible)
+        with QSignalBlocker(self._showInheritedCoordsAction):
+            self._showInheritedCoordsAction.setChecked(visible)
+    
+    def isInfoColumnsVisible(self) -> bool:
+        model: XarrayDataTreeModel = self.model()
+        return model.isInfoColumnsVisible()
+    
+    def setInfoColumnsVisible(self, visible: bool) -> None:
+        model: XarrayDataTreeModel = self.model()
+        model.setInfoColumnsVisible(visible)
+        with QSignalBlocker(self._showInfoColumnsAction):
+            self._showInfoColumnsAction.setChecked(visible)
+
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model: XarrayDataTreeModel = self.model()
         menu = QMenu(self)

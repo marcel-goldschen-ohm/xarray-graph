@@ -14,7 +14,8 @@ class CurveFitControlPanel(QWidget):
 
     fitChanged = Signal()
     previewToggled = Signal()
-    applyFitRequested = Signal()
+    fitRequested = Signal()
+    panelClosed = Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -115,7 +116,7 @@ class CurveFitControlPanel(QWidget):
         self._preview_checkbox.stateChanged.connect(lambda state: self.previewToggled.emit())
 
         self._apply_button = QPushButton('Fit')
-        self._apply_button.pressed.connect(lambda: self.applyFitRequested.emit())
+        self._apply_button.pressed.connect(lambda: self.fitRequested.emit())
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self._preview_checkbox)
@@ -150,6 +151,7 @@ class CurveFitControlPanel(QWidget):
         is_polynomial = fit_type == 'Polynomial'
         is_spline = fit_type == 'Spline'
         is_expression = self._type_combobox.currentIndex() >= fit_types.index('Expression')
+        is_named_expression = is_expression and fit_type in self._named_expressions
         self._polynomial_groupbox.setVisible(is_polynomial)
         self._spline_groupbox.setVisible(is_spline)
         self._expression_groupbox.setVisible(is_expression)
@@ -157,7 +159,11 @@ class CurveFitControlPanel(QWidget):
             self._spacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
         else:
             self._spacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.MinimumExpanding)
-        
+        if is_named_expression:
+            expression = self._named_expressions[fit_type]['expression']
+            params = self._named_expressions[fit_type].get('params', None)
+            self.setExpression(expression, params)
+
         # to avoid focus remaining on a hidden element (shows part of focus highlight when it shouldn't)
         if is_polynomial:
             self._polynomial_degree_spinbox.setFocus()
@@ -192,6 +198,13 @@ class CurveFitControlPanel(QWidget):
         
         self.fitChanged.emit()
     
+    def setExpression(self, expression: str, params: dict = None) -> None:
+        with QSignalBlocker(self._expression_edit):
+            self._expression_edit.setText(expression)
+        if params is not None:
+            self.setExpressionTableParams(params)
+        self._onExpressionChanged()
+
     def expressionModel(self) -> lmfit.models.ExpressionModel | None:
         expression = self._expression_edit.text().strip()
         if 'x' not in expression:
@@ -262,14 +275,21 @@ class CurveFitControlPanel(QWidget):
         self._expression_params_table.blockSignals(False)
         self._expression_params_table.model().dataChanged.connect(lambda model_index: self.fitChanged.emit())  # needed because blockSignals not working!?
     
-    def fit(self, x: np.ndarray, y: np.ndarray) -> dict:
-        """ Fit y(x)
+    def fit(self, x: np.ndarray, y: np.ndarray, xranges: list[tuple[float, float]] = []) -> dict:
+        """ Fit y(x). Returns a dict of fit parameters.
         """
 
         fit_type = self._type_combobox.currentText()
         fit_result = {
             'type': fit_type
         }
+
+        if self.isInputLimitedToRois() and xranges:
+            mask = np.full(len(x), False)
+            for lb, ub in xranges:
+                mask[(x >= lb) & (x <= ub)] = True
+            x = x[mask]
+            y = y[mask]
 
         if fit_type not in ['Mean', 'Median', 'Min', 'Max']:
             # remove any (x,y) pairs that contain NaN
@@ -325,8 +345,8 @@ class CurveFitControlPanel(QWidget):
         
         return fit_result
     
-    def predict(self, x: np.ndarray, fit_result: dict) -> np.ndarray:
-        """ Eval fit(x)
+    def predict(self, x: np.ndarray, fit_result: dict, xranges: list[tuple[float, float]] = []) -> np.ndarray:
+        """ Eval fit(x) using the parameters in fit_result.
         """
 
         fit_type = self._type_combobox.currentText()
@@ -353,8 +373,37 @@ class CurveFitControlPanel(QWidget):
                 model: lmfit.models.ExpressionModel = result.model
                 params = result.params
             ypred = model.eval(params=params, x=x)
+
+        if self.isOutputLimitedToRois() and xranges:
+            mask = np.full(len(x), False)
+            for lb, ub in xranges:
+                mask[(x >= lb) & (x <= ub)] = True
+            ypred[~mask] = np.nan
         
         return ypred
+    
+    def fitType(self) -> str:
+        return self._type_combobox.currentText()
+
+    def setFitType(self, fit_type: str):
+        self._type_combobox.setCurrentText(fit_type)
+
+    def isInputLimitedToRois(self) -> bool:
+        return self._limit_input_to_ROIs_checkbox.isChecked()
+    
+    def isOutputLimitedToRois(self) -> bool:
+        return self._limit_output_to_ROIs_checkbox.isChecked()
+
+    def isResiduals(self) -> bool:
+        return self._residuals_checkbox.isChecked()
+
+    def isPreview(self) -> bool:
+        return self._preview_checkbox.isChecked()
+    
+    def closeEvent(self, event):
+        status = super().closeEvent(event)
+        QTimer.singleShot(0, self.panelClosed.emit)
+        return status
 
 
 def test_live():

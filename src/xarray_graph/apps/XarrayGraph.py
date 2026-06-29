@@ -1,4 +1,7 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
+
+TODO:
+- warn if mutating data array directly?
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import xarray as xr
 # import pint_xarray
 import pint
 from pint.facets.plain import ScaleConverter
+import cmap
 from qtpy.QtCore import *
 from qtpy.QtGui import *
 from qtpy.QtWidgets import *
@@ -21,17 +25,17 @@ import qtawesome as qta
 import pyqtgraph as pg
 from xarray_graph.utils import xarray_utils
 from xarray_graph.apps import XarrayDataTreeViewer
-from xarray_graph.tree import XarrayDataTreeItem, AnnotationTreeItem, AnnotationTreeModel, AnnotationTreeView
+from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, AnnotationTreeItem, AnnotationTreeModel, AnnotationTreeView
 from xarray_graph.graph import *
 from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
 
 
-ROI_KEY = 'XG_ROI'
-MASK_KEY = 'XG_MASK'
-CURVE_FIT_KEY = 'XG_CURVE_FIT'
-NOTES_KEY = 'XG_NOTES'
-TO_BASE_UNITS_KEY = 'XG_TO_BASE_UNITS'
+ROI_KEY = '_XG_ROI'
+MASK_KEY = '_XG_MASK'
+NOTES_KEY = '_XG_NOTES'
+TO_DISPLAY_UNITS_KEY = '_XG_TO_DISPLAY_UNITS_FACTOR'
 MASK_COLOR = (200, 200, 200)
+PREVIEW_COLOR = (255, 0, 0)
 
 
 class XarrayGraph(XarrayDataTreeViewer):
@@ -44,6 +48,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
     _default_settings = {
         'icon size': 24,
+        'colormap': cmap.Colormap('seaborn:tab10_colorblind').to_pyqtgraph()
     }
     _settings = deepcopy(_default_settings)
 
@@ -128,6 +133,9 @@ class XarrayGraph(XarrayDataTreeViewer):
             for view in xlinked_views:
                 view.setXRange(xmin, xmax)
     
+    def notes(self) -> None:
+        self._notes_view.show()
+    
     def rois(self) -> list[dict]:
         """ Get list of ROI annotations.
         """
@@ -148,6 +156,25 @@ class XarrayGraph(XarrayDataTreeViewer):
     def setSelectedRois(self, rois: list[dict]) -> None:
         self._ROIs_view.setSelectedAnnotations(rois)
     
+    def visibleRois(self) -> list[dict]:
+        if self.isRoisVisible():
+            return self.selectedRois()
+        else:
+            return []
+    
+    def visibleXRanges(self) -> list[tuple[float, float]]:
+        xranges: list[tuple[float, float]] = []
+        xdim = self.xdim()
+        for roi in self.visibleRois():
+            if roi['type'] != 'region':
+                continue
+            try:
+                lb, ub = roi['position'][xdim]
+            except:
+                continue
+            xranges.append((lb, ub))
+        return xranges
+
     def addRoisToPlots(self, rois: list[dict], plots: list[Plot] = None) -> None:
         if plots is None:
             plots = self._plots.flatten().tolist()
@@ -192,28 +219,19 @@ class XarrayGraph(XarrayDataTreeViewer):
     def mask(self) -> None:
         """ Mask selected traces or ROIs within selected traces.
         """
-        if self.isRoisVisible():
-            rois = self.selectedRois()
-        else:
-            rois = []
-        
+        xranges = self.visibleXRanges()
         xdim = self.xdim()
-        for node in self._selected_branch_root_nodes:
+        for node in self._branch_root_nodes_for_selected_data_vars:
             dims = tuple(node.sizes.keys())
             sizes = tuple(node.sizes.values())
             if MASK_KEY not in node.data_vars:
                 node.dataset = node.to_dataset().assign({MASK_KEY: xr.DataArray(np.full(sizes, False, dtype=bool), dims=dims)})
             coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
-            if rois:
+            if xranges:
                 xdata = node[xdim].values
                 xmask = np.full(xdata.shape, False, dtype=bool)
-                for roi in rois:
-                    if roi['type'] != 'region':
-                        continue
-                    try:
-                        lb, ub = roi['position'][xdim]
-                    except:
-                        continue
+                for xrange in xranges:
+                    lb, ub = xrange
                     xmask[(xdata >= lb) & (xdata <= ub)] = True
                 coords[xdim] = xdata[xmask]
             node.data_vars[MASK_KEY].loc[coords] = True
@@ -223,28 +241,19 @@ class XarrayGraph(XarrayDataTreeViewer):
     def unmask(self) -> None:
         """ Unmask selected traces or ROIs within selected traces.
         """
-        if self.isRoisVisible():
-            rois = self.selectedRois()
-        else:
-            rois = []
-        
+        xranges = self.visibleXRanges()
         xdim = self.xdim()
-        for node in self._selected_branch_root_nodes:
+        for node in self._branch_root_nodes_for_selected_data_vars:
             dims = tuple(node.sizes.keys())
             sizes = tuple(node.sizes.values())
             if MASK_KEY not in node.data_vars:
                 continue
             coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
-            if rois:
+            if xranges:
                 xdata = node[xdim].values
                 xmask = np.full(xdata.shape, False, dtype=bool)
-                for roi in rois:
-                    if roi['type'] != 'region':
-                        continue
-                    try:
-                        lb, ub = roi['position'][xdim]
-                    except:
-                        continue
+                for xrange in xranges:
+                    lb, ub = xrange
                     xmask[(xdata >= lb) & (xdata <= ub)] = True
                 coords[xdim] = xdata[xmask]
             node.data_vars[MASK_KEY].loc[coords] = False
@@ -260,79 +269,130 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._view_masked_action.setChecked(visible)
         self.refresh()
 
-    def interpolate(self) -> None:
-        if not self.isRoisVisible():
-            return
-        rois = self.selectedRois()
-        xdim = self.xdim()
-        for roi in rois:
-            if roi['type'] != 'region':
-                continue
-            try:
-                lb, ub = roi['position'][xdim]
-            except:
-                continue
-            for data_var, item in zip(self._selected_data_vars, self._selected_data_var_items):
-                actual_data_var: xr.DataArray = item.data()
-                # TODO
-
     def zero(self) -> None:
-        if not self.isRoisVisible():
-            return
-        rois = self.selectedRois()
+        xranges = self.visibleXRanges()
         xdim = self.xdim()
-        for roi in rois:
-            if roi['type'] != 'region':
-                continue
-            try:
-                lb, ub = roi['position'][xdim]
-            except:
-                continue
-            for item in self._selected_data_var_items:
+        for item, plot_data_var in zip(self._selected_data_var_items, self._selected_data_vars):
+            node: xr.DataTree = item.node()
+            data_var: xr.DataArray = item.data()
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            if xranges:
+                xdata = node[xdim].values
+                xmask = np.full(xdata.shape, False, dtype=bool)
+                for xrange in xranges:
+                    lb, ub = xrange
+                    xmask[(xdata >= lb) & (xdata <= ub)] = True
+                coords[xdim] = xdata[xmask]
+            data_var.loc[coords] = 0
+            if plot_data_var is not data_var:
+                plot_data_var.loc[coords] = 0
+        
+        self.replot()
+
+    def setConstant(self, constant = None) -> None:
+        if constant is None:
+            constant, ok = QInputDialog.getText(self, "Set Constant", "Enter constant value (and units if applicable):", text="1.0 units")
+            if not ok:
+                return
+        
+        try:
+            qconstant = pint.Quantity(constant)
+        except:
+            return
+
+        xranges = self.visibleXRanges()
+        xdim = self.xdim()
+        for item, plot_data_var in zip(self._selected_data_var_items, self._selected_data_vars):
+            node: xr.DataTree = item.node()
+            data_var: xr.DataArray = item.data()
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            if xranges:
+                xdata = node[xdim].values
+                xmask = np.full(xdata.shape, False, dtype=bool)
+                for xrange in xranges:
+                    lb, ub = xrange
+                    xmask[(xdata >= lb) & (xdata <= ub)] = True
+                coords[xdim] = xdata[xmask]
+            
+            units = data_var.attrs.get('units', None)
+            if units is not None:
+                data_var.loc[coords] = qconstant.to(units).magnitude
+            else:
+                data_var.loc[coords] = qconstant.magnitude
+            
+            if plot_data_var is not data_var:
+                units = plot_data_var.attrs.get('units', None)
+                if units is not None:
+                    plot_data_var.loc[coords] = qconstant.to(units).magnitude
+                else:
+                    plot_data_var.loc[coords] = qconstant.magnitude
+        
+        self.replot()
+
+    def interpolate(self) -> None:
+        xranges = self.visibleXRanges()
+        if not xranges:
+            return
+        
+        xdim = self.xdim()
+        for plot in self._plots.flatten().tolist():
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            for graph in data_graphs:
+                item: XarrayDataTreeItem = graph._metadata.get('data_var_item', None)
+                if item is None:
+                    continue
                 data_var: xr.DataArray = item.data()
-                new_data_var = xr.where(
-                    (data_var[xdim] >= lb) & (data_var[xdim] <= ub), 
-                    0,  # value if true
-                    data_var   # value if false
-                )
-                item.node().dataset = item.node().to_dataset().assign({item.data().name: new_data_var})
-        self.refresh() # overkill
+                coords = graph._metadata['coords']
+                coords[xdim] = data_var[xdim]
+                ydata = data_var.sel(coords).squeeze(drop=True).data
+                xdata = graph.xData
+                for xrange in xranges:
+                    lb, ub = xrange
+                    li = np.searchsorted(xdata, lb, side='left')
+                    ui = np.searchsorted(xdata, ub, side='right') - 1
+                    if li >= ui:
+                        continue
+                    
+                    lx = xdata[li]
+                    ux = xdata[ui]
+                    ly = ydata[li]
+                    uy = ydata[ui]
+                    ydata[li:ui+1] = np.interp(xdata[li:ui+1], [lx, ux], [ly, uy])
+                data_var.loc[coords] = ydata
+        
+        self.refresh() # overkill?
 
-    def setConstant(self) -> None:
-        if not self.isRoisVisible():
-            return
-        rois = self.selectedRois()
-        xdim = self.xdim()
-        for roi in rois:
-            if roi['type'] != 'region':
-                continue
-            try:
-                lb, ub = roi['position'][xdim]
-            except:
-                continue
-            for data_var, item in zip(self._selected_data_vars, self._selected_data_var_items):
-                actual_data_var: xr.DataArray = item.data()
-                # TODO
-
-    def notes(self) -> None:
-        self._notes_view.show()
-    
     def filter(self) -> None:
-        pass # TODO
+        self.startPreview('filter')
 
     def curveFit(self) -> None:
-        pass # TODO
+        self.startPreview('curve fit')
 
     def measure(self) -> None:
-        pass # TODO
+        self.startPreview('measure')
     
-    def settings(self) -> None:
-        pass # TODO
+    def startPreview(self, operation: str) -> None:
+        for name, panel in self._preview_control_panels.items():
+            if name == operation:
+                panel.show()
+                panel.raise_()
+            else:
+                panel.hide()
+        
+        self.updatePreview()
     
-    def refresh(self):
-        super().refresh()
-        self.onDataTreeSelectionChanged()
+    def activePreview(self) -> str | None:
+        for name, panel in self._preview_control_panels.items():
+            if panel.isVisible():
+                return name
     
+    def isPreview(self) -> bool:
+        for name, panel in self._preview_control_panels.items():
+            if panel.isVisible():
+                return panel.isPreview()
+        return False
+
     def replot(self) -> None:
         """ Update all plots.
         """
@@ -425,19 +485,22 @@ class XarrayGraph(XarrayDataTreeViewer):
         for item in self._selected_data_var_items:
             print(f'    {item.abspath()}')
 
-        self._selected_branch_root_nodes: list[xr.DataTree] = []
-        evaluated_node_paths: list[str] = []
-        branch_root_node_paths: list[str] = []
-        for node in [item.node() for item in self._selected_data_var_items]:
-            if node.path in evaluated_node_paths:
-                continue
-            evaluated_node_paths.append(node.path)
+        self._nodes_with_selected_data_vars: list[xr.DataTree] = []
+        for item in self._selected_data_var_items:
+            node: xr.DataTree = item.node()
+            if xarray_utils.index_by_identity(self._nodes_with_selected_data_vars, node) == -1:
+                self._nodes_with_selected_data_vars.append(node)
+        print(f'  _nodes_with_selected_data_vars:')
+        for node in self._nodes_with_selected_data_vars:
+            print(f'    {node.path}')
+
+        self._branch_root_nodes_for_selected_data_vars: list[xr.DataTree] = []
+        for node in self._nodes_with_selected_data_vars:
             branch_root_node = xarray_utils.aligned_root(node)
-            if branch_root_node.path not in branch_root_node_paths:
-                self._selected_branch_root_nodes.append(branch_root_node)
-                branch_root_node_paths.append(branch_root_node.path)
-        print(f'  _selected_branch_root_nodes:')
-        for node in self._selected_branch_root_nodes:
+            if xarray_utils.index_by_identity(self._branch_root_nodes_for_selected_data_vars, branch_root_node) == -1:
+                self._branch_root_nodes_for_selected_data_vars.append(branch_root_node)
+        print(f'  _branch_root_nodes_for_selected_data_vars:')
+        for node in self._branch_root_nodes_for_selected_data_vars:
             print(f'    {node.path}')
 
         # shared dimensions across selection
@@ -494,7 +557,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     data_var = data_var.copy(deep=False, data=qbase.magnitude)
                     data_var.attrs['units'] = base_units
                     conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
-                    data_var.attrs[TO_BASE_UNITS_KEY] = conversion_factor
+                    data_var.attrs[TO_DISPLAY_UNITS_KEY] = conversion_factor
                     data_var_changed = True
                     units = base_units
                 except:
@@ -535,7 +598,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                         coord = coord.copy(deep=False, data=qbase.magnitude)
                         coord.attrs['units'] = base_units
                         conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
-                        coord.attrs[TO_BASE_UNITS_KEY] = conversion_factor
+                        coord.attrs[TO_DISPLAY_UNITS_KEY] = conversion_factor
                         data_var = data_var.assign_coords({name: coord})
                         data_var_changed = True
                         units = base_units
@@ -774,6 +837,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         with QSignalBlocker(self._ROIs_view):
             self._ROIs_view.setSelectedAnnotations(selectedROIs)
         self.updatePlotRois() # overkill, but works for now
+        if self.isPreview():
+            self.updatePreview()
 
     def _onRoiPlotItemChanged(self, roiItem: QGraphicsObject) -> None:
         """ Handle changes to ROI plot object.
@@ -798,8 +863,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                 model.dataChanged.emit(index, index)
                 break
         
-        # if self._curve_fit_live_preview_enabled() and self._curve_fit_depends_on_ROIs():
-        #     self._update_curve_fit_preview()
+        if self.isPreview():
+            self.updatePreview()
 
     def _onNotesChanged(self) -> None:
         """ Handle the event when the notes text edit is changed.
@@ -1013,10 +1078,13 @@ class XarrayGraph(XarrayDataTreeViewer):
                     if (row > 0) or (col > 0):
                         plot.setYLink(self._plots[i, 0, 0])
 
-    def updatePlotData(self) -> None:
+    def updatePlotData(self, plots: list[Plot] = None) -> None:
         """ Update graphs in each plot to show current datatree selection.
         """
         print('\n'*2, 'updatePlotData...')
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+
         dt: xr.DataTree = self.datatree()
         xdim: str = self.xdim()
         if (xdim is None) or (self._selection_combined_coords is None) or (xdim not in self._selection_combined_coords):
@@ -1034,9 +1102,11 @@ class XarrayGraph(XarrayDataTreeViewer):
             all_xtick_values = np.arange(len(all_xdata))
             all_xtick_labels = all_xdata  # str xdim values
             all_xticks = [list(zip(all_xtick_values, all_xtick_labels))]
+        
+        cmap = self._settings['colormap']
 
         bottomAxisChanged = False
-        for plot in self._plots.flatten().tolist():
+        for plot in plots:
             view: View = plot.getViewBox()
 
             # update bottom axis (datetime or not)
@@ -1057,11 +1127,11 @@ class XarrayGraph(XarrayDataTreeViewer):
             graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
             data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
             masked_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'masked']
-            preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
 
             data_count = 0
             masked_count = 0
-            preview_count = 0
+            color_index = 0
+            color = cmap[color_index]
             item: XarrayDataTreeItem
             data_var: xr.DataArray
             for item, data_var in zip(self._selected_data_var_items, self._selected_data_vars):
@@ -1070,18 +1140,20 @@ class XarrayGraph(XarrayDataTreeViewer):
                 if var_name not in plot._metadata['data_vars']:
                     continue
                 node: xr.DataTree = item.node()
-                # data_var = data_var.reset_coords(drop=True)
                 
+                # search ancestors for mask data
                 mask = None
                 if var_name != MASK_KEY:
+                    branch_root_node = xarray_utils.aligned_root(node)
                     node_ = node
-                    while node_.has_data:
+                    while node_:
                         if MASK_KEY in node_.data_vars:
                             mask = node_.data_vars[MASK_KEY]
                             break
-                        if node_.parent is None:
+                        if node_ is branch_root_node:
                             break
                         node_ = node_.parent
+                    mask_node = node_
                 
                 non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
                 if len(non_xdim_coord_permutations) == 0:
@@ -1153,9 +1225,9 @@ class XarrayGraph(XarrayDataTreeViewer):
                             masked_count += 1
                             masked_graph._metadata = {
                                 'type': 'masked',
-                                # 'data': data_var_slice,
-                                # 'mask': mask_slice,
-                                # 'path': var_path,
+                                'mask_node': mask_node,
+                                'data_var_item': item,
+                                'plot_data_var': data_var,
                                 'coords': coords,
                             }
                             masked_graph.setZValue(0)
@@ -1175,13 +1247,18 @@ class XarrayGraph(XarrayDataTreeViewer):
                     data_count += 1
                     data_graph._metadata = {
                         'type': 'data',
-                        'data': data_var_slice,
-                        # 'mask': mask_slice,
-                        # 'path': var_path,
+                        'data_var_item': item,
+                        'plot_data_var': data_var,
                         'coords': coords,
+                        'units': data_var.attrs.get('units', None)
                     }
                     data_graph.setZValue(1)
                     data_graph.setName(name)
+                    data_graph.setPen(pg.mkPen(color=color, width=1))
+                
+                # to next data_var in datatree
+                color_index += 1
+                color = cmap[color_index]
             
             # remove extra graph items from plot
             cleanup_graphs = [(data_graphs, data_count), (masked_graphs, masked_count)]
@@ -1196,16 +1273,187 @@ class XarrayGraph(XarrayDataTreeViewer):
             self.updatePlotAxisLabels()
             self.updatePlotAxisTickFont()
             self.updatePlotAxisLinks()
+        
+        self.updatePreview(plots)
     
-    def updatePlotRois(self) -> None:
-        plots = self._plots.flatten().tolist()
+    def updatePreview(self, plots: list[Plot] = None, force: bool = False) -> None:
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+
+        preview_type = self.activePreview()
+        if preview_type is None:
+            is_preview = False
+        else:
+            preview_control_panel = self._preview_control_panels[preview_type]
+            is_preview = force or preview_control_panel.isPreview()
+            if is_preview:
+                xranges = self.visibleXRanges()
+        
+        for plot in plots:
+            xaxis: pg.AxisItem = plot.getAxis('bottom')
+            if isinstance(xaxis, pg.DateAxisItem):
+                xunits = 's'
+            else:
+                xunits = xaxis.labelUnits
+            
+            # existing graphs in plot
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
+
+            for graph in data_graphs:
+                graph._metadata['preview'] = None
+
+            preview_count = 0
+            if is_preview:
+                for graph in data_graphs:
+                    xdata = graph.xData
+                    ydata = graph.yData
+                    # data_var_item = graph._metadata['data_var_item']
+                    if preview_type == 'filter':
+                        xpreview = xdata
+                        ypreview = preview_control_panel.filter(xdata, ydata, self.ureg, xunits)
+                    elif preview_type == 'curve fit':
+                        xpreview = xdata
+                        fit_params = preview_control_panel.fit(xdata, ydata, xranges)
+                        ypreview = preview_control_panel.predict(xdata, fit_params, xranges)
+                        if preview_control_panel.isResiduals():
+                            ypreview = ydata - ypreview
+                    elif preview_type == 'measure':
+                        xy = preview_control_panel.measure(xdata, ydata, xranges)
+                        xpreview = xy[:,0]
+                        ypreview = xy[:,1]
+                    else:
+                        # not handled
+                        continue
+
+                    if len(preview_graphs) > preview_count:
+                        # update existing data in plot
+                        preview_graph = preview_graphs[preview_count]
+                        preview_graph.setData(x=xpreview, y=ypreview)
+                    else:
+                        # add new data to plot
+                        preview_graph = PlotCurve(x=xpreview, y=ypreview)
+                        plot.addItem(preview_graph)
+                        preview_graphs.append(preview_graph)
+                    preview_count += 1
+                    preview_graph._metadata = {
+                        'type': 'preview',
+                        'operation': preview_type,
+                        'data_var_item': graph._metadata['data_var_item'],
+                        'coords': graph._metadata['coords'],
+                        'units': graph._metadata['units'],
+                    }
+                    preview_graph.setZValue(2)
+                    preview_graph.setName(graph.name() + f" ({preview_type})")
+                    if preview_type == 'measure':
+                        preview_graph.setPen(None)
+                        preview_graph.setSymbol('o')
+                        preview_graph.setSymbolSize(8)
+                        preview_graph.setSymbolPen(pg.mkPen(color=PREVIEW_COLOR, width=2))
+                    else:
+                        preview_graph.setPen(pg.mkPen(color=PREVIEW_COLOR, width=2))
+                    graph._metadata['preview'] = preview_graph
+            
+            # remove extra graph items from plot
+            cleanup_graphs = [(preview_graphs, preview_count)]
+            for graphs, count in cleanup_graphs:
+                while len(graphs) > count:
+                    graph = graphs.pop()
+                    plot.removeItem(graph)
+                    graph.deleteLater()
+    
+    def savePreview(self, plots: list[Plot] = None, result_name: str = None) -> None:
+        print('\n'*2, 'savePreview...')
+        if plots is None:
+            plots = self._plots.flatten().tolist()
+        
+        if result_name is None:
+            preview_type = self.activePreview()
+            preview_panel = self._preview_control_panels[preview_type]
+            if preview_type == 'filter':
+                filter_type = preview_panel.filterType()
+                result_name = f'{filter_type} Filter'
+            elif preview_type == 'curve fit':
+                fit_type = preview_panel.fitType()
+                result_name = f'{fit_type} Fit'
+            elif preview_type == 'measure':
+                measure_type = preview_panel.measureType()
+                result_name = f'{measure_type}'
+            result_name, ok = QInputDialog.getText(self, 'Save Preview', 'Result Name:', text=result_name)
+            result_name = result_name.strip()
+            if not ok or not result_name:
+                return
+        
+        if not self.isPreview():
+            self.updatePreview(force=True)
+        
+        dt = self.datatree()
+        xdim = self.xdim()
+        result_paths: list[str] = []
+        
+        for plot in plots:
+            xaxis: pg.AxisItem = plot.getAxis('bottom')
+            if isinstance(xaxis, pg.DateAxisItem):
+                xunits = 's'
+            else:
+                xunits = xaxis.labelUnits
+            yaxis: pg.AxisItem = plot.getAxis('left')
+            yunits = yaxis.labelUnits
+            
+            # existing graphs in plot
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            data_graphs: list[PlotCurve] = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            for graph in data_graphs:
+                preview_graph: PlotCurve = graph._metadata.get('preview', None)
+                if preview_graph is None:
+                    continue
+                data_var_item: XarrayDataTreeItem = graph._metadata['data_var_item']
+                data_var: xr.DataArray = data_var_item.data()
+                data_var_units = data_var.attrs.get('units', None)
+                plot_data_var: xr.DataArray = graph._metadata['plot_data_var']
+                plot_data_var_units = plot_data_var.attrs.get('units', None)
+                result_path = data_var_item.node().path.rstrip('/') + f'/{result_name}/{data_var.name}'
+                print(result_path, plot_data_var_units, data_var_units)
+                if result_path not in result_paths:
+                    result_paths.append(result_path)
+                coords: XarrayDataTreeItem = graph._metadata['coords']
+                try:
+                    result_var = dt[result_path]
+                except KeyError:
+                    blank = np.full(data_var.shape, np.nan)
+                    result_var = data_var.copy(data=blank)
+                    dt[result_path] = result_var
+                if data_var_units and (plot_data_var_units != data_var_units):
+                    conversion_factor = (1.0 * self.ureg(plot_data_var_units)).to(data_var_units).magnitude
+                    result_var.loc[coords] = preview_graph.yData * conversion_factor
+                else:
+                    result_var.loc[coords] = preview_graph.yData
+        
+        self.refresh() # overkill?
+        selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems(ordered=True)
+        selected_paths = [item.abspath() for item in selected_items]
+        new_selection = False
+        model: XarrayDataTreeModel = self._datatree_view.model()
+        root_item = model.rootItem()
+        for path in result_paths:
+            if path not in selected_paths:
+                selected_items.append(root_item[path])
+                new_selection = True
+        if new_selection:
+            self._datatree_view.setSelectedItems(selected_items)
+
+    def updatePlotRois(self, plots: list[Plot] = None) -> None:
+        if plots is None:
+            plots = self._plots.flatten().tolist()
         selectedRois = self._ROIs_view.selectedAnnotations()
 
         # remove all current ROI objects
         self.removeRoisFromPlots(plots=plots)
-        
-        # add selected ROI objects
-        self.addRoisToPlots(selectedRois, plots)
+
+        if self.isRoisVisible():
+            # add selected ROI objects
+            self.addRoisToPlots(selectedRois, plots)
 
     def _updateRoiPlotItemFromData(self, roiItem: QGraphicsObject, data: dict) -> None:
         """ Apply ROI data to plotted ROI object.
@@ -1334,7 +1582,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=True,
             shortcut=QKeySequence('W'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.replot()
+            triggered=lambda checked: self.updatePlotRois()
         )
         
         self._ROI_event_action = QAction(
@@ -1423,8 +1671,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Filter',
             toolTip='Filter',
-            checkable=True,
-            checked=False,
+            # checkable=True,
+            # checked=False,
             triggered=lambda checked: self.filter()
         )
 
@@ -1433,8 +1681,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Curve Fit',
             toolTip='Curve Fit',
-            checkable=True,
-            checked=False,
+            # checkable=True,
+            # checked=False,
             triggered=lambda checked: self.curveFit()
         )
 
@@ -1444,16 +1692,16 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Measure',
             toolTip='Measure',
-            checkable=True,
-            checked=False,
+            # checkable=True,
+            # checked=False,
             triggered=lambda checked: self.measure()
         )
 
-        self._opertions_action_group = QActionGroup(self)
-        self._opertions_action_group.addAction(self._filter_action)
-        self._opertions_action_group.addAction(self._curve_fit_action)
-        self._opertions_action_group.addAction(self._measure_action)
-        self._opertions_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
+        # self._opertions_action_group = QActionGroup(self)
+        # self._opertions_action_group.addAction(self._filter_action)
+        # self._opertions_action_group.addAction(self._curve_fit_action)
+        # self._opertions_action_group.addAction(self._measure_action)
+        # self._opertions_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
     
     def _initMenubar(self) -> None:
         super()._initMenubar()
@@ -1482,6 +1730,11 @@ class XarrayGraph(XarrayDataTreeViewer):
     def _initUI(self) -> None:
         """ Initialize UI elements and layout.
         """
+        # datatree view
+        self._datatree_view.setDataVarsVisible(True)
+        self._datatree_view.setCoordsVisible(False)
+        self._datatree_view.setInfoColumnsVisible(True)
+
         # ROIs view
         self._ROIs_view = AnnotationTreeView()
         model = AnnotationTreeModel()
@@ -1494,7 +1747,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._datatree_ROIs_splitter.addWidget(self._datatree_view)
         self._datatree_ROIs_splitter.addWidget(self._ROIs_view)
 
-        # data_var views splitter
+        # data_var plot views splitter
         self._data_var_views_splitter = QSplitter(Qt.Orientation.Vertical)
         self._plots = np.empty((0, 0, 0), dtype=object)
 
@@ -1527,6 +1780,34 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._notes_view = QTextEdit()
         self._notes_view.setWindowTitle('Notes')
         self._notes_view.textChanged.connect(self._onNotesChanged)
+
+        # filter
+        self._filter_control_panel = FilterControlPanel()
+        self._filter_control_panel.filterChanged.connect(self.updatePreview)
+        self._filter_control_panel.previewToggled.connect(self.updatePreview)
+        self._filter_control_panel.panelClosed.connect(self.updatePreview)
+        self._filter_control_panel.filterRequested.connect(self.savePreview)
+
+        # curve fit
+        self._curve_fit_control_panel = CurveFitControlPanel()
+        self._curve_fit_control_panel.fitChanged.connect(self.updatePreview)
+        self._curve_fit_control_panel.previewToggled.connect(self.updatePreview)
+        self._curve_fit_control_panel.panelClosed.connect(self.updatePreview)
+        self._curve_fit_control_panel.fitRequested.connect(self.savePreview)
+
+        # measure
+        self._measure_control_panel = MeasureControlPanel()
+        self._measure_control_panel.measureChanged.connect(self.updatePreview)
+        self._measure_control_panel.previewToggled.connect(self.updatePreview)
+        self._measure_control_panel.panelClosed.connect(self.updatePreview)
+        self._measure_control_panel.measureRequested.connect(self.savePreview)
+
+        # preview
+        self._preview_control_panels = {
+            'filter': self._filter_control_panel,
+            'curve fit': self._curve_fit_control_panel,
+            'measure': self._measure_control_panel
+        }
     
     def _initTopToolbar(self) -> None:
         icon_size = self._settings.get('icon size', 24)
