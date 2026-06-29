@@ -150,6 +150,13 @@ class FilterControlPanel(QWidget):
     def setFilterType(self, filter_type: str):
         self._type_combobox.setCurrentText(filter_type)
 
+    def cutoffString(self) -> str:
+        cutoffs = self._cutoff_edit.text().split(',')
+        if len(cutoffs) == 1:
+            return cutoffs[0].strip()
+        elif len(cutoffs) == 2:
+            return f'{cutoffs[0].strip()}-{cutoffs[1].strip()}'
+
     def isPreview(self) -> bool:
         return self._preview_checkbox.isChecked()
     

@@ -1373,7 +1373,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             preview_panel = self._preview_control_panels[preview_type]
             if preview_type == 'filter':
                 filter_type = preview_panel.filterType()
-                result_name = f'{filter_type} Filter'
+                cutoff = preview_panel.cutoffString()
+                result_name = f'{filter_type} {cutoff} Filter'
             elif preview_type == 'curve fit':
                 fit_type = preview_panel.fitType()
                 result_name = f'{fit_type} Fit'
@@ -1723,7 +1724,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._operations_menu = QMenu('Operations')
         self._operations_menu.addAction(self._filter_action)
         self._operations_menu.addAction(self._curve_fit_action)
-        self._operations_menu.addSeparator()
+        # self._operations_menu.addSeparator()
         self._operations_menu.addAction(self._measure_action)
         self.menuBar().insertMenu(self._view_menu.menuAction(), self._operations_menu)
     
