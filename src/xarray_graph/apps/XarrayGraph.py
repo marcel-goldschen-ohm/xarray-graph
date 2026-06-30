@@ -48,7 +48,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
     _default_settings = {
         'icon size': 24,
-        'colormap': cmap.Colormap('seaborn:tab10_colorblind').to_pyqtgraph()
+        'colormap': cmap.Colormap('seaborn:tab10_new').to_pyqtgraph()
     }
     _settings = deepcopy(_default_settings)
 

@@ -45,7 +45,16 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 # 'inherited_coord': '#cc79a780', # last 80 makes it 50% transparent
                 'unknown': '#990000',
             },
-        }
+        },
+        'light': {
+            'color': {
+                'node': '#0B132B',
+                'data_var': "#005AD8",
+                'coord': "#8C09B7",
+                # 'inherited_coord': '#8C09B780', # last 80 makes it 50% transparent
+                'unknown': '#990000',
+            },
+        },
     }
 
     def setTheme(self, name: str) -> None:
@@ -106,8 +115,13 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._is_info_columns_visible: bool = True
 
         # theme
-        # self.setTheme('default')
-        self.setTheme('dark')
+        color_scheme = QApplication.instance().styleHints().colorScheme()
+        if color_scheme == Qt.ColorScheme.Dark:
+            self.setTheme('dark')
+        elif color_scheme == Qt.ColorScheme.Light:
+            self.setTheme('light')
+        else:
+            self.setTheme('default')
 
         # setup item tree
         datatree: xr.DataTree = xr.DataTree()
@@ -852,6 +866,7 @@ class NameConflictDialog(QDialog):
 
 def test_model():
     app = QApplication()
+    # app.styleHints().setColorScheme(Qt.ColorScheme.Light)
 
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
