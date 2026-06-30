@@ -19,6 +19,12 @@ from xarray_graph.widgets import CollapsibleSectionsSplitter
 from xarray_graph.tree.XarrayDataTreeView import infoTextEdit
 
 
+# version info (stored in metadata in case needed later)
+from importlib.metadata import version
+XARRAY_GRAPH_VERSION = version('xarray-graph')
+VERSION_KEY = '_XG_VERSION'
+
+
 class XarrayDataTreeViewer(QMainWindow):
     """ PyQt widget for visualizing and manipulating Xarray DataTrees.
     """
@@ -177,6 +183,7 @@ class XarrayDataTreeViewer(QMainWindow):
         
         filepath = Path(filepath)
         datatree: xr.DataTree = self.datatree()
+        datatree.attrs[VERSION_KEY] = XARRAY_GRAPH_VERSION
         io.save_datatree(datatree, filepath, filetype=filetype)
         self._filepath = filepath
         self.setWindowTitle(filepath.stem)
