@@ -1,4 +1,7 @@
 """ PyQt widget for visualizing and manipulating Xarray DataTrees.
+
+TODO:
+- saveAs Zarr Directory allow selecting non-existent directory
 """
 
 from __future__ import annotations

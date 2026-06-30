@@ -3,6 +3,7 @@
 from __future__ import annotations
 import os
 from pathlib import Path
+import shutil
 import xarray as xr
 import zarr
 from xarray_graph.utils import xarray_utils
@@ -29,10 +30,10 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
     # read datatree from filesystem
     if filepath.is_dir():
         # Zarr Directory
-        with zarr.storage.LocalStore(filepath, mode='r') as store:
+        with zarr.storage.LocalStore(filepath) as store:
             datatree = xr.open_datatree(store, engine='zarr', chunks=chunks)
     elif (filetype == 'Zarr Zip') or (filepath.suffix in ['.zip', '.ZIP']):
-        with zarr.storage.ZipStore(filepath, mode='r') as store:
+        with zarr.storage.ZipStore(filepath) as store:
             datatree = xr.open_datatree(store, engine='zarr', chunks=chunks)
     elif (filetype == 'WinWCP') or (filepath.suffix in ['.wcp', '.WCP']):
         return read_winwcp(filepath)
@@ -61,11 +62,23 @@ def save_datatree(datatree: xr.DataTree, filepath: str | os.PathLike, filetype: 
 
     # write datatree to filesystem
     if (filetype == 'Zarr Directory') or ((filetype is None) and (filepath.is_dir() or filepath.suffix in ['', '.zarr'])):
-        with zarr.storage.LocalStore(filepath, mode='w') as store:
-            datatree.to_zarr(store)
+        with zarr.storage.LocalStore(filepath) as store:
+            datatree.to_zarr(store, mode='w', consolidated=False)
     elif (filetype == 'Zarr Zip') or ((filetype is None) and (filepath.suffix in ['.zip', '.ZIP'])):
         with zarr.storage.ZipStore(filepath, mode='w') as store:
-            datatree.to_zarr(store)
+            datatree.to_zarr(store, consolidated=False)
+        # zip files are notorious for having issues with zarr
+        # fallback is to use a normal zarr directory and then zip it up afterwards
+        # !!! this is not working with zarr v3. it is a known issue. solution appears to be just not using consolidated metadata.
+        # with zarr.storage.LocalStore(filepath.with_suffix('.tmp')) as store:
+        #     datatree.to_zarr(store, mode='w')
+        # filepath = filepath.with_suffix('.zip')
+        # base_name = str(filepath.with_suffix(''))
+        # root_dir = str(filepath.parent)
+        # base_dir = filepath.with_suffix('.tmp').name
+        # print(base_name, root_dir, base_dir)
+        # shutil.make_archive(base_name, "zip", root_dir, base_dir)
+        # # shutil.rmtree(filepath.with_suffix('.tmp'))
     elif engine:
         # NetCDF/HDF5
         datatree.to_netcdf(filepath, mode='w', engine=engine)
