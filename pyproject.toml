@@ -1,12 +1,12 @@
 [project]
 name = "xarray-graph"
-version = "v2025.11.12"
-description = "PyQt UI for navigating and graphing (x,y) slices of a Xarray DataTree."
+version = "v2026.7.1"
+description = "PyQt UIs for Xarray DataTree including tree view and DataArray slice graphing and processing."
 authors = [
     {name = "Marcel Goldschen-Ohm", email = "goldschen-ohm@utexas.edu"},
 ]
 readme = "README.md"
-keywords = ["PyQt", "PySide", "xarray", "graph", "tree", "plot"]
+keywords = ["xarray", "DataTree", "tree", "PyQt", "PySide", "pyqtgraph", "graph", "plot", "signal processing", "n-dimensional"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -37,8 +37,8 @@ repository = "https://github.com/marcel-goldschen-ohm/xarray-graph"
 issues = "https://github.com/marcel-goldschen-ohm/xarray-graph/issues"
 
 [project.scripts]
-xarray-graph = "xarray_graph.__main__:graph_app"
-xarray-tree = "xarray_graph.__main__:tree_app"
+xarray-graph = "xarray_graph.__main__:xgraph"
+xarray-tree = "xarray_graph.__main__:xtree"
 
 [build-system]
 requires = ["uv_build"]
