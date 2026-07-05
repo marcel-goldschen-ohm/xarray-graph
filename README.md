@@ -20,7 +20,6 @@ PyQt/PySide UIs for visualizing and manipulating Xarray DataTrees.
 Requires a PyQt package. Should work with PySide6 (the official Python Qt binding), PyQt6, or PyQt5 via the [QtPy](https://github.com/spyder-ide/qtpy) abstraction layer. *Note: PySide6>=6.2.2 for Apple silicon support, and PySide6!=6.9.1 due to a [bug](https://github.com/pyqtgraph/pyqtgraph/issues/3328) that is incompatible with pyqtgraph.*
 
 ### Install with uv (recommended):
----
 1. Install the python package manager [uv](https://github.com/astral-sh/uv).
 2. Download the [xarray-graph GitHub repository](https://github.com/marcel-goldschen-ohm/xarray-graph). <!-- *I suggest downloading the latest release version.* -->
 3. In the downloaded repo directory, run the following commands (e.g., in a Terminal or shell):
@@ -49,10 +48,11 @@ pip install "PySide6>=6.2.2,!=6.9.1"
 ## XarrayDataTreeViewer
 Tree UI for an Xarray DataTree.
 
-**Launch the app** *(If you installed with uv, run in the xarray-graph directory. If you installed with pip, omit `uv run`.)*:
+:rocket: To **launch the application**, run the following command (e.g., in a Terminal or shell) in the downloaded repo directory:
 ```shell
 uv run xarray-tree
 ```
+:bangbang: *Note: The first time you run the app it may take 30-60 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
 :construction: YouTube video
 
@@ -61,10 +61,11 @@ uv run xarray-tree
 ## XarrayGraph
 Graph/Iterate/Fit/Analyze (x,y) slices of DataArrays in an Xarray DataTree.
 
-**Launch the app** *(If you installed with uv, run in the xarray-graph directory. If you installed with pip, omit `uv run`.)*:
+:rocket: To **launch the application**, run the following command (e.g., in a Terminal or shell) in the downloaded repo directory:
 ```shell
 uv run xarray-graph
 ```
+:bangbang: *Note: The first time you run the app it may take 30-60 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
 :construction: YouTube video
 
