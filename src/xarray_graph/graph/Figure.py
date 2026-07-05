@@ -2,9 +2,8 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
 import pyqtgraph as pg
 from xarray_graph.graph import Plot
 import platform

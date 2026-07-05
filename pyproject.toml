@@ -29,6 +29,7 @@ dependencies = [
     "requests",
     "pint-xarray>=0.5.1",
     "cf-xarray>=0.10.6",
+    "cftime",
 ]
 
 [project.urls]

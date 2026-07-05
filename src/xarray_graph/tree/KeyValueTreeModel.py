@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 import numpy as np
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, QPoint, QSize, QModelIndex
+from qtpy.QtGui import QIcon, QColor, QPalette
+from qtpy.QtWidgets import QApplication, QMessageBox
 import qtawesome as qta
 from xarray_graph.tree import KeyValueTreeItem, AbstractTreeModel
 
@@ -289,6 +289,7 @@ class KeyValueTreeModel(AbstractTreeModel):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication, QTreeView
     app = QApplication()
     data = {
         'a': 1,

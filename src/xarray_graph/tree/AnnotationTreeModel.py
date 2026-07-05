@@ -6,10 +6,8 @@ The model accepts a flat list of annotations from which a nested group tree stru
 """
 
 from __future__ import annotations
-import xarray as xr
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, QModelIndex
+from qtpy.QtWidgets import QWidget, QApplication, QMessageBox
 import qtawesome as qta
 from xarray_graph.tree import AbstractTreeModel, AnnotationTreeItem
 
@@ -151,6 +149,8 @@ class AnnotationTreeModel(AbstractTreeModel):
 
 
 def test_model():
+    from qtpy.QtWidgets import QApplication, QTreeView
+
     annotations = [
         {'type': 'region', 'position': {'lat': [0, 1]}},
         {'type': 'region', 'position': {'lon': [2, 3]}},

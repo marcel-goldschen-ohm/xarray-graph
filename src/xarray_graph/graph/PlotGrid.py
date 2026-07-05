@@ -2,12 +2,11 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, QTimer
+from qtpy.QtGui import QColor, QResizeEvent
+from qtpy.QtWidgets import QGraphicsGridLayout
 import pyqtgraph as pg
 from xarray_graph.graph import Plot
-import numpy as np
 import platform
 
 
@@ -149,6 +148,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
             self.applyRegularLayout()
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
     grid = PlotGrid(3, 4)
     grid.setAxisLabelAndTickVisibility(xlabel_rows=[-1], xtick_rows=[-1], ylabel_columns=[0], ytick_columns=[0])

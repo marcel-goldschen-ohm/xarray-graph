@@ -2,9 +2,9 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, Signal, QPoint
+from qtpy.QtGui import QColor, QPen, QMouseEvent
+from qtpy.QtWidgets import QMenu
 import pyqtgraph as pg
 # from xarray_graph.utils.color import ColorType, toQColor, toColorStr
 # from xarray_graph.widgets import ColorButton
@@ -576,6 +576,7 @@ class HLine(InfiniteLine):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
 
     ui = pg.PlotWidget()

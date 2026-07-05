@@ -6,9 +6,21 @@ TODO:
 
 from __future__ import annotations
 import xarray as xr
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, QModelIndex
+from qtpy.QtGui import QIcon, QColor, QPalette
+from qtpy.QtWidgets import (
+    QApplication,
+    QWidget,
+    QMessageBox,
+    QDialog,
+    QVBoxLayout,
+    QTextEdit,
+    QRadioButton,
+    QButtonGroup,
+    QDialogButtonBox,
+    QPushButton,
+    QCheckBox,
+)
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import XarrayDataTreeItem, AbstractTreeModel
@@ -865,6 +877,7 @@ class NameConflictDialog(QDialog):
 
 
 def test_model():
+    from qtpy.QtWidgets import QApplication, QTreeView
     app = QApplication()
     # app.styleHints().setColorScheme(Qt.ColorScheme.Light)
 

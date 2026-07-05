@@ -3,10 +3,17 @@
 
 from __future__ import annotations
 from copy import deepcopy
-import numpy as np
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import QPoint, QSize, QModelIndex, QItemSelection, QItemSelectionModel
+from qtpy.QtGui import QKeySequence, QShortcut
+from qtpy.QtWidgets import (
+    QAbstractItemView,
+    QMenu,
+    QAction,
+    QDialog,
+    QVBoxLayout,
+    QDialogButtonBox,
+    QInputDialog,
+)
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel, TreeView, KeyValueTreeModel, KeyValueTreeView
@@ -253,6 +260,7 @@ class AnnotationTreeView(TreeView):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
 
     annotations = [
         {'type': 'region', 'position': {'lat': [0, 1]}},

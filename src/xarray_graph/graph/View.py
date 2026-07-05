@@ -2,9 +2,9 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, Signal, QTimer
+from qtpy.QtGui import QColor, QMouseEvent
+from qtpy.QtWidgets import QGraphicsObject
 import numpy as np
 import pyqtgraph as pg
 from xarray_graph.graph import VLine, HLine, XAxisRegion, YAxisRegion#, PlotCurve
@@ -200,6 +200,7 @@ class View(pg.ViewBox):
 def test_live():
     import numpy as np
     from xarray_graph.graph import Plot, Figure
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
 
     fig = Figure()

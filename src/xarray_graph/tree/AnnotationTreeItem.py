@@ -2,7 +2,6 @@
 """
 
 from __future__ import annotations
-import numpy as np
 from xarray_graph.tree import AbstractTreeItem
 from xarray_graph.utils import annotation_label
 from copy import deepcopy

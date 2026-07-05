@@ -6,9 +6,18 @@ TODO:
 
 from __future__ import annotations
 import time, math
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Signal, Qt, QPoint, QRect, QSize
+from qtpy.QtGui import QMouseEvent, QPaintEvent, QIcon, QPixmap
+from qtpy.QtWidgets import (
+    QSplitter,
+    QToolButton,
+    QStyleOptionToolButton,
+    QWidget,
+    QSizePolicy,
+    QSplitterHandle,
+    QStylePainter,
+    QStyle,
+)
 import qtawesome as qta
 
 
@@ -278,6 +287,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication, QTableView, QTreeView, QListView, QPushButton
     app = QApplication()
 
     ui = CollapsibleSectionsSplitter()

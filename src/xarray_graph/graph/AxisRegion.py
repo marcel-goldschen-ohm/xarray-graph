@@ -2,9 +2,9 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, Signal, QPoint
+from qtpy.QtGui import QColor, QPen, QFont, QMouseEvent
+from qtpy.QtWidgets import QMenu
 import pyqtgraph as pg
 # from xarray_graph.utils.color import ColorType, toQColor, toColorStr
 # from xarray_graph.widgets import ColorButton
@@ -599,13 +599,14 @@ class YAxisRegion(AxisRegion):
 #         return
 
 
-def test_live():
-    app = QApplication()
+# def test_live():
+#     from qtpy.QtWidgets import QApplication
+#     app = QApplication()
 
-    ui = AxisRegionPanel()
-    ui.show()
+#     ui = AxisRegionPanel()
+#     ui.show()
 
-    app.exec()
+#     app.exec()
 
-if __name__ == '__main__':
-    test_live()
+# if __name__ == '__main__':
+#     test_live()

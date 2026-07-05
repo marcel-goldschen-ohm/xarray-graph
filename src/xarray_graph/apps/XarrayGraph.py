@@ -18,16 +18,33 @@ import xarray as xr
 import pint
 from pint.facets.plain import ScaleConverter
 import cmap
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, QObject, QTimer, Signal, QSignalBlocker, QModelIndex, QSize, QEvent
+from qtpy.QtGui import QColor, QFont, QPalette, QKeySequence
+from qtpy.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QSplitter,
+    QAction,
+    QApplication,
+    QInputDialog,
+    QMenu,
+    QLabel,
+    QTextEdit,
+    QGraphicsObject,
+    QActionGroup,
+    QToolButton,
+    QToolBar,
+    QSizePolicy,
+    QGraphicsOpacityEffect,
+    QGridLayout,
+)
 import qtawesome as qta
 import pyqtgraph as pg
 from xarray_graph.utils import xarray_utils
 from xarray_graph.apps import XarrayDataTreeViewer
-from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, AnnotationTreeItem, AnnotationTreeModel, AnnotationTreeView
+from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, AnnotationTreeModel, AnnotationTreeView
 from xarray_graph.graph import *
-from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
+from xarray_graph.widgets import MultiValueSpinBox
 
 
 ROI_KEY = '_XG_ROI'
@@ -453,7 +470,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._data_action.setChecked(visible)
     
     def onDataTreeSelectionChanged(self) -> None:
-        print('\n\nonDataTreeSelectionChanged...')
+        # print('\n\nonDataTreeSelectionChanged...')
 
         # selected data_vars
         selected_items = self._datatree_view.selectedItems(ordered=True)
@@ -481,27 +498,27 @@ class XarrayGraph(XarrayDataTreeViewer):
             )
             return
         self._selected_data_vars: list[xr.DataArray] = [item.data() for item in self._selected_data_var_items]
-        print(f'  _selected_data_var_items:')
-        for item in self._selected_data_var_items:
-            print(f'    {item.abspath()}')
+        # print(f'  _selected_data_var_items:')
+        # for item in self._selected_data_var_items:
+        #     print(f'    {item.abspath()}')
 
         self._nodes_with_selected_data_vars: list[xr.DataTree] = []
         for item in self._selected_data_var_items:
             node: xr.DataTree = item.node()
             if xarray_utils.index_by_identity(self._nodes_with_selected_data_vars, node) == -1:
                 self._nodes_with_selected_data_vars.append(node)
-        print(f'  _nodes_with_selected_data_vars:')
-        for node in self._nodes_with_selected_data_vars:
-            print(f'    {node.path}')
+        # print(f'  _nodes_with_selected_data_vars:')
+        # for node in self._nodes_with_selected_data_vars:
+        #     print(f'    {node.path}')
 
         self._branch_root_nodes_for_selected_data_vars: list[xr.DataTree] = []
         for node in self._nodes_with_selected_data_vars:
             branch_root_node = xarray_utils.aligned_root(node)
             if xarray_utils.index_by_identity(self._branch_root_nodes_for_selected_data_vars, branch_root_node) == -1:
                 self._branch_root_nodes_for_selected_data_vars.append(branch_root_node)
-        print(f'  _branch_root_nodes_for_selected_data_vars:')
-        for node in self._branch_root_nodes_for_selected_data_vars:
-            print(f'    {node.path}')
+        # print(f'  _branch_root_nodes_for_selected_data_vars:')
+        # for node in self._branch_root_nodes_for_selected_data_vars:
+        #     print(f'    {node.path}')
 
         # shared dimensions across selection
         dims_per_data_var = [np.array(list(data_var.dims)) for data_var in self._selected_data_vars]
@@ -517,13 +534,13 @@ class XarrayGraph(XarrayDataTreeViewer):
                 '''
             )
             return
-        print(f'  _selection_shared_dims: {self._selection_shared_dims}')
+        # print(f'  _selection_shared_dims: {self._selection_shared_dims}')
         
         # ordered dimensions
         self._selection_ordered_dims = list(xarray_utils.ordered_dims_iter(self._selected_data_vars)) if self._selected_data_vars else []
         shared_dims = self._selection_shared_dims
         self._selection_shared_dims = [dim for dim in self._selection_ordered_dims if dim in shared_dims]
-        print(f'  _selection_ordered_dims: {self._selection_ordered_dims}')
+        # print(f'  _selection_ordered_dims: {self._selection_ordered_dims}')
 
         # ensure xdim is one of the shared dimensions
         xdim = self.xdim()
@@ -538,7 +555,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     xdim = self._xdim = self._selection_shared_dims[0]
                 except IndexError:
                     xdim = None
-        print(f'  xdim: {xdim}')
+        # print(f'  xdim: {xdim}')
 
         # convert selection to non-prefixed units for plotting in pyqtgraph
         self._selection_units: dict[str, str] = {}
@@ -743,7 +760,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         # unique data_var names
         self._selected_data_var_unique_names = np.unique([var.name for var in self._selected_data_vars]).tolist()
-        print(f'  _selected_data_var_unique_names: {self._selected_data_var_unique_names}')
+        # print(f'  _selected_data_var_unique_names: {self._selected_data_var_unique_names}')
 
         # if we got here, we have a valid selection
         self._data_var_views_splitter.setVisible(True)
@@ -772,7 +789,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def onDataSliceChanged(self) -> None:
         """ Handle selection changes in dimension iterators.
         """
-        print('\n'*2, 'onDataSliceChanged...')
+        # print('\n'*2, 'onDataSliceChanged...')
 
         # get coords for current slice of selected variables
         if self._selection_combined_coords is None:
@@ -942,7 +959,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotGrid(self) -> None:
         """ Update plot grids for selected variables and current plot tiling.
         """
-        print('\n'*2, 'updatePlotGrid...')
+        # print('\n'*2, 'updatePlotGrid...')
 
         # one plot grid per selected variable
         n_data_var_names = len(self._selected_data_var_unique_names)
@@ -991,7 +1008,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotMetadata(self) -> None:
         """ Update metadata stored in each plot.
         """
-        print('updatePlotMetadata...')
+        # print('updatePlotMetadata...')
         vdim, hdim, vcoords, hcoords = self.tiledDimensions()
         n_vars, n_grid_rows, n_grid_cols = self._plots.shape
         for i in range(n_vars):
@@ -1028,7 +1045,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotAxisLabels(self) -> None:
         """ Update axis labels for each plot (use settings font).
         """
-        print('updatePlotAxisLabels...')
+        # print('updatePlotAxisLabels...')
         xunits = self._selection_units.get(self.xdim(), None)
         axis_label_fontsize = 12 #self._axis_label_fontsize_spinbox.value()
         axis_label_style = {'color': 'rgb(0, 0, 0)', 'font-size': f'{axis_label_fontsize}pt'}
@@ -1055,7 +1072,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotAxisTickFont(self) -> None:
         """ Update axis tick labels for each plot (use settings font).
         """
-        print('updatePlotAxisTickFont...')
+        # print('updatePlotAxisTickFont...')
         axis_tick_font = QFont()
         axis_tick_fontsize = 10 #self._axis_tick_fontsize_spinbox.value()
         axis_tick_font.setPointSize(axis_tick_fontsize)
@@ -1067,7 +1084,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotAxisLinks(self) -> None:
         """ Update axis linking for selected variables and current plot tiling.
         """
-        print('updatePlotAxisLinks...')
+        # print('updatePlotAxisLinks...')
         n_vars, n_grid_rows, n_grid_cols = self._plots.shape
         for i in range(n_vars):
             for row in range(n_grid_rows):
@@ -1081,7 +1098,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def updatePlotData(self, plots: list[Plot] = None) -> None:
         """ Update graphs in each plot to show current datatree selection.
         """
-        print('\n'*2, 'updatePlotData...')
+        # print('\n'*2, 'updatePlotData...')
         if plots is None:
             plots = self._plots.flatten().tolist()
 
@@ -1364,7 +1381,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     graph.deleteLater()
     
     def savePreview(self, plots: list[Plot] = None, result_name: str = None) -> None:
-        print('\n'*2, 'savePreview...')
+        # print('\n'*2, 'savePreview...')
         if plots is None:
             plots = self._plots.flatten().tolist()
         
@@ -1415,7 +1432,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 plot_data_var: xr.DataArray = graph._metadata['plot_data_var']
                 plot_data_var_units = plot_data_var.attrs.get('units', None)
                 result_path = data_var_item.node().path.rstrip('/') + f'/{result_name}/{data_var.name}'
-                print(result_path, plot_data_var_units, data_var_units)
+                # print(result_path, plot_data_var_units, data_var_units)
                 if result_path not in result_paths:
                     result_paths.append(result_path)
                 coords: XarrayDataTreeItem = graph._metadata['coords']
@@ -2100,6 +2117,7 @@ def coord_permutations(coords: dict) -> list[dict]:
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
     # app.setQuitOnLastWindowClosed(False)
 

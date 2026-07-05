@@ -2,9 +2,8 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Signal, Qt, QModelIndex, QAbstractItemModel, QMimeData
+from qtpy.QtWidgets import QWidget, QApplication, QMessageBox
 from xarray_graph.tree import AbstractTreeItem
 
 

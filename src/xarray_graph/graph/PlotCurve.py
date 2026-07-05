@@ -2,9 +2,9 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, Signal, QPoint
+from qtpy.QtGui import QColor, QPainterPath, QMouseEvent
+from qtpy.QtWidgets import QMenu
 import pyqtgraph as pg
 # from xarray_graph.graph.pyqtgraph_ext import GraphStyle, editGraphStyle
 # from xarray_graph.utils.color import toQColor

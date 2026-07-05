@@ -2,9 +2,9 @@
 """
 
 from __future__ import annotations
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Signal, Slot, Qt, QPoint, QObject, QEvent, QModelIndex, QItemSelection, QItemSelectionModel
+from qtpy.QtGui import QKeySequence, QKeyEvent, QWheelEvent, QDragEnterEvent, QDropEvent
+from qtpy.QtWidgets import QTreeView, QSizePolicy, QAbstractScrollArea, QAbstractItemView, QAction, QWidget, QMessageBox, QMenu
 import qtawesome as qta
 from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, TreeMimeData
 
@@ -577,6 +577,8 @@ class TreeView(QTreeView):
 def test_live():
     import faulthandler
     faulthandler.enable()
+
+    from qtpy.QtWidgets import QApplication
     
     class MyTreeItem(AbstractTreeItem):
 

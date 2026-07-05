@@ -1,40 +1,68 @@
-import xarray as xr
-from qtpy.QtWidgets import QApplication, QMessageBox
-from xarray_graph.apps import XarrayDataTreeViewer, XarrayGraph
+from qtpy.QtCore import QSize, QTimer
+from qtpy.QtGui import QPixmap, Qt
+from qtpy.QtWidgets import QApplication, QSplashScreen
+from qtawesome import icon
+
+
+def show_ui_and_close_splash(ui, splash: QSplashScreen):
+    ui.show()
+    splash.finish(ui)
 
 
 def xtree():
     app = QApplication()
     app.setQuitOnLastWindowClosed(False)
+
+    splash_pix: QPixmap = icon('ph.cube-thin').pixmap(QSize(256, 256))
+    splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
+    splash.show()
+    splash.showMessage("xarray-tree: Loading system resources...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+    app.processEvents() # Force Qt to paint the splash screen immediately
+
+    from xarray_graph.apps import XarrayDataTreeViewer
+
     ui = XarrayDataTreeViewer.new()
     ui.setWindowTitle('xarray-tree')
-    ui.show()
-    # ui.raise_()
+    QTimer.singleShot(2000, lambda: show_ui_and_close_splash(ui, splash))
+
     show_warnings()
     load_datatree(ui, 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask=True)
-    app.exec()
+    return app.exec()
 
 
 def xgraph():
     app = QApplication()
     app.setQuitOnLastWindowClosed(False)
+
+    splash_pix: QPixmap = icon('ph.cube-thin').pixmap(QSize(256, 256))
+    splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
+    splash.show()
+    splash.showMessage("xarray-graph: Loading system resources...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+    app.processEvents() # Force Qt to paint the splash screen immediately
+
+    from xarray_graph.apps import XarrayGraph
+
     ui = XarrayGraph.new()
     ui.setWindowTitle('xarray-graph')
-    ui.show()
-    # ui.raise_()
+    QTimer.singleShot(2000, lambda: show_ui_and_close_splash(ui, splash))
+
     show_warnings()
     load_datatree(ui, 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask=True)
-    app.exec()
+    return app.exec()
 
 
 def show_warnings() -> None:
     import platform
     if platform.system() == 'Darwin':
+        from qtpy.QtWidgets import QMessageBox
         QMessageBox.warning(None, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
 
 
-def load_datatree(ui: XarrayDataTreeViewer, url: str = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask: bool = True) -> None:
+def load_datatree(ui, url: str = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask: bool = True) -> None:
     import requests, io
+    import xarray as xr
+    from qtpy.QtWidgets import QMessageBox
+    from xarray_graph.apps import XarrayDataTreeViewer # ui: XarrayDataTreeViewer
 
     if ask:
         answer = QMessageBox.question(ui, 'Example?', 'Load example data?')
@@ -51,5 +79,7 @@ def load_datatree(ui: XarrayDataTreeViewer, url: str = 'https://raw.githubuserco
 
 
 if __name__ == '__main__':
-    # xtree()
-    xgraph()
+    import sys
+    # status = xtree()
+    status = xgraph()
+    sys.exit(status)

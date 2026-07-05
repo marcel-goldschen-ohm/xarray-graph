@@ -8,9 +8,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import xarray as xr
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, QSize
+from qtpy.QtGui import QKeySequence
+from qtpy.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QAction, QFileDialog, QApplication, QMessageBox
 import qtawesome as qta
 import xarray_graph.io as io
 from xarray_graph.utils import xarray_utils, WindowManager, IPythonConsole

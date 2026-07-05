@@ -6,9 +6,9 @@ TODO:
 
 from __future__ import annotations
 import numpy as np
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import QPoint, QSize, QModelIndex
+from qtpy.QtGui import QIcon
+from qtpy.QtWidgets import QAction, QAbstractItemView, QMenu
 import qtawesome as qta
 from xarray_graph.tree import KeyValueTreeItem, KeyValueTreeModel, TreeView
 
@@ -202,6 +202,7 @@ class KeyValueTreeView(TreeView):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
 
     data = {
         'a': 1,

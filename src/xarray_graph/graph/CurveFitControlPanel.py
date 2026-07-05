@@ -5,9 +5,25 @@ from __future__ import annotations
 import numpy as np
 import scipy as sp
 import lmfit
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Qt, Signal, QSignalBlocker, QTimer
+from qtpy.QtWidgets import (
+    QWidget,
+    QLabel,
+    QComboBox,
+    QSpinBox,
+    QGroupBox,
+    QFormLayout,
+    QLineEdit,
+    QTableWidget,
+    QHeaderView,
+    QCheckBox,
+    QPushButton,
+    QHBoxLayout,
+    QSpacerItem,
+    QSizePolicy,
+    QVBoxLayout,
+    QTableWidgetItem,
+)
 
 
 class CurveFitControlPanel(QWidget):
@@ -407,6 +423,7 @@ class CurveFitControlPanel(QWidget):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
     ui = CurveFitControlPanel()
     ui.show()

@@ -4,8 +4,8 @@
 from collections.abc import Iterator
 # import numpy as np
 import xarray as xr
-import pint
-import pint_xarray
+# import pint
+# import pint_xarray
 
 
 # metadata for serialization/deserialization

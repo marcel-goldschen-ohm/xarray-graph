@@ -10,13 +10,24 @@ TODO:
 from __future__ import annotations
 from copy import deepcopy
 import xarray as xr
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Signal, QSignalBlocker, Qt, QModelIndex, QPoint, QSize, QTimer
+from qtpy.QtGui import QIcon, QKeySequence, QKeyEvent, QFontDatabase
+from qtpy.QtWidgets import (
+    QAction,
+    QMenu,
+    QAbstractItemView,
+    QDialog,
+    QLineEdit,
+    QVBoxLayout,
+    QDialogButtonBox,
+    QInputDialog,
+    QWidget,
+    QTextEdit,
+)
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeModel, KeyValueTreeView
-from xarray_graph.widgets import CollapsibleSectionsSplitter
+from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeView
+# from xarray_graph.widgets import CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeView(TreeView):
@@ -538,6 +549,7 @@ def attrsDialog(data: xr.DataTree | xr.Dataset | xr.DataArray, parent: QWidget =
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
 
     dt = xr.DataTree()

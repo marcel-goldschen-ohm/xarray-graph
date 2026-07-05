@@ -6,9 +6,19 @@ import numpy as np
 import scipy as sp
 import xarray as xr
 import pint
-from qtpy.QtCore import *
-from qtpy.QtGui import *
-from qtpy.QtWidgets import *
+from qtpy.QtCore import Signal, QSignalBlocker, QTimer
+from qtpy.QtWidgets import (
+    QWidget,
+    QLabel,
+    QComboBox,
+    QLineEdit,
+    QGroupBox,
+    QFormLayout,
+    QCheckBox,
+    QPushButton,
+    QHBoxLayout,
+    QVBoxLayout,
+)
 
 
 class FilterControlPanel(QWidget):
@@ -167,6 +177,7 @@ class FilterControlPanel(QWidget):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
     ui = FilterControlPanel()
     ui.show()
