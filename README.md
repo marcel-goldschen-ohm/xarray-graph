@@ -10,8 +10,6 @@ PyQt/PySide UIs for visualizing and manipulating Xarray DataTrees.
 
 ## Contents
 - [Install](#install)
-    - [Install with uv](#install-with-uv-recommended) &larr; Recommended!
-    - [Install with pip](#install-with-pip)
 - Apps
     - [XarrayDataTreeViewer](#xarraydatatreeviewer): Tree UI for an Xarray DataTree.
     - [XarrayGraph](#xarraygraph): Graph/Iterate/Fit/Analyze (x,y) slices of DataArrays in an Xarray DataTree.
@@ -19,36 +17,32 @@ PyQt/PySide UIs for visualizing and manipulating Xarray DataTrees.
 - [Support](#support)
 
 ## Install
-To simply use the apps, I recommend following the instructions for [installing with uv](#install-with-uv-recommended).
-
 Requires a PyQt package. Should work with PySide6 (the official Python Qt binding), PyQt6, or PyQt5 via the [QtPy](https://github.com/spyder-ide/qtpy) abstraction layer. *Note: PySide6>=6.2.2 for Apple silicon support, and PySide6!=6.9.1 due to a [bug](https://github.com/pyqtgraph/pyqtgraph/issues/3328) that is incompatible with pyqtgraph.*
 
-## Install with uv (recommended)
+### Install with uv (recommended):
+---
 1. Install the python package manager [uv](https://github.com/astral-sh/uv).
-2. Download the [xarray-graph GitHub repository](https://github.com/marcel-goldschen-ohm/xarray-graph). *I suggest downloading the latest release version*.
+2. Download the [xarray-graph GitHub repository](https://github.com/marcel-goldschen-ohm/xarray-graph). <!-- *I suggest downloading the latest release version.* -->
 3. In the downloaded repo directory, run the following commands (e.g., in a Terminal or shell):
 ```shell
 uv sync
 uv pip install "PySide6>=6.2.2,!=6.9.1"
 ```
 
-[&uarr; top](#xarray-graph)
-
-## Install with pip
-Ignore if you [installed with uv](#install-with-uv-recommended).
-
-Install a PyQt package:
-```shell
-pip install "PySide6>=6.2.2,!=6.9.1"
-```
+<!--
+### Install with pip (optional):
+---
 Install latest release version:
 ```shell
 pip install --upgrade xarray-graph
+pip install "PySide6>=6.2.2,!=6.9.1"
 ```
 Or install latest development version:
 ```shell
 pip install --upgrade xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
+pip install "PySide6>=6.2.2,!=6.9.1"
 ```
+-->
 
 [&uarr; top](#xarray-graph)
 
