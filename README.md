@@ -1,5 +1,5 @@
 # xarray-graph
-PyQt/PySide UIs for visualizing and manipulating Xarray DataTrees.
+PyQt UIs for Xarray DataTree including tree view and DataArray slice graphing and processing.
 
 ![GitHub Tag](https://img.shields.io/github/v/tag/marcel-goldschen-ohm/xarray-graph?cacheSeconds=1)
 ![build-test](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/build-test.yml/badge.svg)
