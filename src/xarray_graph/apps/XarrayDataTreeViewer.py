@@ -146,17 +146,21 @@ class XarrayDataTreeViewer(QMainWindow):
             if len(filepath) == 1:
                 filepath = filepath[0]
         
-        if isinstance(filepath, (list, tuple)):
-            # combine multiple files as first-level groups in single datatree
-            datatree = xr.DataTree()
-            for path in filepath:
-                path = Path(path)
-                datatree[path.stem] = io.open_datatree(path, filetype=filetype)
-            title = 'Combined'
-        else:
-            filepath = Path(filepath)
-            datatree = io.open_datatree(filepath, filetype=filetype)
-            title = filepath.stem
+        try:
+            if isinstance(filepath, (list, tuple)):
+                # combine multiple files as first-level groups in single datatree
+                datatree = xr.DataTree()
+                for path in filepath:
+                    path = Path(path)
+                    datatree[path.stem] = io.open_datatree(path, filetype=filetype)
+                title = 'Combined'
+            else:
+                filepath = Path(filepath)
+                datatree = io.open_datatree(filepath, filetype=filetype)
+                title = filepath.stem
+        except Exception as err:
+            QMessageBox.critical(focus_widget, 'Failed to open file', str(err))
+            return
         
         # new window
         window = cls.new()
@@ -184,9 +188,12 @@ class XarrayDataTreeViewer(QMainWindow):
         filepath = Path(filepath)
         datatree: xr.DataTree = self.datatree()
         datatree.attrs[VERSION_KEY] = XARRAY_GRAPH_VERSION
-        io.save_datatree(datatree, filepath, filetype=filetype)
-        self._filepath = filepath
-        self.setWindowTitle(filepath.stem)
+        try:
+            io.save_datatree(datatree, filepath, filetype=filetype)
+            self._filepath = filepath
+            self.setWindowTitle(filepath.stem)
+        except Exception as err:
+            QMessageBox.critical(self, 'Failed to save file', str(err))
     
     @classmethod
     def combineWindows(cls, windows: list[XarrayDataTreeViewer] = None) -> XarrayDataTreeViewer:

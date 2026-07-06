@@ -6,7 +6,7 @@ TODO:
 """
 
 from __future__ import annotations
-from qtpy.QtCore import QObject, QEvent, Slot, QSignalBlocker
+from qtpy.QtCore import QObject, QEvent, Slot, QSignalBlocker, QTimer
 from qtpy.QtGui import QAction
 from qtpy.QtWidgets import QMainWindow, QMenu, QActionGroup, QApplication
 import qtawesome as qta
@@ -115,7 +115,7 @@ class WindowManager(QObject):
     def setManageWindowMenus(self, manage_menus: bool) -> None:
         self._manage_window_menus = manage_menus
         if manage_menus:
-            self.updateAllWindowMenus()
+            QTimer.singleShot(0, self.updateAllWindowMenus)
     
     def createWindowMenu(self) -> QMenu:
         menu = QMenu('Window')
@@ -195,12 +195,12 @@ class WindowManager(QObject):
                 with QSignalBlocker(window):
                     window.setWindowTitle(unique_title)
         if self.manageWindowMenus():
-            self.updateAllWindowMenus()
+            QTimer.singleShot(0, self.updateAllWindowMenus)
 
     @Slot()
     def activeWindowChanged(self) -> None:
         if self.manageWindowMenus():
-            self.updateAllWindowMenus()
+            QTimer.singleShot(0, self.updateAllWindowMenus)
     
     @staticmethod
     def uniqueName(name: str, names: list[str], unique_counter_start: int = 1) -> str:

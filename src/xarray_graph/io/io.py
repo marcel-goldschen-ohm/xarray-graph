@@ -31,10 +31,10 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
     if filepath.is_dir():
         # Zarr Directory
         with zarr.storage.LocalStore(filepath) as store:
-            datatree = xr.open_datatree(store, engine='zarr', chunks=chunks)
+            datatree = xr.open_datatree(store, engine='zarr', chunks=chunks, consolidated=False)
     elif (filetype == 'Zarr Zip') or (filepath.suffix in ['.zip', '.ZIP']):
         with zarr.storage.ZipStore(filepath) as store:
-            datatree = xr.open_datatree(store, engine='zarr', chunks=chunks)
+            datatree = xr.open_datatree(store, engine='zarr', chunks=chunks, consolidated=False)
     elif (filetype == 'WinWCP') or (filepath.suffix in ['.wcp', '.WCP']):
         return read_winwcp(filepath)
     elif (filetype == 'HEKA'):
