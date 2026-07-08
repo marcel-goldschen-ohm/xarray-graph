@@ -15,7 +15,7 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     # as XarrayGraph also imports this function.
     # Putting the import within the function delays this import until use,
     # which means XarrayGraph will already have been imported.
-    from xarray_graph.apps.XarrayGraph import ROI_KEY, MASK_KEY, NOTES_KEY
+    from xarray_graph.apps.XarrayGraph import ROI_KEY, NOTES_KEY
     
     matdict = sp.io.loadmat(str(filepath), simplify_cells=True)
     # print(matdict)
@@ -45,7 +45,7 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
             time = event['time_sec']
             text = event['text']
             ds.attrs[ROI_KEY].append({
-                'type': 'vregion',
+                'type': 'region',
                 'position': {'time': [time, time]},
                 'movable': False,
                 'text': text,
