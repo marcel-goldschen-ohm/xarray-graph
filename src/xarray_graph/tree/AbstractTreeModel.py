@@ -479,7 +479,7 @@ class AbstractTreeModel(QAbstractItemModel):
         return False
 
     @staticmethod
-    def popupWarningDialog(self, text: str, system_warn: bool = True) -> None:
+    def popupWarningDialog(text: str, system_warn: bool = True) -> None:
         focused_widget: QWidget = QApplication.focusWidget()
         QMessageBox.warning(focused_widget, 'Warning', text)
         if system_warn:

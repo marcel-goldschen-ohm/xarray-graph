@@ -3,15 +3,13 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- add new data variable
-- add new coordinate
-- add new root node
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
 - merge items?
 """
 
 from __future__ import annotations
 from copy import deepcopy
+import numpy as np
 import xarray as xr
 from qtpy.QtCore import Signal, QSignalBlocker, Qt, QModelIndex, QPoint, QSize, QTimer
 from qtpy.QtGui import QIcon, QKeySequence, QKeyEvent, QFontDatabase
@@ -236,6 +234,16 @@ class XarrayDataTreeView(TreeView):
                     parent=menu,
                     triggered=lambda checked, parent_item=item: self.insertNewChildNode(parent_item),
                 ))
+                menu.addAction(QAction(
+                    text='New Data Variable',
+                    parent=menu,
+                    triggered=lambda checked, parent_item=item: self.insertNewDataVar(parent_item),
+                ))
+                menu.addAction(QAction(
+                    text='New Coordinate',
+                    parent=menu,
+                    triggered=lambda checked, parent_item=item: self.insertNewCoord(parent_item),
+                ))
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -275,6 +283,11 @@ class XarrayDataTreeView(TreeView):
             parent=menu,
             triggered=lambda checked: self.concatenateSelectedNodes(),
             enabled=is_multi_nodes_selected
+        ))
+        menu.addAction(QAction(
+            text='Insert New Root Node',
+            parent=menu,
+            triggered=lambda checked: self.insertNewRootNode(),
         ))
         
         # expand/collapse
@@ -338,6 +351,57 @@ class XarrayDataTreeView(TreeView):
         new_node = xr.DataTree()
         new_node_item = XarrayDataTreeItem(new_node)
         model.insertItems([new_node_item], row, parent_item)
+    
+    def insertNewDataVar(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
+        if not parent_item.isNode():
+            return
+        model: XarrayDataTreeModel = self.model()
+        if not self.model:
+            return
+        if row is None or row == -1:
+            row = len(parent_item.children)
+        shape = tuple(parent_item._node.sizes.values())
+        dims = tuple(parent_item._node.dims)
+        data = np.zeros(shape)
+        name = xarray_utils.unique_name('variable', list(parent_item._node.keys()))
+        new_var = xr.DataArray(data, name=name, dims=dims)
+        dt = model.treeData()
+        path = parent_item._node.path.rstrip('/') + '/' + name
+        dt[path] = new_var
+        self.refresh()
+    
+    def insertNewCoord(self, parent_item: XarrayDataTreeItem, row: int = None, dim: str = None) -> None:
+        if not parent_item.isNode():
+            return
+        model: XarrayDataTreeModel = self.model()
+        if not self.model:
+            return
+        if row is None or row == -1:
+            row = len(parent_item.children)
+        if (dim is None) or (dim not in parent_item._node.dims):
+            dim, ok = QInputDialog.getItem(self, 'Select Dimension', 'Select dimension for new coordinate:', list(parent_item._node.dims), editable=False)
+            if not ok:
+                return
+        if dim in parent_item._node.coords:
+            model.popupWarningDialog(f'Coordinate for dimension "{dim}" already exists.')
+            return
+        size = parent_item._node.sizes[dim]
+        data = np.arange(size)
+        new_coord = xr.DataArray(data, name=dim, dims=(dim,))
+        dt = model.treeData()
+        path = parent_item._node.path
+        dt[path].dataset = dt[path].to_dataset().assign_coords({dim: new_coord})
+        self.refresh()
+
+    def insertNewRootNode(self) -> None:
+        model: XarrayDataTreeModel = self.model()
+        if not self.model:
+            return
+        dt: xr.DataTree = model.treeData()
+        root_name = dt.name or 'root'
+        new_dt = xr.DataTree()
+        new_dt[root_name] = dt
+        model.setTreeData(new_dt)
     
     def renameDimensions(self, item: XarrayDataTreeItem) -> None:
         if not item.isNode():
