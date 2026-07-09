@@ -1157,6 +1157,9 @@ class XarrayGraph(XarrayDataTreeViewer):
                 if var_name not in plot._metadata['data_vars']:
                     continue
                 node: xr.DataTree = item.node()
+
+                var_style = data_var.attrs.get('style', {})
+                var_marker = var_style.get('marker', None)
                 
                 # search ancestors for mask data
                 mask = None
@@ -1272,6 +1275,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     data_graph.setZValue(1)
                     data_graph.setName(name)
                     data_graph.setPen(pg.mkPen(color=color, width=1))
+                    data_graph.setSymbol(var_marker)
                 
                 # to next data_var in datatree
                 color_index += 1
@@ -1380,7 +1384,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     plot.removeItem(graph)
                     graph.deleteLater()
     
-    def savePreview(self, plots: list[Plot] = None, result_name: str = None) -> None:
+    def savePreview(self, plots: list[Plot] = None, result_name: str = None, dst: str = 'child node') -> None:
         # print('\n'*2, 'savePreview...')
         if plots is None:
             plots = self._plots.flatten().tolist()
@@ -1398,6 +1402,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             elif preview_type == 'measure':
                 measure_type = preview_panel.measureType()
                 result_name = f'{measure_type}'
+                dst = 'new window'
             result_name, ok = QInputDialog.getText(self, 'Save Preview', 'Result Name:', text=result_name)
             result_name = result_name.strip()
             if not ok or not result_name:
@@ -1406,9 +1411,15 @@ class XarrayGraph(XarrayDataTreeViewer):
         if not self.isPreview():
             self.updatePreview(force=True)
         
-        dt = self.datatree()
-        xdim = self.xdim()
-        result_paths: list[str] = []
+        if dst == 'child node':
+            dt = self.datatree()
+            xdim = self.xdim()
+            result_paths: list[str] = []
+        elif dst == 'new window':
+            dt = xr.DataTree()
+            xdim = self.xdim()
+        else:
+            raise ValueError(f"Invalid destination: {dst}")
         
         for plot in plots:
             xaxis: pg.AxisItem = plot.getAxis('bottom')
@@ -1431,35 +1442,51 @@ class XarrayGraph(XarrayDataTreeViewer):
                 data_var_units = data_var.attrs.get('units', None)
                 plot_data_var: xr.DataArray = graph._metadata['plot_data_var']
                 plot_data_var_units = plot_data_var.attrs.get('units', None)
-                result_path = data_var_item.node().path.rstrip('/') + f'/{result_name}/{data_var.name}'
-                # print(result_path, plot_data_var_units, data_var_units)
-                if result_path not in result_paths:
-                    result_paths.append(result_path)
-                coords: XarrayDataTreeItem = graph._metadata['coords']
-                try:
-                    result_var = dt[result_path]
-                except KeyError:
-                    blank = np.full(data_var.shape, np.nan)
-                    result_var = data_var.copy(data=blank)
+                if dst == 'child node':
+                    result_path = data_var_item.node().path.rstrip('/') + f'/{result_name}/{data_var.name}'
+                    # print(result_path, plot_data_var_units, data_var_units)
+                    if result_path not in result_paths:
+                        result_paths.append(result_path)
+                    coords: XarrayDataTreeItem = graph._metadata['coords']
+                    try:
+                        result_var = dt[result_path]
+                    except KeyError:
+                        blank = np.full(data_var.shape, np.nan)
+                        result_var = data_var.copy(data=blank)
+                        dt[result_path] = result_var
+                    if data_var_units and (plot_data_var_units != data_var_units):
+                        conversion_factor = (1.0 * self.ureg(plot_data_var_units)).to(data_var_units).magnitude
+                        result_var.loc[coords] = preview_graph.yData * conversion_factor
+                    else:
+                        result_var.loc[coords] = preview_graph.yData
+                elif dst == 'new window':
+                    result_path = result_name.rstrip('/') + f'/{data_var.name}'
+                    if data_var_units and (plot_data_var_units != data_var_units):
+                        conversion_factor = (1.0 * self.ureg(plot_data_var_units)).to(data_var_units).magnitude
+                        result_ydata = preview_graph.yData * conversion_factor
+                    else:
+                        result_ydata = preview_graph.yData
+                    result_var = xr.DataArray(data=result_ydata, attrs={'style': {'marker': 'o'}}) # TODO: include coords and attrs?
                     dt[result_path] = result_var
-                if data_var_units and (plot_data_var_units != data_var_units):
-                    conversion_factor = (1.0 * self.ureg(plot_data_var_units)).to(data_var_units).magnitude
-                    result_var.loc[coords] = preview_graph.yData * conversion_factor
-                else:
-                    result_var.loc[coords] = preview_graph.yData
         
         self.refresh() # overkill?
-        selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems(ordered=True)
-        selected_paths = [item.abspath() for item in selected_items]
-        new_selection = False
-        model: XarrayDataTreeModel = self._datatree_view.model()
-        root_item = model.rootItem()
-        for path in result_paths:
-            if path not in selected_paths:
-                selected_items.append(root_item[path])
-                new_selection = True
-        if new_selection:
-            self._datatree_view.setSelectedItems(selected_items)
+        if dst == 'child node':
+            selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems(ordered=True)
+            selected_paths = [item.abspath() for item in selected_items]
+            new_selection = False
+            model: XarrayDataTreeModel = self._datatree_view.model()
+            root_item = model.rootItem()
+            for path in result_paths:
+                if path not in selected_paths:
+                    selected_items.append(root_item[path])
+                    new_selection = True
+            if new_selection:
+                self._datatree_view.setSelectedItems(selected_items)
+        elif dst == 'new window':
+            window = self.new()
+            window.setDatatree(dt)
+            window.setWindowTitle(f'{self.windowTitle()} - {result_name}')
+            window.show()
 
     def updatePlotRois(self, plots: list[Plot] = None) -> None:
         if plots is None:
