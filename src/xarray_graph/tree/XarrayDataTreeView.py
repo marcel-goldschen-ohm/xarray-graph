@@ -3,6 +3,9 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
+- add new data variable
+- add new coordinate
+- add new root node
 - open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
 - merge items?
 """

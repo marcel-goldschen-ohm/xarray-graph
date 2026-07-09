@@ -28,6 +28,8 @@ uv sync
 uv pip install "PySide6>=6.2.2,!=6.9.1"
 ```
 
+:warning: Although the `xarray-graph` package is also available via [PyPI](https://pypi.org/project/xarray-graph/), this package is currently NOT up-to-date and should NOT be used at the moment. For now, please use uv to install from the latest repo as instructed above.
+
 <!--
 ### Install with pip (optional):
 ---
