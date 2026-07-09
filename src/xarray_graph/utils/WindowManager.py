@@ -74,7 +74,7 @@ class WindowManager(QObject):
         window.installEventFilter(self.windowEventFilter())
         if self.manageWindowMenus():
             window._window_menu = self.createWindowMenu()
-            self.updateAllWindowMenus()
+            QTimer.singleShot(0, self.updateAllWindowMenus)
     
     def addWindow(self, window: QMainWindow) -> None:
         windows = self.windows()
@@ -87,6 +87,8 @@ class WindowManager(QObject):
             return
         window.removeEventFilter(self.windowEventFilter())
         windows.remove(window)
+        if self.manageWindowMenus():
+            QTimer.singleShot(0, self.updateAllWindowMenus)
     
     def clear(self) -> None:
         for window in tuple(self.windows()):
