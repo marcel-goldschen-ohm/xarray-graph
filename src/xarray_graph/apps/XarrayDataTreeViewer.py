@@ -343,11 +343,11 @@ class XarrayDataTreeViewer(QMainWindow):
         self._file_menu.addSeparator()
         self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, QApplication.instance().quit)
 
-        for filetype in ['Zarr Zip', 'Zarr Directory', 'NetCDF', 'HDF5']:
+        for filetype in ['Zarr Directory', 'NetCDF/HDF5']:
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
             self._export_menu.addAction(filetype, lambda filetype=filetype: self.saveAs(filetype=filetype))
         self._import_menu.addSeparator()
-        for filetype in ['WinWCP', 'HEKA', 'LabChart MATLAB TEVC']:
+        for filetype in ['WinWCP', 'HEKA', 'LabChart MATLAB (GOlab TEVC)']:
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
 
         self._view_menu = menubar.addMenu('View')

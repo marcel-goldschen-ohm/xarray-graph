@@ -221,7 +221,7 @@ def store_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
             if (name in parent.data_vars) and var.identical(parent.data_vars[name]):
                 inherited.append(name)
         if inherited:
-            node.attrs[INHERITED_DATA_VARS_KEY] = inherited
+            node.attrs[INHERITED_DATA_VARS_KEY] = ', '.join(inherited)
         elif INHERITED_DATA_VARS_KEY in node.attrs:
             del node.attrs[INHERITED_DATA_VARS_KEY]
     return dt
@@ -241,6 +241,7 @@ def restore_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
         inherited = node.attrs.get(INHERITED_DATA_VARS_KEY, None)
         if inherited is None:
             continue
+        inherited = [name.strip() for name in inherited.split(',')]
         to_inherit = {name: parent.data_vars[name] for name in inherited if name in parent.data_vars and name not in node.data_vars}
         if to_inherit:
             node.dataset = node.to_dataset().assign(to_inherit)
@@ -257,7 +258,7 @@ def store_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     for node in dt.subtree:
         ordered_data_vars: tuple[str] = tuple(node.data_vars)
         if ordered_data_vars:
-            node.attrs[ORDERED_DATA_VARS_KEY] = ordered_data_vars
+            node.attrs[ORDERED_DATA_VARS_KEY] = ', '.join(ordered_data_vars)
         elif ORDERED_DATA_VARS_KEY in node.attrs:
             del node.attrs[ORDERED_DATA_VARS_KEY]
     return dt
@@ -274,6 +275,7 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
         ordered_data_vars = node.attrs.get(ORDERED_DATA_VARS_KEY, None)
         if ordered_data_vars is None:
             continue
+        ordered_data_vars = [name.strip() for name in ordered_data_vars.split(',')]
         ds = node.to_dataset()
         reordered_data_vars = {name: ds.data_vars[name] for name in ordered_data_vars if name in ds.data_vars}
         for name in ds.data_vars:

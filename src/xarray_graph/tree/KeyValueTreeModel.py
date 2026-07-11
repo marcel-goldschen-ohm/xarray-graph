@@ -224,7 +224,7 @@ class KeyValueTreeModel(AbstractTreeModel):
                 # dict
                 values = {}
                 for item in items:
-                    key, value = item.split(':')
+                    key, value = item.split(':', 1)
                     values[key.strip()] = str_to_value(value.strip())
                 return values
             else:
