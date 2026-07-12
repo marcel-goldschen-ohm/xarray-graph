@@ -6,6 +6,7 @@ from collections.abc import Iterator
 import xarray as xr
 # import pint
 # import pint_xarray
+from xarray_graph.tree import KeyValueTreeModel
 
 
 # metadata for serialization/deserialization
@@ -287,6 +288,34 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
                 coords=ds.coords,
                 attrs=ds.attrs,
             )
+    return dt
+
+
+def store_attrs_objects_as_strings(dt: xr.DataTree) -> xr.DataTree:
+    dt = dt.copy(deep=False)
+    node: xr.DataTree
+    for node in dt.subtree:
+        for key, value in node.attrs.items():
+            if isinstance(value, (list, tuple, dict)):
+                node.attrs[key] = KeyValueTreeModel.value_to_str(value)
+        for var in node.variables.values():
+            for key, value in var.attrs.items():
+                if isinstance(value, (list, tuple, dict)):
+                    var.attrs[key] = KeyValueTreeModel.value_to_str(value)
+    return dt
+
+
+def restore_attrs_objects_from_strings(dt: xr.DataTree) -> xr.DataTree:
+    dt = dt.copy(deep=False)
+    node: xr.DataTree
+    for node in dt.subtree:
+        for key, value in node.attrs.items():
+            if isinstance(value, str):
+                node.attrs[key] = KeyValueTreeModel.str_to_value(value)
+        for var in node.variables.values():
+            for key, value in var.attrs.items():
+                if isinstance(value, str):
+                    var.attrs[key] = KeyValueTreeModel.str_to_value(value)
     return dt
 
 

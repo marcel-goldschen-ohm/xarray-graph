@@ -2164,12 +2164,13 @@ def test_live():
     dt['test/lon'].attrs['units'] = 'degE'
 
     
-    window = XarrayGraph.new()
-    window.setDatatree(dt)
-    window._datatree_view.showAll()
-    window.show()
+    # window = XarrayGraph.new()
+    # window.setDatatree(dt)
+    # window._datatree_view.showAll()
+    # window.show()
 
-    XarrayGraph.open('examples/WinWCP.wcp')
+    # XarrayGraph.open('examples/WinWCP.wcp')
+    XarrayGraph.open('examples/LabChartTEVC.mat', filetype='LabChart MATLAB (GOlab TEVC)')
 
     app.exec()
 

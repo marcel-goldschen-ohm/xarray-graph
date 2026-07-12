@@ -64,9 +64,7 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
         # netCDF/HDF5 [.nc, .h5, .hdf5]
         datatree: xr.DataTree = xr.open_datatree(filepath, engine=engine, chunks=chunks)
         # nested attrs not allowed in netCDF/HDF5, so we need to recover them after deserialization
-        for key, value in datatree.attrs.items():
-            if isinstance(value, str):
-                datatree.attrs[key] = KeyValueTreeModel.str_to_value(value)
+        datatree = xarray_utils.restore_attrs_objects_from_strings(datatree)
         
     datatree = xarray_utils.recover_post_deserialization(datatree)
     
@@ -101,10 +99,7 @@ def save_datatree(datatree: xr.DataTree, filepath: str | os.PathLike, filetype: 
         if filepath.suffix not in ['.nc', '.h5', '.hdf5']:
             filepath = filepath.with_suffix('.h5')
         # nested attrs not allowed in netCDF/HDF5, so we need to convert them to strings before serialization
-        for key, value in datatree.attrs.items():
-            if isinstance(value, (list, tuple, dict)):
-                datatree.attrs[key] = KeyValueTreeModel.value_to_str(value)
-                # raise ValueError(f"Attribute '{key}' has value of type {type(value)}, which is not supported by NetCDF/HDF5. For non-flat attributes, consider using Zarr.")
+        datatree = xarray_utils.store_attrs_objects_as_strings(datatree)
         datatree.to_netcdf(filepath, mode='w', engine=engine)
 
 
