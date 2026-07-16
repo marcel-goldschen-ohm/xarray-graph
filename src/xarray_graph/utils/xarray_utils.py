@@ -2,16 +2,15 @@
 """
 
 from collections.abc import Iterator
-# import numpy as np
+import numpy as np
 import xarray as xr
-# import pint
-# import pint_xarray
-from xarray_graph.tree import KeyValueTreeModel
+from pint import UnitRegistry, Quantity
+# from ast import literal_eval
+# from asteval import Interpreter
 
 
-# metadata for serialization/deserialization
-ORDERED_DATA_VARS_KEY = '_ORDERED_DATA_VARS'
-INHERITED_DATA_VARS_KEY = '_INHERITED_DATA_VARS'
+ORDERED_DATA_VARS_KEY = '_XG_ORDERED_DATA_VARS'
+INHERITED_DATA_VARS_KEY = '_XG_INHERITED_DATA_VARS'
 
 
 def ordered_dims_iter(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> Iterator[str]:
@@ -39,6 +38,8 @@ def ordered_dims_iter(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) ->
 
 
 def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> Iterator[xr.DataArray]:
+    """ Yield coords in a defined order (index coords in dim order, then non-index coords) for a given DataTree.
+    """
     if not include_inherited:
         inherited_coord_names: set[str] = node._inherited_coords_set()
     ordered_dims: tuple[str] = tuple(ordered_dims_iter([node]))
@@ -60,6 +61,8 @@ def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> It
 
 
 def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> list[str]:
+    """ Return a list of node keys in a defined order (ordered coords, data_vars, children) for a given DataTree.
+    """
     keys = []
     if include_coords:
         keys.extend([coord.name for coord in ordered_coords_iter(node, include_inherited=include_inherited_coords)])
@@ -85,7 +88,14 @@ def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include
 
 
 def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
+    """ Rename dimensions in a branch of aligned nodes.
+
+    The aligned branch includes all descendants of the most distant ancestor aligned with the input node.
+    Also renames index coords to match the new dimension names.
+    """
+    # root of aligned branch to be renamed
     branch_root: xr.DataTree = aligned_root(node)
+    # rename dims in branch
     branch_root.dataset = branch_root.to_dataset().rename_dims(dims_dict)
     for node in branch_root.descendants:
         node.dataset = node.to_dataset().swap_dims(dims_dict)
@@ -100,6 +110,31 @@ def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
             old_names = [name for name in old_index_names if name in child.coords]
             if old_names:
                 child.dataset = child.to_dataset().reset_coords(old_names, drop=True)
+
+
+def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
+    """ Use pint to convert input data into base units.
+    """
+    if isinstance(data, xr.DataArray):
+        if 'units' not in data.attrs:
+            return data
+        quantity: Quantity = data.data * ureg(data.attrs['units'])
+        quantity = quantity.to_base_units()
+        da = data.copy(data=quantity.magnitude)
+        da.attrs['units'] = str(quantity.units)
+        return da
+    elif isinstance(data, xr.Dataset):
+        return xr.Dataset(
+            data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
+            coords={name: to_base_units(coord) for name, coord in data.coords.items()},
+            attrs=data.attrs,
+        )
+    elif isinstance(data, xr.DataTree):
+        dt: xr.DataTree = data.copy(deep=False)
+        node: xr.DataTree
+        for node in dt.subtree:
+            node.dataset = to_base_units(node.to_dataset())
+        return dt
 
 
 def aligned_root(node: xr.DataTree) -> xr.DataTree:
@@ -162,6 +197,120 @@ def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> s
         i += 1
         name = f'{base_name}_{i}'
     return name
+
+
+def str_to_value(text: str, default_type = None) -> bool | int | float | str | tuple | list | dict | set | np.ndarray:
+    """ Convert a string representation of a value into the corresponding Python object.
+    
+    Handles basic values and containers and numpy arrays (keeps track of array dtype).
+    """
+    if text.lower().strip() == 'true':
+        return True
+    if text.lower().strip() == 'false':
+        return False
+    if text.lstrip().startswith('(') and text.rstrip().endswith(')'):
+        # tuple
+        inner_text = text.strip()[1:-1]
+        values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+        return tuple(values)
+    if text.lstrip().startswith('[') and text.rstrip().endswith(']'):
+        # list
+        inner_text = text.strip()[1:-1]
+        values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+        return values
+    if text.lstrip().startswith('[') and text.rstrip().endswith('>'):
+        # numpy array with dtype 
+        pos = text.rfind('<')
+        if pos == -1:
+            raise ValueError(f'Invalid string representation of a typed array: {text}')
+        dtype_str = text[pos:].strip()[1:-1]
+        values_str = text[:pos].strip()
+        if not values_str.startswith('[') or not values_str.endswith(']'):
+            raise ValueError(f'Invalid string representation of a typed array: {text}')
+        values = str_to_value(values_str)
+        values = np.array(values, dtype=dtype_str)
+        return values
+    if text.lstrip().startswith('{') and text.rstrip().endswith('}'):
+        # dict or set
+        inner_text = text.strip()[1:-1]
+        items = split_text(inner_text)
+        if not items:
+            # empty dict
+            return {}
+        if ':' in items[0]:
+            # dict
+            values = {}
+            for item in items:
+                key, value = item.split(':', 1)
+                values[key.strip()] = str_to_value(value.strip())
+            return values
+        else:
+            # set
+            values = set()
+            for item in items:
+                values.add(str_to_value(item))
+            return values
+    try:
+        value = int(text)
+        if default_type and issubclass(default_type, np.integer):
+            return default_type(value)
+        return value
+    except ValueError:
+        try:
+            value = float(text)
+            if default_type and issubclass(default_type, np.floating):
+                return default_type(value)
+            return value
+        except ValueError:
+            return text
+
+
+def value_to_str(value, in_array: bool = False) -> str:
+    """ Convert a value to its string representation.
+
+    Handles basic values and containers and numpy arrays (keeps track of array dtype).
+    """
+    if isinstance(value, str):
+        return value
+    if type(value) in [bool, int, float]:
+        return str(value)
+    if isinstance(value, tuple):
+        return '(' + ', '.join([value_to_str(val) for val in value]) + ')'
+    if isinstance(value, list):
+        return '[' + ', '.join([value_to_str(val) for val in value]) + ']'
+    if isinstance(value, set):
+        return '{' + ', '.join([value_to_str(val) for val in value]) + '}'
+    if isinstance(value, dict):
+        return '{' + ', '.join([f'{key}: ' + value_to_str(val) for key, val in value.items()]) + '}'
+    if isinstance(value, np.ndarray):
+        text = '[' + ', '.join([value_to_str(val, in_array=True) for val in value]) + ']'
+        if not in_array:
+            return f'{text} <{value.dtype}>'
+        return text
+    # if not in_array:
+    #     return f'{value} {type(value).__name__}'
+    return str(value)
+
+
+def split_text(text: str) -> list[str]:
+    parts: list[str] = ['']
+    grouping: str = ''
+    for char in text:
+        if char == '(' or char == '[' or char == '{':
+            grouping += char
+        elif grouping:
+            if grouping[-1] == '(' and char == ')':
+                grouping = grouping[:-1]
+            elif grouping[-1] == '[' and char == ']':
+                grouping = grouping[:-1]
+            elif grouping[-1] == '{' and char == '}':
+                grouping = grouping[:-1]
+        if char == ',' and not grouping:
+            parts.append('')
+        else:
+            parts[-1] += char
+    parts = [part.strip() for part in parts if part.strip()]
+    return parts
 
 
 def inherit_missing_data_vars(dt: xr.DataTree) -> xr.DataTree:
@@ -292,73 +441,60 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
 
 
 def store_attrs_objects_as_strings(dt: xr.DataTree) -> xr.DataTree:
+    """ Serialize any list, tuple, or dict attr objects into strings.
+
+    e.g., for serialization to HDF5.
+    """
     dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
         for key, value in node.attrs.items():
             if isinstance(value, (list, tuple, dict)):
-                node.attrs[key] = KeyValueTreeModel.value_to_str(value)
+                node.attrs[key] = value_to_str(value)
         for var in node.variables.values():
             for key, value in var.attrs.items():
                 if isinstance(value, (list, tuple, dict)):
-                    var.attrs[key] = KeyValueTreeModel.value_to_str(value)
+                    var.attrs[key] = value_to_str(value)
     return dt
 
 
 def restore_attrs_objects_from_strings(dt: xr.DataTree) -> xr.DataTree:
+    """ Deserialize any list, tuple, or dict attr objects from strings.
+
+    e.g., for deserialization from HDF5.
+    """
     dt = dt.copy(deep=False)
     node: xr.DataTree
     for node in dt.subtree:
         for key, value in node.attrs.items():
             if isinstance(value, str):
-                node.attrs[key] = KeyValueTreeModel.str_to_value(value)
+                node.attrs[key] = str_to_value(value)
         for var in node.variables.values():
             for key, value in var.attrs.items():
                 if isinstance(value, str):
-                    var.attrs[key] = KeyValueTreeModel.str_to_value(value)
+                    var.attrs[key] = str_to_value(value)
     return dt
 
 
-def prepare_for_serialization(dt: xr.DataTree) -> xr.DataTree:
+def prepare_for_serialization(dt: xr.DataTree, flatten_attrs: bool = False) -> xr.DataTree:
     """ Returns a new datatree ready for serialization.
     """
     dt = store_ordered_data_vars(dt)
     dt = store_inherited_data_vars(dt)
     dt = remove_inherited_data_vars(dt)
+    if flatten_attrs:
+        dt = store_attrs_objects_as_strings(dt)
     return dt
 
 
-def recover_post_deserialization(dt: xr.DataTree) -> xr.DataTree:
+def recover_post_deserialization(dt: xr.DataTree, unflatten_attrs: bool = False) -> xr.DataTree:
     """ Returns a new datatree ready for use post serialization.
     """
     dt = restore_inherited_data_vars(dt)
     dt = restore_ordered_data_vars(dt)
+    if unflatten_attrs:
+        dt = restore_attrs_objects_from_strings(dt)
     return dt
-
-
-# def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: pint.UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
-#     """ Use pint to convert input data into base units.
-#     """
-#     if isinstance(data, xr.DataArray):
-#         if 'units' not in data.attrs:
-#             return data
-#         quantity: pint.Quantity = data.data * ureg(data.attrs['units'])
-#         quantity = quantity.to_base_units()
-#         da = data.copy(data=quantity.magnitude)
-#         da.attrs['units'] = str(quantity.units)
-#         return da
-#     elif isinstance(data, xr.Dataset):
-#         return xr.Dataset(
-#             data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
-#             coords={name: to_base_units(coord) for name, coord in data.coords.items()},
-#             attrs=data.attrs,
-#         )
-#     elif isinstance(data, xr.DataTree):
-#         dt: xr.DataTree = data.copy(deep=False)
-#         node: xr.DataTree
-#         for node in dt.subtree:
-#             node.dataset = to_base_units(node.to_dataset())
-#         return dt
 
 
 def test():
@@ -382,5 +518,36 @@ def test():
     # print(dt)
 
 
+def test_ast_str():
+    aeval = Interpreter()
+    aeval("import numpy as np")
+    test_values = [
+        True,
+        False,
+        42,
+        3.14,
+        (1, 2, 3),
+        [1, 2, 3],
+        {1, 2, 3},
+        {"a": 1, "b": 2, "c": np.array([1, 2, 3]), "d": {"nested": 42}, "e": np.int64(42)},
+        np.array([1, 2, 3]),
+        np.int64(42),
+        np.float64(3.14),
+        np.array([[1, 2], [3, 4]]),
+        np.array([1, 2, 3], dtype=np.float32),
+        np.array([1, 2, 3], dtype=np.int32),
+    ]
+    values_back = []
+    for value in test_values:
+        s = value_to_str(value)
+        value_back = str_to_value(s)
+        print(f'{value} {type(value)} -> "{s}" -> {value_back} {type(value_back)}')
+        values_back.append(value_back)
+    
+    print(values_back[7]['c'].dtype)
+    print(type(values_back[7]['e']))
+
+
 if __name__ == '__main__':
     test()
+    # test_ast_str()
