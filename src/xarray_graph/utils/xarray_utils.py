@@ -1,6 +1,7 @@
 """ Utility functions for Xarray.
 """
 
+import builtins
 from collections.abc import Iterator
 import numpy as np
 import xarray as xr
@@ -72,19 +73,19 @@ def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include
     return keys
 
 
-# def move_item(src_parent_node: xr.DataTree, src_key: str, dst_parent_node: xr.DataTree, dst_key: str) -> bool:
-#     # test move in a copy
-#     try:
-#         src_parent_node_copy = src_parent_node.copy(deep=False)
-#         dst_parent_node_copy = dst_parent_node.copy(deep=False)
-#         dst_parent_node_copy[dst_key] = src_parent_node_copy[src_key]
-#         src_parent_node_copy = src_parent_node_copy.drop(src_key)
-#         # if successful, perform move on original nodes
-#         dst_parent_node[dst_key] = src_parent_node[src_key]
-#         src_parent_node.drop(src_key, inplace=True)
-#     except Exception:
-#         return False
-#     return True
+def move_item(src_parent_node: xr.DataTree, src_key: str, dst_parent_node: xr.DataTree, dst_key: str) -> bool:
+    try:
+        # test move in a copy
+        src_parent_node_copy = src_parent_node.copy(deep=False)
+        dst_parent_node_copy = dst_parent_node.copy(deep=False)
+        dst_parent_node_copy[dst_key] = src_parent_node_copy[src_key]
+        src_parent_node_copy = src_parent_node_copy.drop(src_key)
+        # if successful, perform move on original nodes
+        dst_parent_node[dst_key] = src_parent_node[src_key]
+        src_parent_node.drop(src_key, inplace=True)
+    except Exception:
+        return False
+    return True
 
 
 def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
@@ -204,40 +205,35 @@ def str_to_value(text: str, default_type = None) -> bool | int | float | str | t
     
     Handles basic values and containers and numpy arrays (keeps track of array dtype).
     """
-    if text.lower().strip() == 'true':
-        return True
-    if text.lower().strip() == 'false':
-        return False
-    if text.lstrip().startswith('(') and text.rstrip().endswith(')'):
+    dtype = None
+    if text.rstrip().endswith('>'):
+        pos = text.rfind('<')
+        if pos != -1:
+            # assume value <type> format, strip type and parse value
+            dtype = text[pos:].strip()[1:-1]
+            text = text[:pos].strip()
+    if text.lstrip().startswith('(') and text.rstrip().endswith(')') and dtype in [None, 'tuple']:
         # tuple
         inner_text = text.strip()[1:-1]
         values = [str_to_value(item.strip()) for item in split_text(inner_text)]
         return tuple(values)
-    if text.lstrip().startswith('[') and text.rstrip().endswith(']'):
-        # list
+    if text.lstrip().startswith('[') and text.rstrip().endswith(']') and dtype != 'str':
+        # list or numpy array
         inner_text = text.strip()[1:-1]
         values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+        if dtype:
+            values = np.array(values, dtype=dtype)
         return values
-    if text.lstrip().startswith('[') and text.rstrip().endswith('>'):
-        # numpy array with dtype 
-        pos = text.rfind('<')
-        if pos == -1:
-            raise ValueError(f'Invalid string representation of a typed array: {text}')
-        dtype_str = text[pos:].strip()[1:-1]
-        values_str = text[:pos].strip()
-        if not values_str.startswith('[') or not values_str.endswith(']'):
-            raise ValueError(f'Invalid string representation of a typed array: {text}')
-        values = str_to_value(values_str)
-        values = np.array(values, dtype=dtype_str)
-        return values
-    if text.lstrip().startswith('{') and text.rstrip().endswith('}'):
+    if text.lstrip().startswith('{') and text.rstrip().endswith('}') and dtype in [None, 'dict', 'set']:
         # dict or set
         inner_text = text.strip()[1:-1]
         items = split_text(inner_text)
         if not items:
-            # empty dict
+            # empty dict or set
+            if dtype == 'set':
+                return set()
             return {}
-        if ':' in items[0]:
+        if dtype == 'dict' or (dtype is None and ':' in items[0]):
             # dict
             values = {}
             for item in items:
@@ -250,45 +246,54 @@ def str_to_value(text: str, default_type = None) -> bool | int | float | str | t
             for item in items:
                 values.add(str_to_value(item))
             return values
+    if dtype:
+        # if dtype is specified but not a container, try to convert to that type
+        py_dtype = getattr(builtins, dtype, None)
+        if py_dtype:
+            # if dtype is a built-in type, use it directly
+            return py_dtype(text)
+        # try numpy dtypes
+        np_dtype = np.dtype(dtype)
+        return np_dtype.type(text)
     try:
+        # first try to convert to int
         value = int(text)
         if default_type and issubclass(default_type, np.integer):
             return default_type(value)
         return value
     except ValueError:
         try:
+            # next try to convert to float
             value = float(text)
             if default_type and issubclass(default_type, np.floating):
                 return default_type(value)
             return value
         except ValueError:
+            # if not a number, return as string
             return text
 
 
-def value_to_str(value, in_array: bool = False) -> str:
+def value_to_str(value, include_type: bool = False, in_array: bool = False) -> str:
     """ Convert a value to its string representation.
 
     Handles basic values and containers and numpy arrays (keeps track of array dtype).
     """
-    if isinstance(value, str):
-        return value
-    if type(value) in [bool, int, float]:
-        return str(value)
     if isinstance(value, tuple):
-        return '(' + ', '.join([value_to_str(val) for val in value]) + ')'
+        return '(' + ', '.join([value_to_str(val, include_type=include_type) for val in value]) + ')'
     if isinstance(value, list):
-        return '[' + ', '.join([value_to_str(val) for val in value]) + ']'
+        return '[' + ', '.join([value_to_str(val, include_type=include_type) for val in value]) + ']'
     if isinstance(value, set):
-        return '{' + ', '.join([value_to_str(val) for val in value]) + '}'
+        return '{' + ', '.join([value_to_str(val, include_type=include_type) for val in value]) + '}'
     if isinstance(value, dict):
-        return '{' + ', '.join([f'{key}: ' + value_to_str(val) for key, val in value.items()]) + '}'
+        return '{' + ', '.join([f'{key}: ' + value_to_str(val, include_type=include_type) for key, val in value.items()]) + '}'
     if isinstance(value, np.ndarray):
-        text = '[' + ', '.join([value_to_str(val, in_array=True) for val in value]) + ']'
-        if not in_array:
+        text = '[' + ', '.join([value_to_str(val, include_type=include_type, in_array=True) for val in value]) + ']'
+        if include_type and not in_array:
             return f'{text} <{value.dtype}>'
         return text
-    # if not in_array:
-    #     return f'{value} {type(value).__name__}'
+    if include_type and not in_array:
+        dtype = type(value).__name__
+        return f'{value} <{dtype}>'
     return str(value)
 
 
@@ -519,8 +524,8 @@ def test():
 
 
 def test_ast_str():
-    aeval = Interpreter()
-    aeval("import numpy as np")
+    # aeval = Interpreter()
+    # aeval("import numpy as np")
     test_values = [
         True,
         False,
@@ -539,15 +544,15 @@ def test_ast_str():
     ]
     values_back = []
     for value in test_values:
-        s = value_to_str(value)
+        s = value_to_str(value, include_type=True)
         value_back = str_to_value(s)
-        print(f'{value} {type(value)} -> "{s}" -> {value_back} {type(value_back)}')
+        print(f'{value} <{type(value).__name__}> -> "{s}" -> {value_back} <{type(value_back).__name__}>')
         values_back.append(value_back)
     
-    print(values_back[7]['c'].dtype)
-    print(type(values_back[7]['e']))
+    # print(values_back[7]['c'].dtype)
+    # print(type(values_back[7]['e']))
 
 
 if __name__ == '__main__':
-    test()
-    # test_ast_str()
+    # test()
+    test_ast_str()
