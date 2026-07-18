@@ -14,7 +14,7 @@ class AbstractTreeItem():
     Only implements parent/child tree linkage. You'll need to add and manage any data in a derived class.
 
     Override in a derived class:
-    - updateSubtree() - build item tree based on tree data
+    - rebuildSubtree() - build item tree based on tree data
     - name() - for tree path access. e.g., see __getitem__()
     - setName() - for tree path modification. e.g., see __setitem__()
     - orphan() - update tree data when pruning the tree

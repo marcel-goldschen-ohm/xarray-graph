@@ -3,7 +3,7 @@
 Uses XarrayDataTreeModel for the model interface.
 
 TODO:
-- open 1d or 2d array in table? editable? slice selection for 3d or higher dim?
+- slice dims for 3d or higher dim array in editable table?
 - merge items?
 """
 
@@ -24,11 +24,13 @@ from qtpy.QtWidgets import (
     QInputDialog,
     QWidget,
     QTextEdit,
+    QTableWidgetItem,
 )
 import qtawesome as qta
 from xarray_graph.utils import xarray_utils
 from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeView
-# from xarray_graph.widgets import CollapsibleSectionsSplitter
+from xarray_graph.table import ArrayTableModel, ArrayTableView
+from xarray_graph.widgets import TableWidgetWithCopyPaste#, CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeView(TreeView):
@@ -221,7 +223,8 @@ class XarrayDataTreeView(TreeView):
                 menu.addAction(QAction(
                     text='Data',
                     parent=menu,
-                    enabled=False # TODO
+                    triggered=lambda checked, item=item: self.dataDialog(item),
+                    enabled=item.isCoord() or (item.isDataVar() and item.data().values.squeeze().ndim == 1)
                 ))
             if item.isNode():
                 menu.addAction(QAction(
@@ -340,6 +343,49 @@ class XarrayDataTreeView(TreeView):
         if status == QDialog.DialogCode.Accepted:
             self.finishedEditingAttrs.emit(item)
         
+    def dataDialog(self, item: XarrayDataTreeItem) -> None:
+        if not item.isVariable():
+            return
+        values = item.data().values.squeeze()
+        # if values.ndim == 1:
+        #     values = values.reshape(-1, 1)
+        # if values.ndim == 2:
+        #     rows, cols = values.shape
+        # else:
+        #     return
+        
+        model: ArrayTableModel = ArrayTableModel(values)
+        view: ArrayTableView = ArrayTableView()
+        view.setModel(model)
+        
+        # table = TableWidgetWithCopyPaste(values.size, 1)
+        # for i in range(rows):
+        #     for j in range(cols):
+        #         value = values[i, j]
+        #         cell_item = QTableWidgetItem(str(value))
+        #         table.setItem(i, j, cell_item)
+
+        dlg = makeDialog(self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=item.name())
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(view)
+
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+        
+        status = dlg.exec()
+        if status != QDialog.DialogCode.Accepted:
+            return
+        
+        # dtype = values.dtype
+        # for i in range(rows):
+        #     for j in range(cols):
+        #         values[i,j] = dtype.type(view.item(i, j).text())
+        item.data[:] = values
+    
     def insertNewChildNode(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
         if not parent_item.isNode():
             return
