@@ -136,10 +136,12 @@ class TreeView(QTreeView):
             triggered=lambda checked: self.resizeAllColumnsToContents()
         )
 
-        self._showAllAction = QAction(
-            text='Show All',
+        self._viewAllAction = QAction(
+            text='View All',
+            # icon=qta.icon('mdi6.arrow-expand-all'),
+            # iconVisibleInMenu=True,
             toolTip='Expand all and resize all columns to contents',
-            triggered=lambda checked: self.showAll()
+            triggered=lambda checked: self.viewAll()
         )
     
     def setModel(self, model: AbstractTreeModel) -> None:
@@ -337,7 +339,7 @@ class TreeView(QTreeView):
         menu.addAction(self._collapseAllAction)
         if model.columnCount() > 1:
             menu.addAction(self._resizeAllColumnsToContentsAction)
-            menu.addAction(self._showAllAction)
+            menu.addAction(self._viewAllAction)
 
         # refresh
         menu.addSeparator()
@@ -414,7 +416,7 @@ class TreeView(QTreeView):
         for col in range(model.columnCount()):
             self.resizeColumnToContents(col)
     
-    def showAll(self) -> None:
+    def viewAll(self) -> None:
         self.expandAll()
         self.resizeAllColumnsToContents()
     
@@ -610,7 +612,7 @@ def test_live():
         view.setModel(model)
         view.show()
         view.resize(800, 1000)
-        view.showAll()
+        view.viewAll()
         view.move(50 + i * 850, 50)
         view.raise_()
 

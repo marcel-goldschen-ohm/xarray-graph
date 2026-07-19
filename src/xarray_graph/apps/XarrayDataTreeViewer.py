@@ -437,7 +437,7 @@ def test_live():
     
     window = XarrayDataTreeViewer()
     window.setDatatree(dt)
-    window._datatree_view.showAll()
+    window._datatree_view.viewAll()
     window.show()
 
     app.exec()

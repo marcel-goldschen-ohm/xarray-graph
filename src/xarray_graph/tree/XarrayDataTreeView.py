@@ -276,7 +276,7 @@ class XarrayDataTreeView(TreeView):
         is_multi_nodes_selected: bool = has_multi_selection and len([item for item in self.selectedItems() if item.isNode()]) > 1
         menu.addSeparator()
         menu.addAction(QAction(
-            text='Merge Selected Nodes',
+            text='Merge Selected Nodes (TODO)',
             parent=menu,
             triggered=lambda checked: self.mergeSelectedNodes(),
             enabled=False #is_multi_nodes_selected
@@ -299,7 +299,7 @@ class XarrayDataTreeView(TreeView):
         menu.addAction(self._collapseAllAction)
         if model.columnCount() > 1:
             menu.addAction(self._resizeAllColumnsToContentsAction)
-            menu.addAction(self._showAllAction)
+            menu.addAction(self._viewAllAction)
 
         # options
         menu.addSeparator()
@@ -444,7 +444,7 @@ class XarrayDataTreeView(TreeView):
         if not self.model:
             return
         dt: xr.DataTree = model.treeData()
-        root_name = dt.name or 'root'
+        root_name = dt.name or 'old root'
         new_dt = xr.DataTree()
         new_dt[root_name] = dt
         model.setTreeData(new_dt)
@@ -642,7 +642,7 @@ def attrsDialog(data: xr.DataTree | xr.Dataset | xr.DataArray, parent: QWidget =
     view = KeyValueTreeView()
     view.setAlternatingRowColors(True)
     view.setTreeData(attrs_copy)
-    view.showAll()
+    view.viewAll()
 
     dlg = makeDialog(parent, size, pos, title)
     layout = QVBoxLayout(dlg)
@@ -689,7 +689,7 @@ def test_live():
     view.setModel(model)
     view.show()
     view.resize(800, 1000)
-    view.showAll()
+    view.viewAll()
     view.move(50, 50)
     view.raise_()
 
@@ -706,7 +706,7 @@ def test_live():
     view2.setModel(model2)
     view2.show()
     view2.resize(800, 1000)
-    view2.showAll()
+    view2.viewAll()
     view2.move(900, 50)
     view2.raise_()
 

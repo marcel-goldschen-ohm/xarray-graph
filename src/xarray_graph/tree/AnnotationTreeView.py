@@ -143,7 +143,7 @@ class AnnotationTreeView(TreeView):
         menu.addAction(self._collapseAllAction)
         if model.columnCount() > 1:
             menu.addAction(self._resizeAllColumnsToContentsAction)
-            menu.addAction(self._showAllAction)
+            menu.addAction(self._viewAllAction)
 
         # refresh
         menu.addSeparator()
@@ -199,7 +199,7 @@ class AnnotationTreeView(TreeView):
         view = KeyValueTreeView()
         view.setAlternatingRowColors(True)
         view.setModel(model)
-        view.showAll()
+        view.viewAll()
         
         dialog = QDialog(parent=self)
         dialog.setWindowTitle('Edit Annotation')
@@ -280,7 +280,7 @@ def test_live():
     view.show()
     view.resize(QSize(800, 800))
     view.move(QPoint(100, 100))
-    view.showAll()
+    view.viewAll()
     view.raise_()
 
     app.exec()

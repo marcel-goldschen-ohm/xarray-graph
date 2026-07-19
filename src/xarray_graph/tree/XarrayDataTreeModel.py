@@ -118,7 +118,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         # headers
         self._row_labels: list[str] = []
-        self._column_labels: list[str] = ['DataTree', 'Dimensions', 'Units']
+        self._column_labels: list[str] = ['DataTree', 'Dimensions', 'Units', 'Type']
 
         # parts of datatree to show
         self._is_data_vars_visible: bool = True
@@ -244,6 +244,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
         elif index.column() == 2:
             # units column
             flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        # elif index.column() == 3:
+        #     # type column is not editable
+        #     flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         
         if self.supportedDropActions() != Qt.DropAction.IgnoreAction:
             if item.isNode():
@@ -268,37 +271,21 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 if item.isNode():
                     sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.node().sizes.items()])
                     return f'({sizes_str})'
-                elif item.isDataVar():
-                    rep = str(item.node().dataset)
-                    i = rep.find('Data variables:')
-                    i = rep.find(f' {item.name()} ', i)  # find data_var
-                    i = rep.find('(', i)  # skip data_var name
-                    preview = False
-                    if preview:
-                        j = rep.find('\n', i)
-                    else:
-                        j = rep.find(')', i)  # end of dims
-                        j = rep.find(' ', j+2)  # after dtype
-                    rep = rep[i:j] if j > 0 else rep[i:]
-                    return rep
-                elif item.isCoord():
-                    rep = str(item.node().dataset)
-                    i = rep.find('Coordinates:')
-                    i = rep.find(f' {item.name()} ', i)  # find coord
-                    i = rep.find('(', i)  # skip coord name
-                    preview = False
-                    if preview:
-                        j = rep.find('\n', i)
-                    else:
-                        j = rep.find(')', i)  # end of dims
-                        j = rep.find(' ', j+2)  # after dtype
-                    rep = rep[i:j] if j > 0 else rep[i:]
-                    return rep
+                elif item.isVariable():
+                    var = item.data()
+                    dims_str = ', '.join([f'{dim}' for dim in var.dims])
+                    dtype = var.data.dtype
+                    return f'({dims_str})  {dtype}'
             elif index.column() == 2:
                 # units column
                 if item.isVariable():
                     units = item.data().attrs.get('units', None)
                     return units
+            # elif index.column() == 3:
+            #     # type column
+            #     if item.isVariable():
+            #         dtype = item.data().data.dtype
+            #         return str(dtype)
         
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
@@ -403,6 +390,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     units: str = value.strip()
                     item.data().attrs['units'] = units
                     return True
+            # elif index.column() == 3:
+            #     # type column is not editable
+            #     return False
         
         return False
 

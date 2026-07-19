@@ -221,8 +221,11 @@ def str_to_value(text: str, default_type = None) -> bool | int | float | str | t
         # list or numpy array
         inner_text = text.strip()[1:-1]
         values = [str_to_value(item.strip()) for item in split_text(inner_text)]
+        # if type is specified, assume it is a numpy array and convert to that type
         if dtype:
             values = np.array(values, dtype=dtype)
+        elif (default_type is not None) and (default_type is not list):
+            values = np.array(values, dtype=default_type)
         return values
     if text.lstrip().startswith('{') and text.rstrip().endswith('}') and dtype in [None, 'dict', 'set']:
         # dict or set

@@ -144,7 +144,7 @@ class KeyValueTreeView(TreeView):
         menu.addAction(self._collapseAllAction)
         if model.columnCount() > 1:
             menu.addAction(self._resizeAllColumnsToContentsAction)
-            menu.addAction(self._showAllAction)
+            menu.addAction(self._viewAllAction)
         
         # options
         menu.addSeparator()
@@ -234,7 +234,7 @@ def test_live():
     view.show()
     view.resize(QSize(800, 800))
     view.move(QPoint(50, 50))
-    view.showAll()
+    view.viewAll()
     view.raise_()
 
     from copy import deepcopy
@@ -252,7 +252,7 @@ def test_live():
     view2.show()
     view2.resize(QSize(800, 800))
     view2.move(QPoint(900, 50))
-    view2.showAll()
+    view2.viewAll()
     view2.raise_()
 
     app.exec()
