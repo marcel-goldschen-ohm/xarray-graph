@@ -1,7 +1,6 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
-- warn if mutating data array directly?
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ import pyqtgraph as pg
 from xarray_graph.utils import xarray_utils
 from xarray_graph.apps import XarrayDataTreeViewer
 from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, AnnotationTreeModel, AnnotationTreeView
-from xarray_graph.graph import *
+from xarray_graph.graph import Plot, PlotGrid, PlotCurve, XAxisRegion, VLine, FilterControlPanel, CurveFitControlPanel, MeasureControlPanel
 from xarray_graph.widgets import MultiValueSpinBox
 
 
