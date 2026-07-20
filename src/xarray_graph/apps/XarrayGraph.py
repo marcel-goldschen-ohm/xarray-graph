@@ -379,6 +379,11 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         self.refresh() # overkill?
 
+    # def averageTraces(self) -> None:
+    #     if not self._isMultiSlice():
+    #         # TODO: show message box to user that averaging is not applicable for single-slice selection
+    #         return
+    
     def filter(self) -> None:
         self.startPreview('filter')
 
@@ -389,6 +394,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.startPreview('measure')
     
     def startPreview(self, operation: str) -> None:
+        # self._preview_type = operation
         for name, panel in self._preview_control_panels.items():
             if name == operation:
                 panel.show()
@@ -399,6 +405,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.updatePreview()
     
     def stopPreview(self) -> None:
+        # self._preview_type = None
         for name, panel in self._preview_control_panels.items():
             if panel.isVisible():
                 panel.hide()
@@ -406,6 +413,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.updatePreview()
     
     def activePreview(self) -> str | None:
+        # return getattr(self, '_preview_type', None)
         for name, panel in self._preview_control_panels.items():
             if panel.isVisible():
                 return name
@@ -727,6 +735,16 @@ class XarrayGraph(XarrayDataTreeViewer):
         # print(f'_selection_visible_coords: {self._selection_visible_coords}')
         
         self.updatePlotGrid()
+    
+    def _isMultiSlice(self) -> bool:
+        """ Check if the current selection includes more than one value along any non-xaxis dimension.
+        """
+        if self._selection_visible_coords is None:
+            return False
+        for dim in self._selection_visible_coords.dims:
+            if self._selection_visible_coords.sizes[dim] > 1:
+                return True
+        return False
     
     def onRoiSelectionChanged(self) -> None:
         self.updatePlotRois()
@@ -1642,8 +1660,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Filter',
             toolTip='Filter',
-            # checkable=True,
-            # checked=False,
             triggered=lambda checked: self.filter()
         )
 
@@ -1652,8 +1668,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Curve Fit',
             toolTip='Curve Fit',
-            # checkable=True,
-            # checked=False,
             triggered=lambda checked: self.curveFit()
         )
 
@@ -1663,17 +1677,72 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Measure',
             toolTip='Measure',
-            # checkable=True,
-            # checked=False,
             triggered=lambda checked: self.measure()
         )
 
-        # self._opertions_action_group = QActionGroup(self)
-        # self._opertions_action_group.addAction(self._filter_action)
-        # self._opertions_action_group.addAction(self._curve_fit_action)
-        # self._opertions_action_group.addAction(self._measure_action)
-        # self._opertions_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
-    
+        self._average_traces_action = QAction(
+            parent=self,
+            text='Average',
+            toolTip='Average traces',
+            # triggered=lambda checked: self.averageTraces()
+            enabled=False
+        )
+
+        self._xzero_action = QAction(
+            parent=self,
+            text='Set X-Axis Zero',
+            toolTip='Set X-axis zero value',
+            # triggered=lambda checked: self.setTraceXZero()
+            enabled=False
+        )
+
+        self._align_to_onset_action = QAction(
+            parent=self,
+            text='Align to Onset',
+            toolTip='Align traces to onset',
+            # triggered=lambda checked: self.alignTracesToOnset()
+            enabled=False
+        )
+
+        self._add_traces_action = QAction(
+            parent=self,
+            text='Add Traces',
+            toolTip='Add traces',
+            # triggered=lambda checked: self.addTraces()
+            enabled=False
+        )
+
+        self._subtract_traces_action = QAction(
+            parent=self,
+            text='Subtract Traces',
+            toolTip='Subtract traces',
+            # triggered=lambda checked: self.subtractTraces()
+            enabled=False
+        )
+
+        self._multiply_traces_action = QAction(
+            parent=self,
+            text='Multiply Traces',
+            toolTip='Multiply traces',
+            # triggered=lambda checked: self.multiplyTraces()
+            enabled=False
+        )
+
+        self._divide_traces_action = QAction(
+            parent=self,
+            text='Divide Traces',
+            toolTip='Divide traces',
+            # triggered=lambda checked: self.divideTraces()
+            enabled=False
+        )
+
+        self._trace_math_action_group = QActionGroup(self)
+        self._trace_math_action_group.addAction(self._add_traces_action)
+        self._trace_math_action_group.addAction(self._subtract_traces_action)
+        self._trace_math_action_group.addAction(self._multiply_traces_action)
+        self._trace_math_action_group.addAction(self._divide_traces_action)
+        # self._trace_math_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
+
     def _initMenubar(self) -> None:
         super()._initMenubar()
 
@@ -1692,11 +1761,20 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.menuBar().insertMenu(self._view_menu.menuAction(), self._selection_menu)
 
         self._operations_menu = QMenu('Operations')
+        self._operations_menu.addAction(self._average_traces_action)
+        self._operations_menu.addSeparator()
+        self._operations_menu.addAction(self._xzero_action)
+        self._operations_menu.addAction(self._align_to_onset_action)
+        self._operations_menu.addSeparator()
+        self._trace_math_menu = self._operations_menu.addMenu('Trace Math')
+        self._operations_menu.addSeparator()
         self._operations_menu.addAction(self._filter_action)
         self._operations_menu.addAction(self._curve_fit_action)
-        # self._operations_menu.addSeparator()
         self._operations_menu.addAction(self._measure_action)
         self.menuBar().insertMenu(self._view_menu.menuAction(), self._operations_menu)
+
+        for action in self._trace_math_action_group.actions():
+            self._trace_math_menu.addAction(action)
     
     def _initUI(self) -> None:
         """ Initialize UI elements and layout.
