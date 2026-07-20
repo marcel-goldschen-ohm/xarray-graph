@@ -1466,7 +1466,10 @@ class XarrayGraph(XarrayDataTreeViewer):
                         result_ydata = preview_graph.yData * conversion_factor
                     else:
                         result_ydata = preview_graph.yData
-                    result_var = xr.DataArray(data=result_ydata, attrs={'style': {'marker': 'o'}}) # TODO: include coords and attrs?
+                    result_attrs = {'style': {'marker': 'o'}}
+                    if data_var_units:
+                        result_attrs['units'] = data_var_units
+                    result_var = xr.DataArray(data=result_ydata, attrs=result_attrs)
                     dt[result_path] = result_var
         
         self.refresh() # overkill?
@@ -1703,7 +1706,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         )
 
         self._set_constant_action = QAction(
-            text='Constant',
+            text='Set Constant',
             toolTip='Set to Constant',
             checkable=False,
             shortcut=QKeySequence('C'),
@@ -1777,7 +1780,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         """
         # datatree view
         self._datatree_view.setDataVarsVisible(True)
-        self._datatree_view.setCoordsVisible(False)
+        self._datatree_view.setCoordsVisible(True)
+        self._datatree_view.setInheritedCoordsVisible(False)
         self._datatree_view.setInfoColumnsVisible(True)
 
         # ROIs view
