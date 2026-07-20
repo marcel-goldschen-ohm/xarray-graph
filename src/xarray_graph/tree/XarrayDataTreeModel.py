@@ -116,7 +116,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             colors = theme['color']
         except KeyError:
             # if theme does not have colors, use default colors
-            colors = XarrayDataTreeModel.themes['default']['color']
+            colors = XarrayDataTreeModel.themes['Default']['color']
 
         self._node_color: QColor = QColor(colors['node'] or default_color)
         self._data_var_color: QColor = QColor(colors['data_var'] or default_color)
@@ -133,7 +133,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             icons = theme['icon']
         except KeyError:
             # if theme does not have icons, use default icons
-            icons = XarrayDataTreeModel.themes['default']['icon']
+            icons = XarrayDataTreeModel.themes['Default']['icon']
 
         self._node_icon: QIcon = qta.icon(icons['node'], color=self._node_color)
         self._data_var_icon: QIcon = qta.icon(icons['data_var'], color=self._data_var_color)
