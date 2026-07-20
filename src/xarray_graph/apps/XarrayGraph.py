@@ -649,95 +649,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             if data_var_changed:
                 self._selected_data_vars[i] = data_var
 
-        # # common units across selection
-        # # if units conflict, attempt to convert to base units using pint
-        # self._selection_units: dict[str, str] = {}
-        # names_with_units_conflict = set()
-        # for i, data_var in enumerate(self._selected_data_vars):
-        #     units = data_var.attrs.get('units', None)
-        #     if units is not None:
-        #         existing_units = self._selection_units.get(data_var.name, None)
-        #         if existing_units is None:
-        #             self._selection_units[data_var.name] = units
-        #         elif units != existing_units:
-        #             names_with_units_conflict.add(data_var.name)
-        #     coord: xr.DataArray
-        #     for name, coord in tuple(data_var.coords.items()):
-        #         if np.issubdtype(coord.dtype, np.datetime64) or isinstance(coord.data[0], cftime.datetime):
-        #             # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
-        #             datetime_values_for_pyqtgraph = coord.values.astype('datetime64[s]').astype(int)
-        #             coord = coord.copy(data=datetime_values_for_pyqtgraph)
-        #             coord.attrs['units'] = 'datetime64[s]'
-        #             self._selected_data_vars[i] = data_var.assign_coords({name: coord})
-        #         # check units for conflict
-        #         units = coord.attrs.get('units', None)
-        #         if units is not None:
-        #             existing_units = self._selection_units.get(name, None)
-        #             if existing_units is None:
-        #                 self._selection_units[name] = units
-        #             elif units != existing_units:
-        #                 names_with_units_conflict.add(name)
-        # if names_with_units_conflict:
-        #     for i, data_var in enumerate(self._selected_data_vars):
-        #         if (data_var.name in names_with_units_conflict) and ('units' in data_var.attrs):
-        #             try:
-        #                 # print('DATA_VAR UNITS CONFLICT:', data_var.name, data_var.attrs.get('units', None))
-        #                 data = data_var.data
-        #                 units = data_var.attrs.get('units', None)
-        #                 qdata = self.ureg.Quantity(data, units)
-        #                 # print('QVAR UNITS:', qdata.units)
-        #                 qdata = qdata.to_base_units()
-        #                 # print('BASE UNITS:', qdata.units)
-        #                 units = str(qdata.units)
-        #                 data_var = data_var.copy(deep=False, data=qdata.magnitude)
-        #                 data_var.attrs['units'] = units
-        #                 self._selected_data_vars[i] = data_var
-        #                 self._selection_units[data_var.name] = units
-        #                 # print('CONVERTED UNITS:', data_var.name, units)
-        #             except:
-        #                 item = self._selected_data_var_items[i]
-        #                 self._invalidSelection(
-        #                     f'''
-        #                     Units Conflict
-
-        #                     All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
-
-        #                     Failed to convert data variable "{item.abspath()}" to base units.
-        #                     '''
-        #                 )
-        #                 return
-        #         coord: xr.DataArray
-        #         for coord in data_var.coords.values():
-        #             if coord.name in names_with_units_conflict and 'units' in coord.attrs:
-        #                 try:
-        #                     # print('COORD UNITS CONFLICT:', coord.name, coord.attrs.get('units', None))
-        #                     data = coord.data
-        #                     units = coord.attrs.get('units', None)
-        #                     qdata = self.ureg.Quantity(data, units)
-        #                     # print('QVAR UNITS:', qdata.units)
-        #                     qdata = qdata.to_base_units()
-        #                     # print('BASE UNITS:', qdata.units)
-        #                     units = str(qdata.units)
-        #                     coord = coord.copy(deep=False, data=qdata.magnitude)
-        #                     coord.attrs['units'] = units
-        #                     data_var = data_var.assign_coords({coord.name: coord})
-        #                     self._selected_data_vars[i] = data_var
-        #                     self._selection_units[coord.name] = units
-        #                     # print('CONVERTED UNITS:', coord.name, units)
-        #                 except:
-        #                     item = self._selected_data_var_items[i]
-        #                     self._invalidSelection(
-        #                         f'''
-        #                         Units Conflict
-
-        #                         All variables and their coordinates of the same name across the selection must have the same units in order to be plotted together. If units differ, pint will attempt to convert to base units, but if conversion fails then the selection is considered invalid.
-
-        #                         Failed to convert coordinate "{coord.name}" in data variable "{item.abspath()}" to base units.
-        #                         '''
-        #                     )
-        #                     return
-        # # print(f'_selection_units: {self._selection_units}')
-
         # selection combined coords (index (dim) coords only)
         selected_coords = []
         for data_var in self._selected_data_vars:
@@ -879,7 +790,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         for plot in self._plots.flatten().tolist():
             like_items = [item for item in plot.vb.allChildren() if (getattr(item, '_ROI', None) is roi) and (item is not roiItem)]
             for like_item in like_items:
-                self._updateRoiDataFromPlotItem(like_item, roi)
+                self._updateRoiPlotItemFromData(like_item, roi)
         
         # update ROI tree view (only item for ROI)
         model: AnnotationTreeModel = self._ROIs_view.model()
@@ -1012,6 +923,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.updatePlotAxisLabels()
         self.updatePlotAxisTickFont()
         self.updatePlotAxisLinks()
+        self.updatePlotRois()
         self.replot()
     
     def updatePlotMetadata(self) -> None:
