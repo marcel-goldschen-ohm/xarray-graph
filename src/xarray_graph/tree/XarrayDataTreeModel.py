@@ -33,7 +33,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
     MIME_TYPE = 'application/x-xarray-datatree-model'
 
     themes = {
-        'default': {
+        'Default': {
             'icon': {
                 'node': 'ph.folder-thin',
                 'data_var': 'ph.cube-thin',
@@ -49,7 +49,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 'unknown': None,
             },
         },
-        'dark': {
+        'Dark': {
             'color': {
                 'node': '#e69f00',
                 'data_var': '#56b4e9',
@@ -58,7 +58,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 'unknown': '#990000',
             },
         },
-        'light': {
+        'Light': {
             'color': {
                 'node': '#0B132B',
                 'data_var': "#005AD8",
@@ -69,6 +69,38 @@ class XarrayDataTreeModel(AbstractTreeModel):
         },
     }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # headers
+        self._row_labels: list[str] = []
+        self._column_labels: list[str] = ['DataTree', 'Dimensions', 'Units', 'Type']
+
+        # parts of datatree to show
+        self._is_data_vars_visible: bool = True
+        self._is_coords_visible: bool = True
+        self._is_inherited_coords_visible: bool = False
+        self._is_info_columns_visible: bool = True
+
+        # setup item tree
+        datatree: xr.DataTree = xr.DataTree()
+        self._root_item = XarrayDataTreeItem(datatree)
+
+        # theme
+        color_scheme = QApplication.instance().styleHints().colorScheme()
+        if color_scheme == Qt.ColorScheme.Dark:
+            self.setTheme('Dark')
+        elif color_scheme == Qt.ColorScheme.Light:
+            self.setTheme('Light')
+        else:
+            self.setTheme('Default')
+
+    def theme(self) -> str:
+        try:
+            return self._theme
+        except AttributeError:
+            return 'Default'
+    
     def setTheme(self, name: str) -> None:
         # color_scheme = QGuiApplication.styleHints().colorScheme()
         # if color_scheme == Qt.ColorScheme.Dark:
@@ -112,32 +144,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._unknown_icon: QIcon = qta.icon(icons['unknown'], color=self._unknown_color)
 
         self._theme = name
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # headers
-        self._row_labels: list[str] = []
-        self._column_labels: list[str] = ['DataTree', 'Dimensions', 'Units', 'Type']
-
-        # parts of datatree to show
-        self._is_data_vars_visible: bool = True
-        self._is_coords_visible: bool = True
-        self._is_inherited_coords_visible: bool = False
-        self._is_info_columns_visible: bool = True
-
-        # theme
-        color_scheme = QApplication.instance().styleHints().colorScheme()
-        if color_scheme == Qt.ColorScheme.Dark:
-            self.setTheme('dark')
-        elif color_scheme == Qt.ColorScheme.Light:
-            self.setTheme('light')
-        else:
-            self.setTheme('default')
-
-        # setup item tree
-        datatree: xr.DataTree = xr.DataTree()
-        self._root_item = XarrayDataTreeItem(datatree)
+        self.refreshRequested.emit()
     
     def treeData(self) -> xr.DataTree:
         """ Get the datatree.

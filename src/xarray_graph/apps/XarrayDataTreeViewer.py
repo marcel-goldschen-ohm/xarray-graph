@@ -10,7 +10,7 @@ from pathlib import Path
 import xarray as xr
 from qtpy.QtCore import Qt, QSize
 from qtpy.QtGui import QKeySequence
-from qtpy.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QAction, QFileDialog, QApplication, QMessageBox
+from qtpy.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QAction, QFileDialog, QApplication, QMessageBox, QActionGroup
 import qtawesome as qta
 import xarray_graph.io as io
 from xarray_graph.utils import xarray_utils, WindowManager, IPythonConsole
@@ -322,6 +322,19 @@ class XarrayDataTreeViewer(QMainWindow):
             checkable=False,
             shortcut=QKeySequence.StandardKey.SaveAs,
             triggered=lambda: self.saveAs())
+        
+        self._theme_action_group = QActionGroup(self)
+        self._theme_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.Exclusive)
+        themes = XarrayDataTreeModel.themes
+        current_theme = self._datatree_view.model().theme()
+        for theme in themes:
+            theme_action = QAction(
+                iconVisibleInMenu=False,
+                text=theme,
+                checkable=True,
+                checked=(theme == current_theme),
+                triggered=lambda checked, theme=theme: self._datatree_view.model().setTheme(theme))
+            self._theme_action_group.addAction(theme_action)
     
     def _initMenubar(self) -> None:
         """ Main menubar.
@@ -349,13 +362,18 @@ class XarrayDataTreeViewer(QMainWindow):
         self._import_menu.addSeparator()
         for filetype in ['WinWCP', 'HEKA', 'LabChart MATLAB (GOlab TEVC)']:
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
-
+        
         self._view_menu = menubar.addMenu('View')
         self._view_menu.addAction(self.console._console_action)
+        self._view_menu.addSeparator()
+        self._theme_menu = self._view_menu.addMenu('Theme')
         self._view_menu.addSeparator()
         self._view_menu.addAction(self._about_action)
         self._view_menu.addAction(self._settings_action)
         self._view_menu.addAction(self._refresh_action)
+
+        for theme_action in self._theme_action_group.actions():
+            self._theme_menu.addAction(theme_action)
 
         self._window_menu = menubar.addMenu('Window')
         self._window_menu.addAction('Combine All', self.combineWindows)
