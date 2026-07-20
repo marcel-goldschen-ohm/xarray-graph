@@ -240,7 +240,12 @@ class TreeView(QTreeView):
             if item not in items:
                 items.append(item)
         if ordered:
-            items = model.orderedItems(items)
+            # return items in depth-first order
+            ordered_items: list[AbstractTreeItem] = []
+            for item in model.rootItem().subtree_depth_first():
+                if item in items:
+                    ordered_items.append(item)
+            items = ordered_items
         return items
     
     def setSelectedItems(self, items: list[AbstractTreeItem]):
@@ -615,6 +620,14 @@ def test_live():
         view.viewAll()
         view.move(50 + i * 850, 50)
         view.raise_()
+
+        if i == 0:
+            print('\ndepth-first items:')
+            for item in root.subtree_depth_first():
+                print(f'{item.path()}')
+            print('\nordered items:')
+            for item in model.orderedItems(list(root.subtree_depth_first())):
+                print(f'{item.path()}')
 
     app.exec()
 

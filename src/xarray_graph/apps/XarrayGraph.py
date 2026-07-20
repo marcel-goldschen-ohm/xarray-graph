@@ -399,6 +399,13 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         self.updatePreview()
     
+    def stopPreview(self) -> None:
+        for name, panel in self._preview_control_panels.items():
+            if panel.isVisible():
+                panel.hide()
+        
+        self.updatePreview()
+    
     def activePreview(self) -> str | None:
         for name, panel in self._preview_control_panels.items():
             if panel.isVisible():
@@ -474,6 +481,9 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         # selected data_vars
         selected_items = self._datatree_view.selectedItems(ordered=True)
+        # print(f'  selected_items:')
+        # for item in selected_items:
+        #     print(f'    {item.abspath()}')
         self._selected_data_var_items: list[XarrayDataTreeItem] = []
         item: XarrayDataTreeItem
         for item in selected_items:
@@ -1490,6 +1500,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             window.setDatatree(dt)
             window.setWindowTitle(f'{self.windowTitle()} - {result_name}')
             window.show()
+        
+        self.stopPreview()
 
     def updatePlotRois(self, plots: list[Plot] = None) -> None:
         if plots is None:
