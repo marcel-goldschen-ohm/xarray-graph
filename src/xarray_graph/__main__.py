@@ -2,9 +2,10 @@ from qtpy.QtCore import QSize, QTimer
 from qtpy.QtGui import QPixmap, Qt
 from qtpy.QtWidgets import QApplication, QSplashScreen
 from qtawesome import icon
+from xarray_graph.apps import XarrayDataTreeViewer
 
 
-def show_ui_and_close_splash(ui, splash: QSplashScreen):
+def show_ui_and_close_splash(ui: XarrayDataTreeViewer, splash: QSplashScreen):
     ui.show()
     splash.finish(ui)
 
@@ -18,8 +19,6 @@ def xtree():
     splash.show()
     splash.showMessage("xarray-tree: Loading system resources...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
     app.processEvents() # Force Qt to paint the splash screen immediately
-
-    from xarray_graph.apps import XarrayDataTreeViewer
 
     ui = XarrayDataTreeViewer.new()
     ui.setWindowTitle('xarray-tree')
@@ -58,11 +57,10 @@ def show_warnings() -> None:
         QMessageBox.warning(None, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
 
 
-def load_datatree(ui, url: str = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask: bool = True) -> None:
+def load_datatree(ui: XarrayDataTreeViewer, url: str = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask: bool = True) -> None:
     import requests, io
     import xarray as xr
     from qtpy.QtWidgets import QMessageBox
-    from xarray_graph.apps import XarrayDataTreeViewer # ui: XarrayDataTreeViewer
 
     if ask:
         answer = QMessageBox.question(ui, 'Example?', 'Load example data?')
@@ -73,7 +71,7 @@ def load_datatree(ui, url: str = 'https://raw.githubusercontent.com/marcel-golds
                 raise ValueError(f'Failed to download example data: request status code = {req.status_code}')
             dt: xr.DataTree = xr.open_datatree(io.BytesIO(req.content), engine='h5netcdf')
             ui.setDatatree(dt)
-            ui._datatree_view.showAll()
+            ui._datatree_view.viewAll()
         except Exception as err:
             QMessageBox.critical(ui, 'Failed to load example', str(err))
 
