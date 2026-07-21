@@ -21,7 +21,7 @@ Requires a PyQt package. Should work with PySide6 (the official Python Qt bindin
 
 ### Install with uv (recommended):
 1. Install the python package manager [uv](https://github.com/astral-sh/uv).
-2. Download the [xarray-graph GitHub repository](https://github.com/marcel-goldschen-ohm/xarray-graph). <!-- *I suggest downloading the latest release version.* -->
+2. Download the [xarray-graph GitHub repository](https://github.com/marcel-goldschen-ohm/xarray-graph). *For now, I suggest downloading the latest version of the repo as it has been under frequent development.* <!-- *I suggest downloading the latest release version.* -->
 3. In the downloaded repo directory, run the following commands (e.g., in a Terminal or shell):
 ```shell
 uv sync
