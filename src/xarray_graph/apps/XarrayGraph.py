@@ -237,11 +237,13 @@ class XarrayGraph(XarrayDataTreeViewer):
         """
         xranges = self.visibleXRanges()
         xdim = self.xdim()
+        was_mask_item_added = False
         for node in self._branch_root_nodes_for_selected_data_vars:
             dims = tuple(node.sizes.keys())
             sizes = tuple(node.sizes.values())
             if MASK_KEY not in node.data_vars:
                 node.dataset = node.to_dataset().assign({MASK_KEY: xr.DataArray(np.full(sizes, False, dtype=bool), dims=dims)})
+                was_mask_item_added = True
             coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
             if xranges:
                 xdata = node[xdim].values
@@ -252,13 +254,17 @@ class XarrayGraph(XarrayDataTreeViewer):
                 coords[xdim] = xdata[xmask]
             node.data_vars[MASK_KEY].loc[coords] = True
         
-        self.refresh()
+        if was_mask_item_added:
+            self.refresh()
+        else:
+            self.replot()
 
     def unmask(self) -> None:
         """ Unmask selected traces or ROIs within selected traces.
         """
         xranges = self.visibleXRanges()
         xdim = self.xdim()
+        was_mask_item_removed = False
         for node in self._branch_root_nodes_for_selected_data_vars:
             dims = tuple(node.sizes.keys())
             sizes = tuple(node.sizes.values())
@@ -275,8 +281,12 @@ class XarrayGraph(XarrayDataTreeViewer):
             node.data_vars[MASK_KEY].loc[coords] = False
             if not np.any(node.data_vars[MASK_KEY].values):
                 node.dataset = node.to_dataset().drop_vars(MASK_KEY)
+                was_mask_item_removed = True
         
-        self.replot()
+        if was_mask_item_removed:
+            self.refresh()
+        else:
+            self.replot()
 
     def isMaskedVisible(self) -> bool:
         return self._view_masked_action.isChecked()
