@@ -1,6 +1,7 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
+- fix bug with masking for data_vars that are a subset of the node dims.
 """
 
 from __future__ import annotations
@@ -389,10 +390,26 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         self.refresh() # overkill?
 
-    # def averageTraces(self) -> None:
-    #     if not self._isMultiSlice():
-    #         # TODO: show message box to user that averaging is not applicable for single-slice selection
-    #         return
+    def averageVisibleTraces(self) -> None:
+        dt = self.datatree()
+        xdim = self.xdim()
+        for item, data_var in zip(self._selected_data_var_items, self._selected_data_vars):
+            # print(f'averaging {data_var.name} in node {item.node().path} along dims {[dim for dim in data_var.dims if dim != xdim]}')
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in data_var.dims and dim != xdim}
+            if MASK_KEY in item.node().data_vars:
+                mask = item.node().data_vars[MASK_KEY]
+                if np.any(mask):
+                    data_var = data_var.copy(deep=True)
+                    data_var.data[mask] = np.nan
+            data_var_avg = data_var.sel(coords).mean(dim=[dim for dim in data_var.dims if dim != xdim], skipna=True)
+            result_path = f"{item.node().path.rstrip('/')}/Average/{data_var.name}"
+            result_path_exists = result_path in dt
+            if result_path_exists:
+                result_node_name = xarray_utils.unique_name('Average', list(item.node().keys()))
+                result_path = f"{item.node().path.rstrip('/')}/{result_node_name}/{data_var.name}"
+            dt[result_path] = data_var_avg
+        
+        self.refresh()
     
     def filter(self) -> None:
         self.startPreview('filter')
@@ -745,16 +762,6 @@ class XarrayGraph(XarrayDataTreeViewer):
         # print(f'_selection_visible_coords: {self._selection_visible_coords}')
         
         self.updatePlotGrid()
-    
-    # def _isMultiSlice(self) -> bool:
-    #     """ Check if the current selection includes more than one value along any non-xaxis dimension.
-    #     """
-    #     if self._selection_visible_coords is None:
-    #         return False
-    #     for dim in self._selection_visible_coords.dims:
-    #         if self._selection_visible_coords.sizes[dim] > 1:
-    #             return True
-    #     return False
     
     def onRoiSelectionChanged(self) -> None:
         self.updatePlotRois()
@@ -1110,19 +1117,21 @@ class XarrayGraph(XarrayDataTreeViewer):
                 var_style = data_var.attrs.get('style', {})
                 var_marker = var_style.get('marker', None)
                 
-                # search ancestors for mask data
                 mask = None
                 if var_name != MASK_KEY:
-                    branch_root_node = xarray_utils.aligned_root(node)
-                    node_ = node
-                    while node_:
-                        if MASK_KEY in node_.data_vars:
-                            mask = node_.data_vars[MASK_KEY]
-                            break
-                        if node_ is branch_root_node:
-                            break
-                        node_ = node_.parent
-                    mask_node = node_
+                    # # search ancestors for mask data
+                    # branch_root_node = xarray_utils.aligned_root(node)
+                    # node_ = node
+                    # while node_:
+                    #     if MASK_KEY in node_.data_vars:
+                    #         mask = node_.data_vars[MASK_KEY]
+                    #         break
+                    #     if node_ is branch_root_node:
+                    #         break
+                    #     node_ = node_.parent
+                    # mask_node = node_
+                    if MASK_KEY in node.data_vars:
+                        mask = node.data_vars[MASK_KEY]
                 
                 non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
                 if len(non_xdim_coord_permutations) == 0:
@@ -1178,6 +1187,9 @@ class XarrayGraph(XarrayDataTreeViewer):
                         mask_slice = mask_slice.reset_coords(drop=True).squeeze(drop=True)
                         raw_ydata = ydata
                         ydata = ydata.copy() # don't overwrite original data
+                        # if ydata.shape != mask_slice.values.shape:
+                        #     mask_slice = mask_slice.any(dim=[dim for dim in mask_slice.dims if dim not in data_var_slice.dims])
+                        # print(ydata.shape, mask_slice.values.shape, data_var_slice.sizes, mask_slice.sizes)
                         ydata[mask_slice.values] = np.nan
 
                         # graph masked data
@@ -1194,10 +1206,11 @@ class XarrayGraph(XarrayDataTreeViewer):
                             masked_count += 1
                             masked_graph._metadata = {
                                 'type': 'masked',
-                                'mask_node': mask_node,
+                                # 'mask_node': mask_node,
                                 'data_var_item': item,
                                 'plot_data_var': data_var,
                                 'coords': coords,
+                                'units': data_var.attrs.get('units', None)
                             }
                             masked_graph.setZValue(0)
                             masked_graph.setName(name + ' masked')
@@ -1694,8 +1707,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             parent=self,
             text='Average',
             toolTip='Average traces',
-            # triggered=lambda checked: self.averageTraces()
-            enabled=False
+            triggered=lambda checked: self.averageVisibleTraces()
+            # enabled=False
         )
 
         self._xzero_action = QAction(
@@ -2180,14 +2193,13 @@ def test_live():
     dt['test/air'].attrs['units'] = 'degC'
     dt['test/lon'].attrs['units'] = 'degE'
 
-    
     # window = XarrayGraph.new()
     # window.setDatatree(dt)
     # window._datatree_view.showAll()
     # window.show()
 
-    # XarrayGraph.open('examples/WinWCP.wcp')
-    XarrayGraph.open('examples/LabChartTEVC.mat', filetype='LabChart MATLAB (GOlab TEVC)')
+    XarrayGraph.open('examples/WinWCP.wcp')
+    # XarrayGraph.open('examples/LabChartTEVC.mat', filetype='LabChart MATLAB (GOlab TEVC)')
 
     app.exec()
 
