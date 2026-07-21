@@ -35,7 +35,7 @@ from xarray_graph.widgets import TableWidgetWithCopyPaste#, CollapsibleSectionsS
 
 class XarrayDataTreeView(TreeView):
 
-    finishedEditingAttrs = Signal(XarrayDataTreeItem)
+    # finishedEditingAttrs = Signal(XarrayDataTreeItem)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -340,30 +340,19 @@ class XarrayDataTreeView(TreeView):
         data = item.data()
         title = item.path()
         status = attrsDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
-        if status == QDialog.DialogCode.Accepted:
-            self.finishedEditingAttrs.emit(item)
+        if status != QDialog.DialogCode.Accepted:
+            return
+        # self.finishedEditingAttrs.emit(item)
+        self.refresh()
         
     def dataDialog(self, item: XarrayDataTreeItem) -> None:
         if not item.isVariable():
             return
         values = item.data().values.squeeze()
-        # if values.ndim == 1:
-        #     values = values.reshape(-1, 1)
-        # if values.ndim == 2:
-        #     rows, cols = values.shape
-        # else:
-        #     return
         
         model: ArrayTableModel = ArrayTableModel(values)
         view: ArrayTableView = ArrayTableView()
         view.setModel(model)
-        
-        # table = TableWidgetWithCopyPaste(values.size, 1)
-        # for i in range(rows):
-        #     for j in range(cols):
-        #         value = values[i, j]
-        #         cell_item = QTableWidgetItem(str(value))
-        #         table.setItem(i, j, cell_item)
 
         dlg = makeDialog(self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=item.name())
         layout = QVBoxLayout(dlg)
@@ -380,11 +369,8 @@ class XarrayDataTreeView(TreeView):
         if status != QDialog.DialogCode.Accepted:
             return
         
-        # dtype = values.dtype
-        # for i in range(rows):
-        #     for j in range(cols):
-        #         values[i,j] = dtype.type(view.item(i, j).text())
-        item.data[:] = values
+        item.data().data[:] = values
+        self.refresh()
     
     def insertNewChildNode(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
         if not parent_item.isNode():

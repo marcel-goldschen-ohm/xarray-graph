@@ -39,7 +39,7 @@ class AnnotationTreeView(TreeView):
         self._paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self)
         self._paste_shortcut.activated.connect(lambda: self.pasteCopy())
 
-        self.setAlternatingRowColors(True)
+        # self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setDragAndDropEnabled(True)
     

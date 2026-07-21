@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import xarray as xr
-from qtpy.QtCore import Qt, QSize
+from qtpy.QtCore import Qt, QSize, QSignalBlocker
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QAction, QFileDialog, QApplication, QMessageBox, QActionGroup
 import qtawesome as qta
@@ -54,7 +54,7 @@ class XarrayDataTreeViewer(QMainWindow):
             e.g., window = wm['window title'] or wm[index]
                   datatree = window.datatree()
             
-            wm.dir() or wm.ls() -> List all windows with their titles and indices for easy access.
+            wm.dir() or wm.ls() -> List all windows as "index: title".
             
             Modules loaded at startup: numpy as np, xarray as xr
             ----------------------------------------------------
@@ -67,6 +67,7 @@ class XarrayDataTreeViewer(QMainWindow):
         model = XarrayDataTreeModel()
         self._datatree_view.setModel(model)
         self._datatree_view.selectionWasChanged.connect(self.onDataTreeSelectionChanged)
+        self._datatree_view.wasRefreshed.connect(self.refresh)
 
         # setup
         self._initActions()
@@ -88,7 +89,8 @@ class XarrayDataTreeViewer(QMainWindow):
         self._updateAttrsView()
     
     def refresh(self) -> None:
-        self._datatree_view.refresh()
+        with QSignalBlocker(self._datatree_view):
+            self._datatree_view.refresh()
         self.onDataTreeSelectionChanged()
     
     @staticmethod
