@@ -49,7 +49,7 @@ from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
 ROI_KEY = '_XG_ROI'
 MASK_KEY = '_XG_MASK'
 NOTES_KEY = '_XG_NOTES'
-TO_DISPLAY_UNITS_KEY = '_XG_TO_DISPLAY_UNITS_FACTOR'
+# TO_DISPLAY_UNITS_KEY = '_XG_TO_DISPLAY_UNITS_FACTOR'
 MASK_COLOR = (200, 200, 200)
 PREVIEW_COLOR = (255, 0, 0)
 
@@ -600,8 +600,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                     # print(f'  {name}: {units} -> {base_units}')
                     data_var = data_var.copy(deep=False, data=qbase.magnitude)
                     data_var.attrs['units'] = base_units
-                    conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
-                    data_var.attrs[TO_DISPLAY_UNITS_KEY] = conversion_factor
+                    # conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
+                    # data_var.attrs[TO_DISPLAY_UNITS_KEY] = conversion_factor
                     data_var_changed = True
                     units = base_units
                 except:
@@ -641,8 +641,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                         # print(f'  {name}: {units} -> {base_units}')
                         coord = coord.copy(deep=False, data=qbase.magnitude)
                         coord.attrs['units'] = base_units
-                        conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
-                        coord.attrs[TO_DISPLAY_UNITS_KEY] = conversion_factor
+                        # conversion_factor = self.ureg.Quantity(1, units).to(base_units).magnitude
+                        # coord.attrs[TO_DISPLAY_UNITS_KEY] = conversion_factor
                         data_var = data_var.assign_coords({name: coord})
                         data_var_changed = True
                         units = base_units
@@ -746,15 +746,15 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         self.updatePlotGrid()
     
-    def _isMultiSlice(self) -> bool:
-        """ Check if the current selection includes more than one value along any non-xaxis dimension.
-        """
-        if self._selection_visible_coords is None:
-            return False
-        for dim in self._selection_visible_coords.dims:
-            if self._selection_visible_coords.sizes[dim] > 1:
-                return True
-        return False
+    # def _isMultiSlice(self) -> bool:
+    #     """ Check if the current selection includes more than one value along any non-xaxis dimension.
+    #     """
+    #     if self._selection_visible_coords is None:
+    #         return False
+    #     for dim in self._selection_visible_coords.dims:
+    #         if self._selection_visible_coords.sizes[dim] > 1:
+    #             return True
+    #     return False
     
     def onRoiSelectionChanged(self) -> None:
         self.updatePlotRois()
