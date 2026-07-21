@@ -43,7 +43,7 @@ from xarray_graph.utils import xarray_utils
 from xarray_graph.apps import XarrayDataTreeViewer
 from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, AnnotationTreeModel, AnnotationTreeView
 from xarray_graph.graph import Plot, PlotGrid, View, PlotCurve, XAxisRegion, VLine, FilterControlPanel, CurveFitControlPanel, MeasureControlPanel
-from xarray_graph.widgets import MultiValueSpinBox
+from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
 
 
 ROI_KEY = '_XG_ROI'
@@ -1801,11 +1801,13 @@ class XarrayGraph(XarrayDataTreeViewer):
         model.setColumnLabels(['ROI'])
         self._ROIs_view.setModel(model)
         self._ROIs_view.selectionWasChanged.connect(self.onRoiSelectionChanged)
+        self._ROIs_view.setHeaderHidden(True)
 
         # datatree and ROI views splitter
-        self._datatree_ROIs_splitter = QSplitter(Qt.Orientation.Vertical)
-        self._datatree_ROIs_splitter.addWidget(self._datatree_view)
-        self._datatree_ROIs_splitter.addWidget(self._ROIs_view)
+        self._datatree_ROIs_splitter = CollapsibleSectionsSplitter()
+        self._datatree_ROIs_splitter.addSection('Data', self._datatree_view)
+        self._datatree_ROIs_splitter.addSection('ROI', self._ROIs_view)
+        self._datatree_ROIs_splitter.setFirstSectionHeaderVisible(False)
 
         # data_var plot views splitter
         self._data_var_views_splitter = QSplitter(Qt.Orientation.Vertical)
