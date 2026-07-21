@@ -141,6 +141,8 @@ class TreeView(QTreeView):
             # icon=qta.icon('mdi6.arrow-expand-all'),
             # iconVisibleInMenu=True,
             toolTip='Expand all and resize all columns to contents',
+            shortcut=QKeySequence('Ctrl+F'),
+            shortcutVisibleInContextMenu=True,
             triggered=lambda checked: self.viewAll()
         )
     
@@ -455,6 +457,11 @@ class TreeView(QTreeView):
             return
         elif event.matches(QKeySequence.StandardKey.Refresh):
             self.refresh()
+            event.accept()
+            return
+        modifiers = event.modifiers()
+        if modifiers == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_F:
+            self.viewAll()
             event.accept()
             return
         return super().keyPressEvent(event)
