@@ -1,50 +1,26 @@
 """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
 
 TODO:
-- fix bug with masking for data_vars that are a subset of the node dims.
 """
-
 from __future__ import annotations
+
+# import time
+# t0 = time.time()
 from copy import deepcopy
-from functools import reduce
-import textwrap
 import numpy as np
-# import pandas as pd
-import cftime
-# to be able to read unit attributes following the CF conventions
-# import cf_xarray.units  # noqa: F401  # must be imported before pint_xarray
 import xarray as xr
-# import pint_xarray
-import pint
-from pint.facets.plain import ScaleConverter
-import cmap
-from qtpy.QtCore import Qt, QObject, QTimer, Signal, QSignalBlocker, QModelIndex, QSize, QEvent
-from qtpy.QtGui import QColor, QFont, QPalette, QKeySequence
-from qtpy.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QSplitter,
-    QAction,
-    QApplication,
-    QInputDialog,
-    QMenu,
-    QLabel,
-    QTextEdit,
-    QGraphicsObject,
-    QActionGroup,
-    QToolButton,
-    QToolBar,
-    QSizePolicy,
-    QGraphicsOpacityEffect,
-    QGridLayout,
-)
-import qtawesome as qta
-import pyqtgraph as pg
-from xarray_graph.utils import xarray_utils
+from pint import UnitRegistry, Quantity
+from cmap import Colormap
+from qtpy.QtCore import QObject, Signal
+from qtpy.QtWidgets import QWidget
 from xarray_graph.apps import XarrayDataTreeViewer
-from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, AnnotationTreeModel, AnnotationTreeView
-from xarray_graph.graph import Plot, PlotGrid, View, PlotCurve, XAxisRegion, VLine, FilterControlPanel, CurveFitControlPanel, MeasureControlPanel
-from xarray_graph.widgets import MultiValueSpinBox, CollapsibleSectionsSplitter
+# print(f'XarrayGraph.py imports took {time.time() - t0:.3f} seconds')
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtCore import Qt
+    from qtpy.QtWidgets import QGraphicsObject
+    from xarray_graph.graph import Plot
 
 
 ROI_KEY = '_XG_ROI'
@@ -59,13 +35,12 @@ class XarrayGraph(XarrayDataTreeViewer):
     """ PyQt widget for viewing/analyzing (x,y) slices of a Xarray DataTree.
     """
 
-    # ureg = pint_xarray.unit_registry
-    ureg = pint.UnitRegistry()#auto_reduce_dimensions=True)
+    ureg = UnitRegistry()#auto_reduce_dimensions=True)
     ureg.formatter.default_format = "~P"
 
     _default_settings = {
         'icon size': 24,
-        'colormap': cmap.Colormap('seaborn:tab10_new').to_pyqtgraph()
+        'colormap': Colormap('seaborn:tab10_new').to_pyqtgraph()
     }
     _settings = deepcopy(_default_settings)
 
@@ -96,6 +71,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         """
         if not hasattr(self, '_plots'):
             return
+        from pyqtgraph import PlotItem, ViewBox
         xlinked_views = []
         xlinked_range = []
         n_vars, n_rows, n_cols = self._plots.shape
@@ -104,10 +80,10 @@ class XarrayGraph(XarrayDataTreeViewer):
             ylinked_range = []
             for row in range(n_rows):
                 for col in range(n_cols):
-                    plot: pg.PlotItem = self._plots[i, row, col]
-                    view: pg.ViewBox = plot.getViewBox()
-                    xlinked_view: pg.ViewBox = view.linkedView(view.XAxis)
-                    ylinked_view: pg.ViewBox = view.linkedView(view.YAxis)
+                    plot: PlotItem = self._plots[i, row, col]
+                    view: ViewBox = plot.getViewBox()
+                    xlinked_view: ViewBox = view.linkedView(view.XAxis)
+                    ylinked_view: ViewBox = view.linkedView(view.YAxis)
                     if (xlinked_view is None) and (ylinked_view is None):
                         view.enableAutoRange()
                     elif xlinked_view is None:
@@ -193,6 +169,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         return xranges
 
     def addRoisToPlots(self, rois: list[dict], plots: list[Plot] = None) -> None:
+        from xarray_graph.graph import XAxisRegion, VLine
         if plots is None:
             plots = self._plots.flatten().tolist()
         for plot in plots:
@@ -318,12 +295,13 @@ class XarrayGraph(XarrayDataTreeViewer):
 
     def setConstant(self, constant = None) -> None:
         if constant is None:
+            from qtpy.QtWidgets import QInputDialog
             constant, ok = QInputDialog.getText(self, "Set Constant", "Enter constant value (and units if applicable):", text="1.0 units")
             if not ok:
                 return
         
         try:
-            qconstant = pint.Quantity(constant)
+            qconstant = Quantity(constant)
         except:
             return
 
@@ -361,6 +339,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         if not xranges:
             return
         
+        from xarray_graph.graph import PlotCurve
+        from xarray_graph.tree import XarrayDataTreeItem
         xdim = self.xdim()
         for plot in self._plots.flatten().tolist():
             graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
@@ -405,7 +385,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             result_path = f"{item.node().path.rstrip('/')}/Average/{data_var.name}"
             result_path_exists = result_path in dt
             if result_path_exists:
-                result_node_name = xarray_utils.unique_name('Average', list(item.node().keys()))
+                from xarray_graph.utils.xarray_utils import unique_name
+                result_node_name = unique_name('Average', list(item.node().keys()))
                 result_path = f"{item.node().path.rstrip('/')}/{result_node_name}/{data_var.name}"
             dt[result_path] = data_var_avg
         
@@ -512,6 +493,8 @@ class XarrayGraph(XarrayDataTreeViewer):
     
     def onDataTreeSelectionChanged(self) -> None:
         # print('\n\nonDataTreeSelectionChanged...')
+        from xarray_graph.tree import XarrayDataTreeItem
+        from xarray_graph.utils.xarray_utils import index_by_identity, aligned_root, ordered_dims_iter
 
         # selected data_vars
         selected_items = self._datatree_view.selectedItems(ordered=True)
@@ -549,7 +532,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._nodes_with_selected_data_vars: list[xr.DataTree] = []
         for item in self._selected_data_var_items:
             node: xr.DataTree = item.node()
-            if xarray_utils.index_by_identity(self._nodes_with_selected_data_vars, node) == -1:
+            if index_by_identity(self._nodes_with_selected_data_vars, node) == -1:
                 self._nodes_with_selected_data_vars.append(node)
         # print(f'  _nodes_with_selected_data_vars:')
         # for node in self._nodes_with_selected_data_vars:
@@ -557,8 +540,8 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         self._branch_root_nodes_for_selected_data_vars: list[xr.DataTree] = []
         for node in self._nodes_with_selected_data_vars:
-            branch_root_node = xarray_utils.aligned_root(node)
-            if xarray_utils.index_by_identity(self._branch_root_nodes_for_selected_data_vars, branch_root_node) == -1:
+            branch_root_node = aligned_root(node)
+            if index_by_identity(self._branch_root_nodes_for_selected_data_vars, branch_root_node) == -1:
                 self._branch_root_nodes_for_selected_data_vars.append(branch_root_node)
         # print(f'  _branch_root_nodes_for_selected_data_vars:')
         # for node in self._branch_root_nodes_for_selected_data_vars:
@@ -566,6 +549,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         # shared dimensions across selection
         dims_per_data_var = [np.array(list(data_var.dims)) for data_var in self._selected_data_vars]
+        from functools import reduce
         self._selection_shared_dims = reduce(np.intersect1d, dims_per_data_var).tolist() if dims_per_data_var else []
         if not self._selection_shared_dims:
             self._invalidSelection(
@@ -581,7 +565,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         # print(f'  _selection_shared_dims: {self._selection_shared_dims}')
         
         # ordered dimensions
-        self._selection_ordered_dims = list(xarray_utils.ordered_dims_iter(self._selected_data_vars)) if self._selected_data_vars else []
+        self._selection_ordered_dims = list(ordered_dims_iter(self._selected_data_vars)) if self._selected_data_vars else []
         shared_dims = self._selection_shared_dims
         self._selection_shared_dims = [dim for dim in self._selection_ordered_dims if dim in shared_dims]
         # print(f'  _selection_ordered_dims: {self._selection_ordered_dims}')
@@ -603,6 +587,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         # convert selection to non-prefixed units for plotting in pyqtgraph
         self._selection_units: dict[str, str] = {}
+        import cftime
         for i, data_var in enumerate(self._selected_data_vars):
             name = data_var.name
             data_var_changed = False
@@ -733,6 +718,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._selected_data_var_unique_names = []
 
         self._data_var_views_splitter.setVisible(False)
+        import textwrap
         msg = textwrap.dedent(msg).strip()
         self._message_label.setText(msg)
         self._message_label.setVisible(True)
@@ -772,6 +758,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.startDrawingRois()
     
     def onRoiAdded(self, roiItem: QGraphicsObject) -> None:
+        from xarray_graph.graph import XAxisRegion, VLine
         if type(roiItem) is XAxisRegion:
             roi = {
                 'type': 'region',
@@ -802,10 +789,12 @@ class XarrayGraph(XarrayDataTreeViewer):
         selectedROIs: list[dict] = self._ROIs_view.selectedAnnotations()
         selectedROIs.append(roi)
         # Defer tree/model selection updates until the current graphics-scene event stack returns.
+        from qtpy.QtCore import QTimer
         QTimer.singleShot(0, lambda selectedROIs=selectedROIs: self._finishAddingRoi(selectedROIs))
 
     def _finishAddingRoi(self, selectedROIs: list[dict]) -> None:
         self.updateROIsView() # overkill, but works for now
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROIs_view):
             self._ROIs_view.setSelectedAnnotations(selectedROIs)
         self.updatePlotRois() # overkill, but works for now
@@ -828,6 +817,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                 self._updateRoiPlotItemFromData(like_item, roi)
         
         # update ROI tree view (only item for ROI)
+        from xarray_graph.tree import AnnotationTreeModel
+        from qtpy.QtCore import QModelIndex
         model: AnnotationTreeModel = self._ROIs_view.model()
         for item in model.rootItem().subtree_depth_first():
             if getattr(item, '_data', None) is roi:
@@ -857,6 +848,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         # remove dim iter actions from toolbar
         # items are not deleted, so the current iteration state will be restored if the dim is reselected again
 
+        from qtpy.QtWidgets import QAction
         for dim in self._dim_iter_widgets:
             # block spinbox signals so that _on_index_selection_changed is not called
             # if the spinbox had focus and loses it here
@@ -915,6 +907,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         """ Update plot grids for selected variables and current plot tiling.
         """
         # print('\n'*2, 'updatePlotGrid...')
+        from xarray_graph.graph import PlotGrid, Plot
 
         # one plot grid per selected variable
         n_data_var_names = len(self._selected_data_var_unique_names)
@@ -1029,6 +1022,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         """ Update axis tick labels for each plot (use settings font).
         """
         # print('updatePlotAxisTickFont...')
+        from qtpy.QtGui import QFont
         axis_tick_font = QFont()
         axis_tick_fontsize = 10 #self._axis_tick_fontsize_spinbox.value()
         axis_tick_font.setPointSize(axis_tick_fontsize)
@@ -1078,18 +1072,21 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         cmap = self._settings['colormap']
 
+        from xarray_graph.graph import PlotCurve, View
+        from xarray_graph.tree import XarrayDataTreeItem
+        from pyqtgraph import AxisItem, DateAxisItem, mkPen
         bottomAxisChanged = False
         for plot in plots:
             view: View = plot.getViewBox()
 
             # update bottom axis (datetime or not)
-            bottomAxis: pg.AxisItem = plot.getAxis('bottom')
-            if is_xdim_datetime and not isinstance(bottomAxis, pg.DateAxisItem):
-                bottomAxis = pg.DateAxisItem(orientation='bottom')
+            bottomAxis: AxisItem = plot.getAxis('bottom')
+            if is_xdim_datetime and not isinstance(bottomAxis, DateAxisItem):
+                bottomAxis = DateAxisItem(orientation='bottom')
                 plot.setAxisItems({'bottom': bottomAxis})
                 bottomAxisChanged = True
-            elif not is_xdim_datetime and isinstance(bottomAxis, pg.DateAxisItem):
-                bottomAxis = pg.AxisItem(orientation='bottom')
+            elif not is_xdim_datetime and isinstance(bottomAxis, DateAxisItem):
+                bottomAxis = AxisItem(orientation='bottom')
                 plot.setAxisItems({'bottom': bottomAxis})
                 bottomAxisChanged = True
 
@@ -1214,7 +1211,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                             }
                             masked_graph.setZValue(0)
                             masked_graph.setName(name + ' masked')
-                            masked_graph.setPen(pg.mkPen(color=MASK_COLOR, width=1))
+                            masked_graph.setPen(mkPen(color=MASK_COLOR, width=1))
                     
                     # graph data
                     if len(data_graphs) > data_count:
@@ -1236,7 +1233,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     }
                     data_graph.setZValue(1)
                     data_graph.setName(name)
-                    data_graph.setPen(pg.mkPen(color=color, width=1))
+                    data_graph.setPen(mkPen(color=color, width=1))
                     data_graph.setSymbol(var_marker)
                 
                 # to next data_var in datatree
@@ -1272,9 +1269,11 @@ class XarrayGraph(XarrayDataTreeViewer):
             if is_preview:
                 xranges = self.visibleXRanges()
         
+        from pyqtgraph import AxisItem, DateAxisItem, mkPen
+        from xarray_graph.graph import PlotCurve
         for plot in plots:
-            xaxis: pg.AxisItem = plot.getAxis('bottom')
-            if isinstance(xaxis, pg.DateAxisItem):
+            xaxis: AxisItem = plot.getAxis('bottom')
+            if isinstance(xaxis, DateAxisItem):
                 xunits = 's'
             else:
                 xunits = xaxis.labelUnits
@@ -1333,9 +1332,9 @@ class XarrayGraph(XarrayDataTreeViewer):
                         preview_graph.setPen(None)
                         preview_graph.setSymbol('o')
                         preview_graph.setSymbolSize(8)
-                        preview_graph.setSymbolPen(pg.mkPen(color=PREVIEW_COLOR, width=2))
+                        preview_graph.setSymbolPen(mkPen(color=PREVIEW_COLOR, width=2))
                     else:
-                        preview_graph.setPen(pg.mkPen(color=PREVIEW_COLOR, width=2))
+                        preview_graph.setPen(mkPen(color=PREVIEW_COLOR, width=2))
                     graph._metadata['preview'] = preview_graph
             
             # remove extra graph items from plot
@@ -1365,6 +1364,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 measure_type = preview_panel.measureType()
                 result_name = f'{measure_type}'
                 dst = 'new window'
+            from qtpy.QtWidgets import QInputDialog
             result_name, ok = QInputDialog.getText(self, 'Save Preview', 'Result Name:', text=result_name)
             result_name = result_name.strip()
             if not ok or not result_name:
@@ -1383,13 +1383,16 @@ class XarrayGraph(XarrayDataTreeViewer):
         else:
             raise ValueError(f"Invalid destination: {dst}")
         
+        from pyqtgraph import AxisItem, DateAxisItem, mkPen
+        from xarray_graph.graph import PlotCurve
+        from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel
         for plot in plots:
-            xaxis: pg.AxisItem = plot.getAxis('bottom')
-            if isinstance(xaxis, pg.DateAxisItem):
+            xaxis: AxisItem = plot.getAxis('bottom')
+            if isinstance(xaxis, DateAxisItem):
                 xunits = 's'
             else:
                 xunits = xaxis.labelUnits
-            yaxis: pg.AxisItem = plot.getAxis('left')
+            yaxis: AxisItem = plot.getAxis('left')
             yunits = yaxis.labelUnits
             
             # existing graphs in plot
@@ -1470,6 +1473,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def _updateRoiPlotItemFromData(self, roiItem: QGraphicsObject, data: dict) -> None:
         """ Apply ROI data to plotted ROI object.
         """
+        from xarray_graph.graph import XAxisRegion, VLine
         if isinstance(roiItem, XAxisRegion):
             region = data['position'][self.xdim()]
             # print(f"Setting region: {region}")
@@ -1488,6 +1492,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def _updateRoiDataFromPlotItem(self, roiItem: QGraphicsObject, data: dict) -> None:
         """ Update ROI data from plotted ROI object.
         """
+        from xarray_graph.graph import XAxisRegion, VLine
         if isinstance(roiItem, XAxisRegion):
             data['position'] = {self.xdim(): sorted(roiItem.getRegion())}
             data['movable'] = roiItem.movable
@@ -1502,6 +1507,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def _setupRoiPlotItem(self, item) -> None:
         """ Signals/Slots and properties for ROI plot item.
         """
+        from xarray_graph.graph import XAxisRegion, VLine
         if isinstance(item, XAxisRegion):
             item.sigRegionChanged.connect(lambda item=item: self._onRoiPlotItemChanged(item))
             item.sigRegionDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
@@ -1526,6 +1532,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROIs_view.setSelectedAnnotations(selectedRois)
     
     def startDrawingRois(self) -> None:
+        from xarray_graph.graph import XAxisRegion, VLine, View
         roiType = self.selectedRoiType()
         roiToGraphicsItemTypeMap = {
             'Event': VLine,
@@ -1538,19 +1545,26 @@ class XarrayGraph(XarrayDataTreeViewer):
             view: View = plot.getViewBox()
             view.sigItemAdded.connect(self.onRoiAdded)
             view.startDrawingItemsOfType(graphicsItemType)
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(True)
     
     def stopDrawingRois(self) -> None:
+        from xarray_graph.graph import View
         for plot in self._plots.flatten().tolist():
             view: View = plot.getViewBox()
             view.stopDrawingItems()
             view.sigItemAdded.disconnect(self.onRoiAdded)
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(False)
 
     def _initActions(self) -> None:
         super()._initActions()
+
+        from qtpy.QtGui import QColor, QKeySequence, QPalette
+        from qtpy.QtWidgets import QAction, QActionGroup, QApplication
+        from qtawesome import icon
 
         text_color = QApplication.palette().color(QPalette.ColorRole.Text)
         faded_text_color = QColor(text_color)
@@ -1558,7 +1572,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         # highlight_color = QApplication.palette().color(QPalette.ColorRole.Highlight)
         
         self._data_action = QAction(
-            icon=qta.icon('mdi.file-tree', color=faded_text_color, color_on=text_color),
+            icon=icon('mdi.file-tree', color=faded_text_color, color_on=text_color),
             iconVisibleInMenu=False,
             text='Data',
             toolTip='DataTree & ROIs',
@@ -1568,7 +1582,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         )
 
         self._home_action = QAction(
-            icon=qta.icon('mdi.home'),
+            icon=icon('mdi.home'),
             iconVisibleInMenu=False,
             text='Home',
             toolTip='Autoscale',
@@ -1577,7 +1591,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         )
 
         self._notes_action = QAction(
-            icon=qta.icon('mdi6.text-box-edit-outline'),
+            icon=icon('mdi6.text-box-edit-outline'),
             iconVisibleInMenu=True,
             text='Notes',
             toolTip='Notes',
@@ -1598,7 +1612,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         )
         
         self._ROI_event_action = QAction(
-            icon=qta.icon('fa6s.arrow-down-long'),
+            icon=icon('fa6s.arrow-down-long'),
             iconVisibleInMenu=True,
             text='Event',
             toolTip='Create event ROI with mouse click',
@@ -1608,10 +1622,10 @@ class XarrayGraph(XarrayDataTreeViewer):
             shortcutVisibleInContextMenu=True,
             triggered=lambda checked: self.onRoiTypeChanged()
         )
-        self._ROI_event_icon = qta.icon('fa6s.arrow-down-long', color=faded_text_color, color_on=text_color)
+        self._ROI_event_icon = icon('fa6s.arrow-down-long', color=faded_text_color, color_on=text_color)
 
         self._ROI_xrange_action = QAction(
-            icon=qta.icon('mdi.arrow-expand-horizontal'),
+            icon=icon('mdi.arrow-expand-horizontal'),
             iconVisibleInMenu=True,
             text='Range',
             toolTip='Create range ROI with mouse click+drag',
@@ -1621,7 +1635,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             shortcutVisibleInContextMenu=True,
             triggered=lambda checked: self.onRoiTypeChanged()
         )
-        self._ROI_xrange_icon = qta.icon('mdi.arrow-expand-horizontal', color=faded_text_color, color_on=text_color)
+        self._ROI_xrange_icon = icon('mdi.arrow-expand-horizontal', color=faded_text_color, color_on=text_color)
 
         self._mask_action = QAction(
             text='Mask',
@@ -1679,7 +1693,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         )
 
         self._filter_action = QAction(
-            icon=qta.icon('mdi.sine-wave'),
+            icon=icon('mdi.sine-wave'),
             iconVisibleInMenu=True,
             text='Filter',
             toolTip='Filter',
@@ -1687,7 +1701,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         )
 
         self._curve_fit_action = QAction(
-            icon=qta.icon('mdi.chart-bell-curve-cumulative'),
+            icon=icon('mdi.chart-bell-curve-cumulative'),
             iconVisibleInMenu=True,
             text='Curve Fit',
             toolTip='Curve Fit',
@@ -1696,7 +1710,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         self._measure_action = QAction(
             parent=self, 
-            icon=qta.icon('mdi.chart-scatter-plot'),
+            icon=icon('mdi.chart-scatter-plot'),
             iconVisibleInMenu=True,
             text='Measure',
             toolTip='Measure',
@@ -1769,6 +1783,8 @@ class XarrayGraph(XarrayDataTreeViewer):
     def _initMenubar(self) -> None:
         super()._initMenubar()
 
+        from qtpy.QtWidgets import QMenu
+
         self._view_menu.insertAction(self.console._console_action, self._notes_action)
         sep = self._view_menu.insertSeparator(self._notes_action)
         self._view_menu.insertAction(sep, self._view_masked_action)
@@ -1809,6 +1825,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._datatree_view.setInfoColumnsVisible(True)
 
         # ROIs view
+        from xarray_graph.tree import AnnotationTreeView, AnnotationTreeModel
         self._ROIs_view = AnnotationTreeView()
         model = AnnotationTreeModel()
         model.setColumnLabels(['ROI'])
@@ -1817,16 +1834,20 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROIs_view.setHeaderHidden(True)
 
         # datatree and ROI views splitter
+        from xarray_graph.widgets import CollapsibleSectionsSplitter
         self._datatree_ROIs_splitter = CollapsibleSectionsSplitter()
         self._datatree_ROIs_splitter.addSection('Data', self._datatree_view)
         self._datatree_ROIs_splitter.addSection('ROI', self._ROIs_view)
         self._datatree_ROIs_splitter.setFirstSectionHeaderVisible(False)
 
         # data_var plot views splitter
+        from qtpy.QtCore import Qt
+        from qtpy.QtWidgets import QSplitter
         self._data_var_views_splitter = QSplitter(Qt.Orientation.Vertical)
         self._plots = np.empty((0, 0, 0), dtype=object)
 
         # invalid selection label
+        from qtpy.QtWidgets import QLabel
         self._message_label = QLabel()
         self._message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._message_label.setWordWrap(True)
@@ -1835,6 +1856,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._dim_iter_widgets: dict[str, dict] = {}
 
         # right side vbox
+        from qtpy.QtWidgets import QWidget, QVBoxLayout
         panel = QWidget()
         vbox = QVBoxLayout(panel)
         vbox.setContentsMargins(0, 0, 0, 0)
@@ -1852,11 +1874,13 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.setCentralWidget(hsplitter)
 
         # notes
+        from qtpy.QtWidgets import QTextEdit
         self._notes_view = QTextEdit()
         self._notes_view.setWindowTitle('Notes')
         self._notes_view.textChanged.connect(self._onNotesChanged)
 
         # filter
+        from xarray_graph.graph import FilterControlPanel
         self._filter_control_panel = FilterControlPanel()
         self._filter_control_panel.filterChanged.connect(self.updatePreview)
         self._filter_control_panel.previewToggled.connect(self.updatePreview)
@@ -1864,6 +1888,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._filter_control_panel.filterRequested.connect(self.savePreview)
 
         # curve fit
+        from xarray_graph.graph import CurveFitControlPanel
         self._curve_fit_control_panel = CurveFitControlPanel()
         self._curve_fit_control_panel.fitChanged.connect(self.updatePreview)
         self._curve_fit_control_panel.previewToggled.connect(self.updatePreview)
@@ -1871,6 +1896,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._curve_fit_control_panel.fitRequested.connect(self.savePreview)
 
         # measure
+        from xarray_graph.graph import MeasureControlPanel
         self._measure_control_panel = MeasureControlPanel()
         self._measure_control_panel.measureChanged.connect(self.updatePreview)
         self._measure_control_panel.previewToggled.connect(self.updatePreview)
@@ -1888,11 +1914,14 @@ class XarrayGraph(XarrayDataTreeViewer):
         icon_size = self._settings.get('icon size', 24)
 
         # spacer
+        from qtpy.QtCore import Qt
+        from qtpy.QtWidgets import QLabel, QSizePolicy
         self._dim_iters_spacer = QLabel()
         self._dim_iters_spacer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._dim_iters_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # ROI selector
+        from qtpy.QtWidgets import QMenu, QActionGroup, QToolButton
         self._ROI_menu = QMenu()
         self._ROI_menu.addAction(self._ROI_event_action)
         self._ROI_menu.addAction(self._ROI_xrange_action)
@@ -1914,6 +1943,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROI_selection_button.toggled.connect(lambda checked: self.startDrawingRois() if checked else self.stopDrawingRois())
 
         # toolbar
+        from qtpy.QtCore import QSize, Qt
+        from qtpy.QtWidgets import QToolBar
         self._top_toolbar = QToolBar()
         self._top_toolbar.setOrientation(Qt.Orientation.Horizontal)
         self._top_toolbar.setStyleSheet("QToolBar{spacing:2px;}")
@@ -1936,13 +1967,14 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._top_toolbar)
     
     @staticmethod
-    def drop_prefixes(qty: pint.Quantity, ureg = None) -> pint.Quantity:
+    def drop_prefixes(qty: Quantity, ureg: UnitRegistry = None) -> Quantity:
         if ureg is None:
             ureg = XarrayGraph.ureg
 
         newunit = ureg.Unit("dimensionless")
         conversion_factor = 1
 
+        from pint.facets.plain import ScaleConverter
         for unit_name, power in qty._units.items():
             unit = ureg._units[unit_name]
             converter = unit.converter
@@ -1972,13 +2004,19 @@ class DimIterWidget(QWidget):
     def __init__(self, *args, **kwargs):
         QWidget.__init__(self, *args, **kwargs)
 
+        from qtpy.QtCore import Qt, QSize
+        from qtpy.QtGui import QColor, QPalette
+        from qtpy.QtWidgets import QAction, QActionGroup, QApplication, QGridLayout, QLabel, QMenu, QSizePolicy, QToolButton, QGraphicsOpacityEffect
+        from qtawesome import icon
+        from xarray_graph.widgets import MultiValueSpinBox
+
         color_on: QColor = QApplication.palette().color(QPalette.ColorRole.Text)
         color_off = QColor(color_on)
         color_off.setAlphaF(0.5)
 
         self._pile_action = QAction(
             parent = self, 
-            icon = qta.icon('ph.stack', color=color_off, color_on=color_on), 
+            icon = icon('ph.stack', color=color_off, color_on=color_on), 
             text = 'Pile Traces', 
             iconVisibleInMenu = True, 
             checkable = True, 
@@ -1987,7 +2025,7 @@ class DimIterWidget(QWidget):
         )
         self._tile_vertically_action = QAction(
             parent = self, 
-            icon = qta.icon('mdi.reorder-horizontal', color=color_off, color_on=color_on), 
+            icon = icon('mdi.reorder-horizontal', color=color_off, color_on=color_on), 
             text = 'Tile Traces Vertically', 
             iconVisibleInMenu = True, 
             checkable = True, 
@@ -1996,7 +2034,7 @@ class DimIterWidget(QWidget):
         )
         self._tile_horizontally_action = QAction(
             parent = self, 
-            icon = qta.icon('mdi.reorder-vertical', color=color_off, color_on=color_on), 
+            icon = icon('mdi.reorder-vertical', color=color_off, color_on=color_on), 
             text = 'Tile Traces Horizontally', 
             iconVisibleInMenu = True, 
             checkable = True, 
@@ -2025,7 +2063,7 @@ class DimIterWidget(QWidget):
         self._size_label.setGraphicsEffect(self._size_label_opacity_effect)
 
         self._xdim_button = QToolButton(
-            icon=qta.icon('ph.arrow-line-down', color=color_off, color_on=color_on),
+            icon=icon('ph.arrow-line-down', color=color_off, color_on=color_on),
             toolTip='Set as X-axis dimension',
             pressed=self.setAsXDim,
         )
@@ -2119,6 +2157,7 @@ class DimIterWidget(QWidget):
 class IgnoreLettersKeyPressFilter(QObject):
 
     def eventFilter(self, object, event):
+        from qtpy.QtCore import QEvent
         if event.type() == QEvent.Type.KeyPress:
             if event.text().isalpha():
                 # Do not handle letters A-Z

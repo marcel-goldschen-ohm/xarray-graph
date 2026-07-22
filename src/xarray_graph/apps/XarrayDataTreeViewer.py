@@ -3,24 +3,26 @@
 TODO:
 - saveAs Zarr Directory allow selecting non-existent directory
 """
-
 from __future__ import annotations
-import os
-from pathlib import Path
-import xarray as xr
-from qtpy.QtCore import Qt, QSize, QSignalBlocker
-from qtpy.QtGui import QKeySequence
-from qtpy.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QAction, QFileDialog, QApplication, QMessageBox, QActionGroup
-import qtawesome as qta
-import xarray_graph.io as io
-from xarray_graph.utils import xarray_utils, WindowManager, IPythonConsole
-from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel, XarrayDataTreeView, KeyValueTreeView
-from xarray_graph.widgets import CollapsibleSectionsSplitter
-from xarray_graph.tree.XarrayDataTreeView import infoTextEdit
+
+# import time
+# t0 = time.time()
+from qtpy.QtWidgets import QMainWindow
+from xarray_graph.utils import WindowManager
+from importlib.metadata import version
+# print(f'XarrayDataTreeViewer.py imports took {time.time() - t0:.3f} seconds')
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from os import PathLike
+    import xarray as xr
+    from qtpy.QtCore import QSize
+    from qtpy.QtWidgets import QWidget
+    from xarray_graph.utils import WindowManager, IPythonConsole
+    from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel
 
 
 # version info (stored in metadata in case needed later)
-from importlib.metadata import version
 XARRAY_GRAPH_VERSION = version('xarray-graph')
 VERSION_KEY = '_XG_VERSION'
 
@@ -42,6 +44,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # global console
         if self.console is None:
+            from xarray_graph.utils import IPythonConsole
             console = IPythonConsole()
             console.execute('import numpy as np', hidden=True)
             console.execute('import xarray as xr', hidden=True)
@@ -63,6 +66,7 @@ class XarrayDataTreeViewer(QMainWindow):
             type(self).console = console
         
         # datatree
+        from xarray_graph.tree import XarrayDataTreeView, XarrayDataTreeModel
         self._datatree_view = XarrayDataTreeView()
         model = XarrayDataTreeModel()
         self._datatree_view.setModel(model)
@@ -75,6 +79,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._initUI()
 
     def sizeHint(self) -> QSize:
+        from qtpy.QtCore import QSize
         return super().sizeHint().expandedTo(QSize(1000, 800))
 
     def datatree(self) -> xr.DataTree:
@@ -89,6 +94,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._updateAttrsView()
     
     def refresh(self) -> None:
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._datatree_view):
             self._datatree_view.refresh()
         self.onDataTreeSelectionChanged()
@@ -104,7 +110,9 @@ class XarrayDataTreeViewer(QMainWindow):
     def about(cls) -> None:
         """ Popup about message dialog.
         """
+        from qtpy.QtWidgets import QApplication, QMessageBox
         import textwrap
+
         focus_widget: QWidget = QApplication.instance().focusWidget()
 
         text = f"""
@@ -133,12 +141,14 @@ class XarrayDataTreeViewer(QMainWindow):
         return window
     
     @classmethod
-    def open(cls, filepath: str | os.PathLike | list[str | os.PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer:
+    def open(cls, filepath: str | PathLike | list[str | PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer:
         """ Load datatree from file.
         """
+        from qtpy.QtWidgets import QApplication
         focus_widget: QWidget = QApplication.instance().focusWidget()
 
         if filepath is None:
+            from qtpy.QtWidgets import QFileDialog
             if is_dir:
                 filepath = QFileDialog.getExistingDirectory(focus_widget, 'Open Zarr Directory')
             else:
@@ -149,18 +159,22 @@ class XarrayDataTreeViewer(QMainWindow):
                 filepath = filepath[0]
         
         try:
+            from pathlib import Path
+            from xarray_graph.io import open_datatree
             if isinstance(filepath, (list, tuple)):
                 # combine multiple files as first-level groups in single datatree
+                import xarray as xr
                 datatree = xr.DataTree()
                 for path in filepath:
                     path = Path(path)
-                    datatree[path.stem] = io.open_datatree(path, filetype=filetype)
+                    datatree[path.stem] = open_datatree(path, filetype=filetype)
                 title = 'Combined'
             else:
                 filepath = Path(filepath)
-                datatree = io.open_datatree(filepath, filetype=filetype)
+                datatree = open_datatree(filepath, filetype=filetype)
                 title = filepath.stem
         except Exception as err:
+            from qtpy.QtWidgets import QMessageBox
             QMessageBox.critical(focus_widget, 'Failed to open file', str(err))
             return
         
@@ -179,22 +193,27 @@ class XarrayDataTreeViewer(QMainWindow):
         filepath = getattr(self, '_filepath', None)
         self.saveAs(filepath)
     
-    def saveAs(self, filepath: str | os.PathLike = None, filetype: str = None) -> None:
+    def saveAs(self, filepath: str | PathLike = None, filetype: str = None) -> None:
         """ Save data tree to file.
         """
         if filepath is None:
+            from qtpy.QtWidgets import QFileDialog
             filepath, _ = QFileDialog.getSaveFileName(self, 'Save File')
             if not filepath:
                 return
         
+        from pathlib import Path
+        import xarray as xr
         filepath = Path(filepath)
         datatree: xr.DataTree = self.datatree()
         datatree.attrs[VERSION_KEY] = XARRAY_GRAPH_VERSION
         try:
-            io.save_datatree(datatree, filepath, filetype=filetype)
+            from xarray_graph.io import save_datatree
+            save_datatree(datatree, filepath, filetype=filetype)
             self._filepath = filepath
             self.setWindowTitle(filepath.stem)
         except Exception as err:
+            from qtpy.QtWidgets import QMessageBox
             QMessageBox.critical(self, 'Failed to save file', str(err))
     
     @classmethod
@@ -207,6 +226,7 @@ class XarrayDataTreeViewer(QMainWindow):
             return
         
         # combined datatree
+        import xarray as xr
         combined_datatree = xr.DataTree()
         window: XarrayDataTreeViewer
         for window in windows:
@@ -219,7 +239,8 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # new combined window
         combined_window = cls.new()
-        combined_window_title: str = xarray_utils.unique_name('Combined', noncombined_window_titles)
+        from xarray_graph.utils.xarray_utils import unique_name
+        combined_window_title: str = unique_name('Combined', noncombined_window_titles)
         combined_window.setWindowTitle(combined_window_title)
         combined_window.setDatatree(combined_datatree)
 
@@ -241,6 +262,7 @@ class XarrayDataTreeViewer(QMainWindow):
             window = XarrayDataTreeViewer.window_mgr.activeWindow()
         if window is None:
             return
+        import xarray as xr
         dt: xr.DataTree = window.datatree()
         groups: tuple[xr.DataTree] = tuple(dt.children.values())
         if not groups:
@@ -259,9 +281,12 @@ class XarrayDataTreeViewer(QMainWindow):
         XarrayDataTreeViewer.window_mgr.updateAllWindowMenus()
    
     def _initActions(self) -> None:
+        from qtpy.QtGui import QKeySequence
+        from qtpy.QtWidgets import QAction, QActionGroup
+        from qtawesome import icon
 
         self._refresh_action = QAction(
-            icon=qta.icon('msc.refresh'),
+            icon=icon('msc.refresh'),
             iconVisibleInMenu=True,
             text='Refresh',
             toolTip='Refresh UI',
@@ -275,7 +300,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda checked: self.about())
 
         self._settings_action = QAction(
-            icon=qta.icon('msc.gear'),
+            icon=icon('msc.gear'),
             iconVisibleInMenu=False,
             text='Settings',
             toolTip='Settings',
@@ -291,7 +316,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: self.new())
 
         self._open_action = QAction(
-            icon=qta.icon('fa5.folder-open'),
+            icon=icon('fa5.folder-open'),
             iconVisibleInMenu=False,
             text='Open',
             toolTip='Open',
@@ -300,7 +325,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: self.open())
 
         self._open_zarr_dir_action = QAction(
-            icon=qta.icon('fa5.folder-open'),
+            icon=icon('fa5.folder-open'),
             iconVisibleInMenu=False,
             text='Open Zarr Directory',
             toolTip='Open Zarr Directory',
@@ -308,7 +333,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: self.open(is_dir=True))
 
         self._save_action = QAction(
-            icon=qta.icon('fa5.save'),
+            icon=icon('fa5.save'),
             iconVisibleInMenu=False,
             text='Save',
             toolTip='Save',
@@ -317,7 +342,7 @@ class XarrayDataTreeViewer(QMainWindow):
             triggered=lambda: self.save())
 
         self._save_as_action = QAction(
-            icon=qta.icon('fa5.save'),
+            icon=icon('fa5.save'),
             iconVisibleInMenu=False,
             text='Save As',
             toolTip='Save As',
@@ -327,6 +352,7 @@ class XarrayDataTreeViewer(QMainWindow):
         
         self._theme_action_group = QActionGroup(self)
         self._theme_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.Exclusive)
+        from xarray_graph.tree import XarrayDataTreeModel
         themes = XarrayDataTreeModel.themes
         current_theme = self._datatree_view.model().theme()
         for theme in themes:
@@ -341,6 +367,9 @@ class XarrayDataTreeViewer(QMainWindow):
     def _initMenubar(self) -> None:
         """ Main menubar.
         """
+        from qtpy.QtGui import QKeySequence
+        from qtpy.QtWidgets import QApplication
+
         menubar = self.menuBar()
 
         self._file_menu = menubar.addMenu('File')
@@ -388,28 +417,35 @@ class XarrayDataTreeViewer(QMainWindow):
         """ Initialize UI elements and layout.
         """
         # selection info
+        from xarray_graph.tree.XarrayDataTreeView import infoTextEdit
         self._info_view = infoTextEdit([])
 
         # selected item attrs
+        from xarray_graph.tree import KeyValueTreeView
         self._attrs_view = KeyValueTreeView()
 
         # selection info and attrs splitter
+        from xarray_graph.widgets import CollapsibleSectionsSplitter
         self._selection_splitter = CollapsibleSectionsSplitter()
         self._selection_splitter.addSection('Info', self._info_view)
         self._selection_splitter.addSection('Attrs', self._attrs_view)
+        self._selection_splitter.setFirstSectionHeaderVisible(False)
 
-        # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
-        self._selection_splitter_wrapper = QWidget()
-        vbox = QVBoxLayout(self._selection_splitter_wrapper)
-        vbox.setContentsMargins(0, 0, 0, 0)
-        vbox.setSpacing(0)
-        vbox.addWidget(self._selection_splitter, stretch=10000)
-        vbox.addStretch(1)
+        # # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
+        # from qtpy.QtWidgets import QWidget, QVBoxLayout
+        # self._selection_splitter_wrapper = QWidget()
+        # vbox = QVBoxLayout(self._selection_splitter_wrapper)
+        # vbox.setContentsMargins(0, 0, 0, 0)
+        # vbox.setSpacing(0)
+        # vbox.addWidget(self._selection_splitter, stretch=10000)
+        # vbox.addStretch(1)
 
         # main layout
+        from qtpy.QtCore import Qt
+        from qtpy.QtWidgets import QSplitter
         hsplitter = QSplitter(Qt.Orientation.Horizontal)
         hsplitter.addWidget(self._datatree_view)
-        hsplitter.addWidget(self._selection_splitter_wrapper)
+        hsplitter.addWidget(self._selection_splitter)
         self.setCentralWidget(hsplitter)
     
     def _updateInfoView(self) -> None:
@@ -417,7 +453,8 @@ class XarrayDataTreeViewer(QMainWindow):
         if not items:
             model: XarrayDataTreeModel = self._datatree_view.model()
             items = [model.rootItem()]
-        data = [item.data() for item in items]    
+        data = [item.data() for item in items]
+        from xarray_graph.tree.XarrayDataTreeView import infoTextEdit
         infoTextEdit(data, text_edit_to_update=self._info_view)
     
     def _updateAttrsView(self) -> None:
@@ -435,6 +472,7 @@ class XarrayDataTreeViewer(QMainWindow):
     
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
     # app.setQuitOnLastWindowClosed(False)
 
@@ -443,6 +481,7 @@ def test_live():
     # dt['eggs'] = dt['EEG'] * 10
     # window.refresh()
 
+    import xarray as xr
     dt = xr.DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
