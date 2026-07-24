@@ -126,6 +126,10 @@ class XarrayDataTreeViewer(QMainWindow):
 
         Repository: https://github.com/marcel-goldschen-ohm/xarray-graph
         PyPI: https://pypi.org/project/xarray-graph
+
+        Version: {XARRAY_GRAPH_VERSION}
+
+        !! Currently in beta development. Please report any issues or feature requests on GitHub.
         """
         text = textwrap.dedent(text).strip()
         
