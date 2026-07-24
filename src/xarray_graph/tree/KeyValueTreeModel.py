@@ -1,14 +1,16 @@
 """ PyQt tree model interface for a key: value mapping (with any amount of nesting).
 """
-
 from __future__ import annotations
-import numpy as np
+
 from qtpy.QtCore import Qt, QPoint, QSize, QModelIndex
-from qtpy.QtGui import QIcon, QColor, QPalette
-from qtpy.QtWidgets import QApplication, QMessageBox
-import qtawesome as qta
-from xarray_graph.tree import KeyValueTreeItem, AbstractTreeModel
+from qtpy.QtGui import QColor
+from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
+from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
 from xarray_graph.utils.xarray_utils import str_to_value, value_to_str
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtGui import QIcon
 
 
 class KeyValueTreeModel(AbstractTreeModel):
@@ -28,6 +30,7 @@ class KeyValueTreeModel(AbstractTreeModel):
         self._is_types_column_visible: bool = True
 
         # icons
+        import qtawesome as qta
         self._dict_icon: QIcon = qta.icon('ph.folder-thin')
         self._list_icon: QIcon = qta.icon('ph.list-numbers-thin')
 
@@ -113,6 +116,7 @@ class KeyValueTreeModel(AbstractTreeModel):
             elif index.column() == 2:
                 value = item.value()
                 vtype = type(value)
+                import numpy as np
                 if vtype is np.ndarray:
                     text = str(value.dtype)
                 else:
@@ -137,6 +141,8 @@ class KeyValueTreeModel(AbstractTreeModel):
             # non-editable items are 50% transparent
             is_editable = self.flags(index) & Qt.ItemFlag.ItemIsEditable
             if not is_editable:
+                from qtpy.QtGui import QPalette
+                from qtpy.QtWidgets import QApplication
                 color: QColor = QApplication.palette().color(QPalette.ColorRole.Text)
                 color.setAlpha(128)
                 return color
@@ -155,6 +161,7 @@ class KeyValueTreeModel(AbstractTreeModel):
             elif index.column() == 1:
                 # edit value
                 old_value = item.value()
+                import numpy as np
                 if isinstance(old_value, np.ndarray):
                     old_vtype = old_value.dtype
                 else:
@@ -163,6 +170,7 @@ class KeyValueTreeModel(AbstractTreeModel):
                 n_old_children: int = len(item.children)
                 n_new_children: int = len(new_value) if type(new_value) in [dict, list] else 0
                 if n_old_children:
+                    from qtpy.QtWidgets import QApplication, QMessageBox
                     parent_widget = QApplication.focusWidget()
                     title = 'Overwrite?'
                     text = f'Overwrite non-empty key:value map "{item.path()}"?'
@@ -188,6 +196,7 @@ class KeyValueTreeModel(AbstractTreeModel):
 
 
 def test_live():
+    import numpy as np
     from qtpy.QtWidgets import QApplication, QTreeView
     app = QApplication()
     data = {

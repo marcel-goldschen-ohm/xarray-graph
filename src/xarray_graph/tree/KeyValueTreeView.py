@@ -3,14 +3,17 @@
 TODO:
 - edit numpy 1d/2d arrays in a table?
 """
-
 from __future__ import annotations
-import numpy as np
+
 from qtpy.QtCore import QPoint, QSize, QModelIndex
-from qtpy.QtGui import QIcon
 from qtpy.QtWidgets import QAction, QAbstractItemView, QMenu
-import qtawesome as qta
-from xarray_graph.tree import KeyValueTreeItem, KeyValueTreeModel, TreeView
+from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
+from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeModel
+from xarray_graph.tree.TreeView import TreeView
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtGui import QIcon
 
 
 class KeyValueTreeView(TreeView):
@@ -21,6 +24,7 @@ class KeyValueTreeView(TreeView):
         TreeView.__init__(self, *args, **kwargs)
 
         # icons
+        import qtawesome as qta
         self._dict_icon: QIcon = qta.icon('ph.folder-thin')
         self._list_icon: QIcon = qta.icon('ph.list-numbers-thin')
 
@@ -202,6 +206,7 @@ class KeyValueTreeView(TreeView):
 
 
 def test_live():
+    import numpy as np
     from qtpy.QtWidgets import QApplication
 
     data = {

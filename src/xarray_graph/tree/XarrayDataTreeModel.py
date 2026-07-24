@@ -3,27 +3,14 @@
 TODO:
 - moveRows: merge items?
 """
-
 from __future__ import annotations
+
 import xarray as xr
 from qtpy.QtCore import Qt, QModelIndex
-from qtpy.QtGui import QIcon, QColor, QPalette
-from qtpy.QtWidgets import (
-    QApplication,
-    QWidget,
-    QMessageBox,
-    QDialog,
-    QVBoxLayout,
-    QTextEdit,
-    QRadioButton,
-    QButtonGroup,
-    QDialogButtonBox,
-    QPushButton,
-    QCheckBox,
-)
-import qtawesome as qta
-from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import XarrayDataTreeItem, AbstractTreeModel
+from qtpy.QtGui import QIcon, QColor
+from qtpy.QtWidgets import QWidget, QDialog
+from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
+from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
 
 
 class XarrayDataTreeModel(AbstractTreeModel):
@@ -87,6 +74,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._root_item = XarrayDataTreeItem(datatree)
 
         # theme
+        from qtpy.QtWidgets import QApplication
         color_scheme = QApplication.instance().styleHints().colorScheme()
         if color_scheme == Qt.ColorScheme.Dark:
             self.setTheme('Dark')
@@ -108,6 +96,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
         # elif color_scheme == Qt.ColorScheme.Light:
         #     pass
 
+        from qtpy.QtWidgets import QApplication
+        from qtpy.QtGui import QPalette
         default_color = QApplication.palette().color(QPalette.ColorRole.Text)
 
         theme = XarrayDataTreeModel.themes[name]
@@ -135,6 +125,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # if theme does not have icons, use default icons
             icons = XarrayDataTreeModel.themes['Default']['icon']
 
+        import qtawesome as qta
         self._node_icon: QIcon = qta.icon(icons['node'], color=self._node_color)
         self._data_var_icon: QIcon = qta.icon(icons['data_var'], color=self._data_var_color)
         self._coord_icon: QIcon = qta.icon(icons['coord'], color=self._coord_color)
@@ -336,6 +327,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     # must have a valid name
                     return False
                 if '/' in new_name:
+                    from qtpy.QtWidgets import QApplication, QMessageBox
                     parent_widget: QWidget = QApplication.focusWidget()
                     title='Invalid Name'
                     text = f'Object names cannot contain path separators "/".'
@@ -352,6 +344,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 parent_node: xr.DataTree = item.parentNode()
                 # ensure no name conflict with existing objects
                 if new_name in parent_node:
+                    from qtpy.QtWidgets import QApplication, QMessageBox
                     parent_widget: QWidget = QApplication.focusWidget()
                     title='Existing Name'
                     text = f'"{new_name}" already exists in parent DataTree.'
@@ -359,7 +352,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return False
                 if item.isIndexCoord():
                     # rename dimension in entire branch
-                    branch_root: xr.DataTree = xarray_utils.aligned_root(parent_node)
+                    from xarray_graph.utils.xarray_utils import aligned_root
+                    branch_root: xr.DataTree = aligned_root(parent_node)
                     branch_root.dataset = branch_root.to_dataset().rename_dims({old_name: new_name})
                     for node in branch_root.descendants:
                         node.dataset = node.to_dataset().swap_dims({old_name: new_name})
@@ -419,6 +413,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return False
 
         if not parent_item.isNode():
+            from qtpy.QtWidgets import QApplication, QMessageBox
             # raise ValueError('Can only insert items into nodes.')
             parent_widget: QWidget = QApplication.focusWidget()
             title = 'Invalid Insertion'
@@ -450,6 +445,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if conflict:
                 if skip_all_conflicts:
                     continue
+                from qtpy.QtWidgets import QApplication
                 parent_widget: QWidget = QApplication.focusWidget()
                 title = 'Conflict'
                 text = conflict
@@ -465,7 +461,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
             name_conflict = None
             item_name = item.name()
             if item_name is None:
-                item_name = xarray_utils.unique_name('Node', parent_keys)
+                from xarray_graph.utils.xarray_utils import unique_name
+                item_name = unique_name('Node', parent_keys)
                 item.setName(item_name)
             if '/' in item_name:
                 name_conflict = f'"{item_name}" is not a valid DataTree name, which cannot contain "/".'
@@ -474,6 +471,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if name_conflict:
                 action = name_conflict_default_action
                 if action is None:
+                    from qtpy.QtWidgets import QApplication
                     parent_widget: QWidget = QApplication.focusWidget()
                     title = 'Name Conflict'
                     text = name_conflict
@@ -500,7 +498,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     # TODO
                     pass
                 elif action == 'Keep Both':
-                    new_name = xarray_utils.unique_name(item_name, parent_keys)
+                    from xarray_graph.utils.xarray_utils import unique_name
+                    new_name = unique_name(item_name, parent_keys)
                     item.setName(new_name)
                 elif action == 'Skip':
                     continue
@@ -588,6 +587,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 if conflict:
                     if skip_all_conflicts:
                         continue
+                    from qtpy.QtWidgets import QApplication
                     parent_widget: QWidget = QApplication.focusWidget()
                     title = 'Conflict'
                     text = conflict
@@ -635,7 +635,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
                         pass
                     elif action == 'Keep Both':
                         # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
-                        new_name = xarray_utils.unique_name(src_item_name, dst_parent_keys + src_parent_keys)
+                        from xarray_graph.utils.xarray_utils import unique_name
+                        new_name = unique_name(src_item_name, dst_parent_keys + src_parent_keys)
                         src_item.setName(new_name)
                     elif action == 'Skip':
                         continue
@@ -649,6 +650,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 if conflict:
                     if skip_all_conflicts:
                         continue
+                    from qtpy.QtWidgets import QApplication
                     parent_widget: QWidget = QApplication.focusWidget()
                     title = 'Conflict'
                     text = conflict
@@ -683,7 +685,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
     def _visibleRowNames(self, item: XarrayDataTreeItem) -> list[str]:
         if not item.isNode():
             return []
-        return xarray_utils.ordered_node_keys(
+        from xarray_graph.utils.xarray_utils import ordered_node_keys
+        return ordered_node_keys(
             item._node,
             include_data_vars=self.isDataVarsVisible(),
             include_coords=self.isCoordsVisible(),
@@ -787,6 +790,8 @@ class ConflictDialog(QDialog):
 
     def __init__(self, parent: QWidget, title: str, text: str):
         super().__init__(parent, modal=True)
+
+        from qtpy.QtWidgets import QVBoxLayout, QTextEdit, QRadioButton, QButtonGroup, QDialogButtonBox, QPushButton
         
         self.setWindowTitle(title)
         vbox = QVBoxLayout(self)
@@ -822,6 +827,8 @@ class NameConflictDialog(QDialog):
 
     def __init__(self, parent: QWidget, title: str, text: str):
         super().__init__(parent, modal=True)
+
+        from qtpy.QtWidgets import QVBoxLayout, QTextEdit, QRadioButton, QButtonGroup, QCheckBox, QDialogButtonBox, QPushButton
         
         self.setWindowTitle(title)
         vbox = QVBoxLayout(self)
@@ -865,6 +872,7 @@ class NameConflictDialog(QDialog):
     def selectedAction(self) -> str:
         """ Return the selected action button's text.
         """
+        from qtpy.QtWidgets import QRadioButton
         button: QRadioButton = self._action_button_group.checkedButton()
         if button is not None:
             return button.text()

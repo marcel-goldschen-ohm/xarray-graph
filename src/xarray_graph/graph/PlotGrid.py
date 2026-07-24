@@ -1,22 +1,22 @@
 """ Grid of plot axes.
 """
-
 from __future__ import annotations
-from qtpy.QtCore import Qt, QTimer
+
+from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor, QResizeEvent
 from qtpy.QtWidgets import QGraphicsGridLayout
-import pyqtgraph as pg
-from xarray_graph.graph import Plot
-import platform
+from pyqtgraph import GraphicsLayoutWidget, PlotItem
+from xarray_graph.graph.Plot import Plot
 
 
-class PlotGrid(pg.GraphicsLayoutWidget):
+class PlotGrid(GraphicsLayoutWidget):
     """ Grid of PlotItems. """
 
     def __init__(self, rows=0, cols=0, *args, **kwargs):
-        pg.GraphicsLayoutWidget.__init__(self, *args, **kwargs)
+        GraphicsLayoutWidget.__init__(self, *args, **kwargs)
 
-        self._graphics_layout: pg.GraphicsLayout = self.ci
+        from pyqtgraph import GraphicsLayout
+        self._graphics_layout: GraphicsLayout = self.ci
 
         self._grid_layout: QGraphicsGridLayout = self.ci.layout
         self._grid_layout.setContentsMargins(0, 10, 10, 0)
@@ -25,6 +25,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         # MATLAB color scheme
         self.setBackground(QColor(240, 240, 240))
 
+        import platform
         if platform.system() == 'Darwin':
             # Fix error message due to touch events on MacOS trackpad.
             # !!! Warning: This may break touch events on a touch screen or mobile device.
@@ -49,7 +50,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         for row in range(rows):
             for col in range(cols):
                 item = self.getItem(row, col)
-                if not issubclass(type(item), pg.PlotItem):
+                if not issubclass(type(item), PlotItem):
                     if item:
                         self.removeItem(item)
                     plot = plotType()
@@ -67,8 +68,8 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         if self.hasRegularLayout():
             self.applyRegularLayout()
     
-    def plots(self) -> list[pg.PlotItem]:
-        return [item for item in self.items() if issubclass(type(item), pg.PlotItem)]
+    def plots(self) -> list[PlotItem]:
+        return [item for item in self.items() if issubclass(type(item), PlotItem)]
     
     def hasRegularLayout(self) -> bool:
         return getattr(self, '_hasRegularLayout', False)
@@ -85,7 +86,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         n = 0
         for col in range(self.columnCount()):
             item = self.getItem(0, col)
-            if issubclass(type(item), pg.PlotItem):
+            if issubclass(type(item), PlotItem):
                 viewWidth += item.getViewBox().width()
                 n += 1
         viewWidth /= n
@@ -95,7 +96,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         n = 0
         for row in range(self.rowCount()):
             item = self.getItem(row, 0)
-            if issubclass(type(item), pg.PlotItem):
+            if issubclass(type(item), PlotItem):
                 viewHeight += item.getViewBox().height()
                 n += 1
         viewHeight /= n
@@ -104,7 +105,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
                 plot = self.getItem(row, col)
-                if issubclass(type(plot), pg.PlotItem):
+                if issubclass(type(plot), PlotItem):
                     xaxis = plot.getAxis('bottom')
                     yaxis = plot.getAxis('left')
                     plot.setPreferredWidth(viewWidth + yaxis.width() if yaxis.isVisible() else viewWidth)
@@ -127,7 +128,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
                 plot = self.getItem(row, col)
-                if not issubclass(type(plot), pg.PlotItem):
+                if not issubclass(type(plot), PlotItem):
                     continue
                 xaxis = plot.getAxis('bottom')
                 yaxis = plot.getAxis('left')
@@ -148,6 +149,7 @@ class PlotGrid(pg.GraphicsLayoutWidget):
             self.applyRegularLayout()
 
 def test_live():
+    from qtpy.QtCore import QTimer
     from qtpy.QtWidgets import QApplication
     app = QApplication()
     grid = PlotGrid(3, 4)

@@ -1,16 +1,16 @@
 """ LinearRegionItem with context menu, optional text label, and style dialog.
 """
-
 from __future__ import annotations
+
 from qtpy.QtCore import Qt, Signal, QPoint
 from qtpy.QtGui import QColor, QPen, QMouseEvent
 from qtpy.QtWidgets import QMenu
-import pyqtgraph as pg
+from pyqtgraph import InfiniteLine, mkPen
 # from xarray_graph.utils.color import ColorType, toQColor, toColorStr
-# from xarray_graph.widgets import ColorButton
+# from xarray_graph.widgets.ColorButton import ColorButton
 
 
-class InfiniteLine(pg.InfiniteLine):
+class InfLine(InfiniteLine):
     """ InfiniteLine with context menu, optional text label, and style dialog.
     
     self.sigPositionChangeFinished is emitted when the item is moved.
@@ -24,10 +24,10 @@ class InfiniteLine(pg.InfiniteLine):
         if 'angle' not in kwargs:
             kwargs['angle'] = 90
         if 'pen' not in kwargs:
-            kwargs['pen'] = pg.mkPen(QColor(237, 135, 131), width=1)
+            kwargs['pen'] = mkPen(QColor(237, 135, 131), width=1)
         if 'hoverPen' not in kwargs:
-            kwargs['hoverPen'] = pg.mkPen(QColor(255, 0, 0), width=2)
-        pg.InfiniteLine.__init__(self, *args, **kwargs)
+            kwargs['hoverPen'] = mkPen(QColor(255, 0, 0), width=2)
+        InfiniteLine.__init__(self, *args, **kwargs)
 
         # self._textLabelItem: pg.InfLineLabel = pg.InfLineLabel(self.lines[0], text='', movable=True, position=1, anchors=[(0,0), (0,0)])
         # self._textLabelItem.setVisible(False)
@@ -294,20 +294,20 @@ class InfiniteLine(pg.InfiniteLine):
     #     self.sigEditingFinished.emit(self)
 
 
-class VLine(InfiniteLine):
+class VLine(InfLine):
     """ Vertical InfiniteLine. """
 
     def __init__(self, *args, **kwargs):
         kwargs['angle'] = 90
-        InfiniteLine.__init__(self, *args, **kwargs)
+        InfLine.__init__(self, *args, **kwargs)
 
 
-class HLine(InfiniteLine):
+class HLine(InfLine):
     """ Horizontal InfiniteLine. """
 
     def __init__(self, *args, **kwargs):
         kwargs['angle'] = 0
-        InfiniteLine.__init__(self, *args, **kwargs)
+        InfLine.__init__(self, *args, **kwargs)
 
 
 # class AxisRegionPanel(QWidget):
@@ -579,8 +579,9 @@ def test_live():
     from qtpy.QtWidgets import QApplication
     app = QApplication()
 
-    ui = pg.PlotWidget()
-    line = InfiniteLine(pos=0.5, pen=pg.mkPen('r', width=2), hoverPen=pg.mkPen('g', width=3))
+    from pyqtgraph import PlotWidget
+    ui = PlotWidget()
+    line = InfLine(pos=0.5, pen=mkPen('r', width=2), hoverPen=mkPen('g', width=3))
     ui.addItem(line)
     ui.show()
 

@@ -1,16 +1,16 @@
 """ ViewBox with matlab color scheme and context menu for drawing ROIs and events.
 """
-
 from __future__ import annotations
+
 from qtpy.QtCore import Qt, Signal, QTimer
 from qtpy.QtGui import QColor, QMouseEvent
 from qtpy.QtWidgets import QGraphicsObject
-import numpy as np
-import pyqtgraph as pg
-from xarray_graph.graph import VLine, HLine, XAxisRegion, YAxisRegion#, PlotCurve
+from pyqtgraph import ViewBox, RectROI, EllipseROI, CircleROI, LineSegmentROI, PlotDataItem
+from xarray_graph.graph.AxisRegion import XAxisRegion, YAxisRegion
+from xarray_graph.graph.InfLine import VLine, HLine
 
 
-class View(pg.ViewBox):
+class View(ViewBox):
     """ ViewBox with context menu for drawing ROIs and events. """
 
     sigStartedDrawingItems = Signal()
@@ -18,7 +18,7 @@ class View(pg.ViewBox):
     sigFinishedDrawingItems = Signal()
 
     def __init__(self, *args, **kwargs):
-        pg.ViewBox.__init__(self, *args, **kwargs)
+        ViewBox.__init__(self, *args, **kwargs)
 
         self._lastMousePressPosInAxesCoords = {}  # dict keys are mouse buttons
         self._drawingItemsOfType = None
@@ -108,11 +108,12 @@ class View(pg.ViewBox):
                     newItem = VLine(pos=posInAxesCoords.x())
                 elif self._drawingItemsOfType == HLine:
                     newItem = HLine(pos=posInAxesCoords.y())
-                elif self._drawingItemsOfType in [pg.RectROI, pg.EllipseROI, pg.CircleROI, pg.LineSegmentROI]:
+                elif self._drawingItemsOfType in [RectROI, EllipseROI, CircleROI, LineSegmentROI]:
                     newItem = self._drawingItemsOfType(pos=posInAxesCoords, size=[0, 0], invertible=True)
-                elif issubclass(self._drawingItemsOfType, pg.PlotDataItem):
-                    if isinstance(self._itemBeingDrawn, pg.PlotDataItem):
+                elif issubclass(self._drawingItemsOfType, PlotDataItem):
+                    if isinstance(self._itemBeingDrawn, PlotDataItem):
                         # add point to existing Graph
+                        import numpy as np
                         x, y = self._itemBeingDrawn.getOriginalDataset()
                         x = np.append(x, posInAxesCoords.x())
                         y = np.append(y, posInAxesCoords.y())
@@ -129,7 +130,7 @@ class View(pg.ViewBox):
                     return
         
         # default if event was not handled above
-        pg.ViewBox.mousePressEvent(self, event)
+        ViewBox.mousePressEvent(self, event)
     
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -141,7 +142,7 @@ class View(pg.ViewBox):
                 return
         
         # default if event was not handled above
-        pg.ViewBox.mouseReleaseEvent(self, event)
+        ViewBox.mouseReleaseEvent(self, event)
     
     def mouseMoveEvent(self, event: QMouseEvent):
         if event.buttons() & Qt.MouseButton.LeftButton:
@@ -169,7 +170,7 @@ class View(pg.ViewBox):
                 return
         
         # default if event was not handled above
-        pg.ViewBox.mouseMoveEvent(self, event)
+        ViewBox.mouseMoveEvent(self, event)
     
     # def listItemsOfType(self, itemType):
     #     return [item for item in self.allChildren() if isinstance(item, itemType)]
@@ -198,18 +199,19 @@ class View(pg.ViewBox):
 
 
 def test_live():
-    import numpy as np
-    from xarray_graph.graph import Plot, Figure
     from qtpy.QtWidgets import QApplication
     app = QApplication()
 
+    from xarray_graph.graph.Figure import Figure
     fig = Figure()
     print(fig)
+    from xarray_graph.graph.Plot import Plot
     plot: Plot = fig.getPlotItem()
     print(plot)
     view: View = plot.getViewBox()
     print(view)
-    item = pg.PlotDataItem(y=np.random.randn(1000))
+    import numpy as np
+    item = PlotDataItem(y=np.random.randn(1000))
     print(item)
     plot.addItem(item)
     plot.setWindowTitle('pyqtgraph-tools')

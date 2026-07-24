@@ -2,15 +2,16 @@
 """
 
 from __future__ import annotations
+
 from qtpy.QtCore import Qt, Signal, QPoint
 from qtpy.QtGui import QColor, QPen, QFont, QMouseEvent
 from qtpy.QtWidgets import QMenu
-import pyqtgraph as pg
+from pyqtgraph import LinearRegionItem, InfLineLabel, mkPen, mkBrush
 # from xarray_graph.utils.color import ColorType, toQColor, toColorStr
-# from xarray_graph.widgets import ColorButton
+# from xarray_graph.widgets.ColorButton import ColorButton
 
 
-class AxisRegion(pg.LinearRegionItem):
+class AxisRegion(LinearRegionItem):
     """ LinearRegionItem with context menu, optional text label, and style dialog.
     
     self.sigRegionChangeFinished is emitted when the item is moved or resized.
@@ -24,18 +25,18 @@ class AxisRegion(pg.LinearRegionItem):
         if 'orientation' not in kwargs:
             kwargs['orientation'] = 'vertical'
         if 'brush' not in kwargs:
-            kwargs['brush'] = pg.mkBrush(QColor(237, 135, 131, 51))
+            kwargs['brush'] = mkBrush(QColor(237, 135, 131, 51))
         if 'hoverBrush' not in kwargs:
-            kwargs['hoverBrush'] = pg.mkBrush(QColor(237, 135, 131, 128))
+            kwargs['hoverBrush'] = mkBrush(QColor(237, 135, 131, 128))
         if 'pen' not in kwargs:
-            kwargs['pen'] = pg.mkPen(QColor(237, 135, 131), width=1)
+            kwargs['pen'] = mkPen(QColor(237, 135, 131), width=1)
         if 'hoverPen' not in kwargs:
-            kwargs['hoverPen'] = pg.mkPen(QColor(255, 0, 0), width=2)
+            kwargs['hoverPen'] = mkPen(QColor(255, 0, 0), width=2)
         if 'swapMode' not in kwargs:
             kwargs['swapMode'] = 'push'  # keeps label on left side
-        pg.LinearRegionItem.__init__(self, *args, **kwargs)
+        LinearRegionItem.__init__(self, *args, **kwargs)
 
-        self._textLabelItem: pg.InfLineLabel = pg.InfLineLabel(self.lines[0], text='', movable=True, position=1, anchors=[(0,0), (0,0)])
+        self._textLabelItem: InfLineLabel = InfLineLabel(self.lines[0], text='', movable=True, position=1, anchors=[(0,0), (0,0)])
         self._textLabelItem.setVisible(False)
         self.setFontColor(QColor.fromRgbF(0.15, 0.15, 0.15))
 

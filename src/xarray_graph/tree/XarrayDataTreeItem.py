@@ -3,13 +3,11 @@
 TODO:
 - moveRows: merge items?
 """
-
 from __future__ import annotations
+
 from enum import Enum
-from copy import deepcopy
 import xarray as xr
-from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import AbstractTreeItem
+from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
 class XarrayDataTreeItem(AbstractTreeItem):
@@ -88,7 +86,8 @@ class XarrayDataTreeItem(AbstractTreeItem):
             return
         self.children = []
         if include_coords:
-            for coord in xarray_utils.ordered_coords_iter(self._node, include_inherited=include_inherited_coords):
+            from xarray_graph.utils.xarray_utils import ordered_coords_iter
+            for coord in ordered_coords_iter(self._node, include_inherited=include_inherited_coords):
                 XarrayDataTreeItem(self._node, coord.name, parent=self)
         if include_data_vars:
             for name in self._node.data_vars:
@@ -126,7 +125,8 @@ class XarrayDataTreeItem(AbstractTreeItem):
         
         if self.isIndexCoord():
             # rename dimension in entire branch
-            branch_root: xr.DataTree = xarray_utils.aligned_root(parent_node)
+            from xarray_graph.utils.xarray_utils import aligned_root
+            branch_root: xr.DataTree = aligned_root(parent_node)
             branch_root.dataset = branch_root.to_dataset().rename_dims({old_name: name})
             for node in branch_root.descendants:
                 node.dataset = node.to_dataset().swap_dims({old_name: name})
@@ -249,6 +249,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         """ Returns an orphaned copy of this item.
         """
         # copy data as new datatree
+        from copy import deepcopy
         if self.isNode():
             node_copy = self._node.copy(inherit=True, deep=deep)
             item_copy = XarrayDataTreeItem(node_copy)

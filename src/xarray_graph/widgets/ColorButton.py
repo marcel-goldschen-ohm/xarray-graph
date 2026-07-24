@@ -2,10 +2,9 @@
 """
 
 from qtpy.QtCore import Signal
-from qtpy.QtGui import QColor, QIcon
-from qtpy.QtWidgets import QToolButton, QColorDialog
-import qtawesome as qta
-from xarray_graph.utils.color import ColorType, toQColor
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import QToolButton
+from xarray_graph.utils.color import ColorType
 
 
 class ColorButton(QToolButton):
@@ -26,9 +25,12 @@ class ColorButton(QToolButton):
         if color is None:
             color: QColor = QColor('transparent')
             self.setStyleSheet(f'background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()}); border: 1px solid black;')
-            self.setIcon(qta.icon('ri.question-mark'))
+            from qtawesome import icon as qta_icon
+            self.setIcon(qta_icon('ri.question-mark'))
             self._color = None
             return
+        from qtpy.QtGui import QIcon
+        from xarray_graph.utils.color import toQColor
         color: QColor = toQColor(color)
         self.setStyleSheet(f'background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()}); border: 1px solid black;')
         self.setIcon(QIcon())
@@ -39,7 +41,8 @@ class ColorButton(QToolButton):
         color: QColor = self.color()
         if color is None:
             color = QColor('white')
-        color = QColorDialog.getColor(color, self, "Select Color", options=QColorDialog.ShowAlphaChannel)
+        from qtpy.QtWidgets import QColorDialog
+        color = QColorDialog.getColor(color, self, "Select Color", options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if color.isValid():
             self.setColor(color)
 

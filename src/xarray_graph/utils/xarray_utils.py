@@ -1,11 +1,10 @@
 """ Utility functions for Xarray.
 """
 
-import builtins
 from collections.abc import Iterator
 import numpy as np
 import xarray as xr
-from pint import UnitRegistry, Quantity
+from pint import UnitRegistry
 # from ast import literal_eval
 # from asteval import Interpreter
 
@@ -116,6 +115,7 @@ def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
 def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
     """ Use pint to convert input data into base units.
     """
+    from pint import Quantity
     if isinstance(data, xr.DataArray):
         if 'units' not in data.attrs:
             return data
@@ -251,6 +251,7 @@ def str_to_value(text: str, default_type = None) -> bool | int | float | str | t
             return values
     if dtype:
         # if dtype is specified but not a container, try to convert to that type
+        import builtins
         py_dtype = getattr(builtins, dtype, None)
         if py_dtype:
             # if dtype is a built-in type, use it directly

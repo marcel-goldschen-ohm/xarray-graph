@@ -1,12 +1,10 @@
 """ PySide/PyQt multi-value spin box.
 """
-
 from __future__ import annotations
-from qtpy.QtCore import Qt, Signal, Slot
-from qtpy.QtGui import QValidator
-from qtpy.QtWidgets import QAbstractSpinBox, QSizePolicy, QApplication
-import re
+
 import numpy as np
+from qtpy.QtCore import Signal, Slot
+from qtpy.QtWidgets import QAbstractSpinBox
 
 
 class MultiValueSpinBox(QAbstractSpinBox):
@@ -38,7 +36,8 @@ class MultiValueSpinBox(QAbstractSpinBox):
         # initialize with default values
         self.setIndices(self._indices)
 
-        self.setSizePolicy(QSizePolicy.Expanding, self.sizePolicy().verticalPolicy())
+        from qtpy.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, self.sizePolicy().verticalPolicy())
 
         self.editingFinished.connect(self.onTextEdited)
 
@@ -141,6 +140,7 @@ class MultiValueSpinBox(QAbstractSpinBox):
             return self._indexed_values
         if text == ':':
             return self._indexed_values
+        import re
         fields = re.split(r'[,\s]+', text)
         values = []
         dtype = self._indexed_values.dtype.type
@@ -251,8 +251,10 @@ class MultiValueSpinBox(QAbstractSpinBox):
             index = min(max(min_index, indices[0] + steps), max_index)
             indices = [index]
         else:
+            from qtpy.QtCore import Qt
+            from qtpy.QtWidgets import QApplication
             modifiers = QApplication.keyboardModifiers()
-            if modifiers & Qt.ShiftModifier:
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
                 # page up/down
                 num_indices = len(indices)
                 if steps >= 0:
@@ -272,8 +274,9 @@ class MultiValueSpinBox(QAbstractSpinBox):
         # try:
         #     self.values_from_text(self.lineEdit().text(), validate=True)
         # except:
-        #     return QValidator.Intermediate, text, pos
-        return QValidator.Acceptable, text, pos
+        #     return QValidator.State.Intermediate, text, pos
+        from qtpy.QtGui import QValidator
+        return QValidator.State.Acceptable, text, pos
 
     
 def test_live():

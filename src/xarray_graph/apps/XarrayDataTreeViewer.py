@@ -8,7 +8,7 @@ from __future__ import annotations
 # import time
 # t0 = time.time()
 from qtpy.QtWidgets import QMainWindow
-from xarray_graph.utils import WindowManager
+from xarray_graph.utils.WindowManager import WindowManager
 from importlib.metadata import version
 # print(f'XarrayDataTreeViewer.py imports took {time.time() - t0:.3f} seconds')
 
@@ -18,8 +18,9 @@ if TYPE_CHECKING:
     import xarray as xr
     from qtpy.QtCore import QSize
     from qtpy.QtWidgets import QWidget
-    from xarray_graph.utils import WindowManager, IPythonConsole
-    from xarray_graph.tree import XarrayDataTreeItem, XarrayDataTreeModel
+    from xarray_graph.utils.IPythonConsole import IPythonConsole
+    from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
+    from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 
 
 # version info (stored in metadata in case needed later)
@@ -44,7 +45,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # global console
         if self.console is None:
-            from xarray_graph.utils import IPythonConsole
+            from xarray_graph.utils.IPythonConsole import IPythonConsole
             console = IPythonConsole()
             console.execute('import numpy as np', hidden=True)
             console.execute('import xarray as xr', hidden=True)
@@ -66,7 +67,8 @@ class XarrayDataTreeViewer(QMainWindow):
             type(self).console = console
         
         # datatree
-        from xarray_graph.tree import XarrayDataTreeView, XarrayDataTreeModel
+        from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
+        from xarray_graph.tree.XarrayDataTreeView import XarrayDataTreeView
         self._datatree_view = XarrayDataTreeView()
         model = XarrayDataTreeModel()
         self._datatree_view.setModel(model)
@@ -160,7 +162,7 @@ class XarrayDataTreeViewer(QMainWindow):
         
         try:
             from pathlib import Path
-            from xarray_graph.io import open_datatree
+            from xarray_graph.io.io import open_datatree
             if isinstance(filepath, (list, tuple)):
                 # combine multiple files as first-level groups in single datatree
                 import xarray as xr
@@ -208,7 +210,7 @@ class XarrayDataTreeViewer(QMainWindow):
         datatree: xr.DataTree = self.datatree()
         datatree.attrs[VERSION_KEY] = XARRAY_GRAPH_VERSION
         try:
-            from xarray_graph.io import save_datatree
+            from xarray_graph.io.io import save_datatree
             save_datatree(datatree, filepath, filetype=filetype)
             self._filepath = filepath
             self.setWindowTitle(filepath.stem)
@@ -352,7 +354,7 @@ class XarrayDataTreeViewer(QMainWindow):
         
         self._theme_action_group = QActionGroup(self)
         self._theme_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.Exclusive)
-        from xarray_graph.tree import XarrayDataTreeModel
+        from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
         themes = XarrayDataTreeModel.themes
         current_theme = self._datatree_view.model().theme()
         for theme in themes:
@@ -421,11 +423,11 @@ class XarrayDataTreeViewer(QMainWindow):
         self._info_view = infoTextEdit([])
 
         # selected item attrs
-        from xarray_graph.tree import KeyValueTreeView
+        from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
         self._attrs_view = KeyValueTreeView()
 
         # selection info and attrs splitter
-        from xarray_graph.widgets import CollapsibleSectionsSplitter
+        from xarray_graph.widgets.CollapsibleSectionsSplitter import CollapsibleSectionsSplitter
         self._selection_splitter = CollapsibleSectionsSplitter()
         self._selection_splitter.addSection('Info', self._info_view)
         self._selection_splitter.addSection('Attrs', self._attrs_view)

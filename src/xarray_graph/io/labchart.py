@@ -1,7 +1,6 @@
 
 from pathlib import Path
 import numpy as np
-import scipy as sp
 import xarray as xr
 
 
@@ -10,14 +9,14 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
 
     !! This loader is specific for TEVC recordings.
     """
-    
     # Import within function to avoid error due to circular dependency
     # as XarrayGraph also imports this function.
     # Putting the import within the function delays this import until use,
     # which means XarrayGraph will already have been imported.
     from xarray_graph.apps.XarrayGraph import ROI_KEY, NOTES_KEY
     
-    matdict = sp.io.loadmat(str(filepath), simplify_cells=True)
+    from scipy.io import loadmat
+    matdict = loadmat(str(filepath), simplify_cells=True)
     # print(matdict)
 
     current = matdict['current']

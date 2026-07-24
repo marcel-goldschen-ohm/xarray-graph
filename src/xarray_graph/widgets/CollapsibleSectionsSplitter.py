@@ -3,22 +3,16 @@
 TODO:
 - expand/collapse in response to dragging handle?
 """
-
 from __future__ import annotations
-import time, math
-from qtpy.QtCore import Signal, Qt, QPoint, QRect, QSize
-from qtpy.QtGui import QMouseEvent, QPaintEvent, QIcon, QPixmap
-from qtpy.QtWidgets import (
-    QSplitter,
-    QToolButton,
-    QStyleOptionToolButton,
-    QWidget,
-    QSizePolicy,
-    QSplitterHandle,
-    QStylePainter,
-    QStyle,
-)
-import qtawesome as qta
+
+from qtpy.QtCore import Signal
+from qtpy.QtWidgets import QSplitter, QSplitterHandle
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtCore import Qt
+    from qtpy.QtGui import QMouseEvent, QPaintEvent
+    from qtpy.QtWidgets import QWidget
 
 
 class CollapsibleSectionsSplitter(QSplitter):
@@ -26,14 +20,17 @@ class CollapsibleSectionsSplitter(QSplitter):
     sectionIsExpandedChanged = Signal(int, bool)  # index, expanded
 
     def __init__(self):
+        from qtpy.QtCore import Qt
         super().__init__(orientation=Qt.Orientation.Vertical)
 
         # set handle width to height of QToolButton with text beside icon
+        from qtpy.QtWidgets import QToolButton, QStyleOptionToolButton
         button = QToolButton(toolButtonStyle=Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         opt = QStyleOptionToolButton()
         button.initStyleOption(opt)
         self.setHandleWidth(opt.fontMetrics.height())
 
+        from qtpy.QtWidgets import QWidget, QSizePolicy
         self._begin_spacer = QWidget()
         self._begin_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._begin_spacer.setFixedHeight(0)
@@ -43,10 +40,11 @@ class CollapsibleSectionsSplitter(QSplitter):
         self._titles: list[str] = [None]
         self._spacers: list[QWidget] = [self._begin_spacer]
 
-        self._collapsed_icon = qta.icon('msc.chevron-right')
-        self._expanded_icon = qta.icon('msc.chevron-down')
-        self._focus_icon = qta.icon('ri.fullscreen-line')
-        self._unfocus_icon = qta.icon('ri.fullscreen-exit-line')
+        from qtawesome import icon as qta_icon
+        self._collapsed_icon = qta_icon('msc.chevron-right')
+        self._expanded_icon = qta_icon('msc.chevron-down')
+        self._focus_icon = qta_icon('ri.fullscreen-line')
+        self._unfocus_icon = qta_icon('ri.fullscreen-exit-line')
     
     def addSection(self, title: str, widget: QWidget):
         self.insertSection(self.count(), title, widget)
@@ -57,6 +55,7 @@ class CollapsibleSectionsSplitter(QSplitter):
         
         self.insertWidget(index, widget)
 
+        from qtpy.QtWidgets import QWidget, QSizePolicy
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         spacer.setFixedHeight(0)
@@ -80,10 +79,11 @@ class CollapsibleSectionsSplitter(QSplitter):
         if isinstance(index_or_title_or_widget, int):
             index: int = index_or_title_or_widget
             return index
-        elif isinstance(index_or_title_or_widget, str):
+        if isinstance(index_or_title_or_widget, str):
             title: str = index_or_title_or_widget
             return self._titles.index(title)
-        elif isinstance(index_or_title_or_widget, QWidget):
+        from qtpy.QtWidgets import QWidget
+        if isinstance(index_or_title_or_widget, QWidget):
             widget: QWidget = index_or_title_or_widget
             return self._widgets.index(widget)
     
@@ -185,6 +185,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
     
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
+            from qtpy.QtCore import QRect
             focus_icon_rect: QRect = QRect(self.width() - self.height(), 0, self.height(), self.height())
             if focus_icon_rect.contains(event.pos()):
                 # toggle fullscreen of section
@@ -202,6 +203,8 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                 self._last_press_time_sec = None
                 return
             # store press position and time
+            import time
+            from qtpy.QtCore import QPoint
             self._last_press_position: QPoint = event.pos()
             self._last_press_time_sec: float = time.time()
         super().mousePressEvent(event)
@@ -209,6 +212,8 @@ class CollapsibleSectionsHandle(QSplitterHandle):
     def mouseMoveEvent(self, event: QMouseEvent):
         super().mouseMoveEvent(event)
         # check if mouse over a button-like icon in handle and set cursor accordingly
+        from qtpy.QtCore import Qt
+        from qtpy.QtCore import QRect
         expanded_icon_rect: QRect = QRect(0, 0, self.height(), self.height())
         focus_icon_rect: QRect = QRect(self.width() - self.height(), 0, self.height(), self.height())
         if expanded_icon_rect.contains(event.pos()):
@@ -220,11 +225,14 @@ class CollapsibleSectionsHandle(QSplitterHandle):
     
     def mouseReleaseEvent(self, event: QMouseEvent):
         super().mouseReleaseEvent(event)
+        from qtpy.QtCore import Qt
         if event.button() == Qt.MouseButton.LeftButton:
             # if release is close to press in both space and time, treat as click
             has_last_press_time: bool = hasattr(self, '_last_press_time_sec') and self._last_press_time_sec is not None
             if not has_last_press_time:
                 return
+            import time, math
+            from qtpy.QtCore import QPoint
             delta_time_sec: float = time.time() - self._last_press_time_sec
             if delta_time_sec <= self._click_time_sec:
                 delta_position: QPoint = event.pos() - self._last_press_position
@@ -247,19 +255,24 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         splitter: CollapsibleSectionsSplitter = self.splitter()
         index: int = splitter.indexOf(self)
         title: str = splitter._titles[index]
+        from qtpy.QtCore import QRect
         rect: QRect = self.rect()
 
         # QToolButton style options
+        from qtpy.QtWidgets import QToolButton, QStyleOptionToolButton
         button = QToolButton()
         opt = QStyleOptionToolButton()
         button.initStyleOption(opt)
         opt.rect = rect
 
         # QToolButton background
+        from qtpy.QtWidgets import QStylePainter, QStyle
         painter = QStylePainter(self)
         painter.drawComplexControl(QStyle.CC_ToolButton, opt)
 
         # expand/collapse icon
+        from qtpy.QtCore import QSize
+        from qtpy.QtGui import QIcon, QPixmap
         is_expanded: bool = splitter.widget(index) is splitter._widgets[index]
         if is_expanded:
             icon: QIcon = splitter._expanded_icon
@@ -280,6 +293,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         painter.drawPixmap(rect.right() - rect.height(), rect.y(), pixmap)
 
         # title
+        from qtpy.QtCore import Qt
         font = painter.font()
         font.setPixelSize(rect.height() - 4)
         painter.setFont(font)

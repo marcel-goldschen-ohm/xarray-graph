@@ -1,10 +1,8 @@
 """ PyQt tree item for annotation dictionaries.
 """
-
 from __future__ import annotations
-from xarray_graph.tree import AbstractTreeItem
-from xarray_graph.utils import annotation_label
-from copy import deepcopy
+
+from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
 class AnnotationTreeItem(AbstractTreeItem):
@@ -67,6 +65,7 @@ class AnnotationTreeItem(AbstractTreeItem):
         if self.isGroup():
             return str(self.group() or '')
         elif self.isAnnotation():
+            from xarray_graph.utils.Annotation import annotation_label
             return annotation_label(self._data)
     
     def setName(self, name: str) -> None:
@@ -141,6 +140,7 @@ class AnnotationTreeItem(AbstractTreeItem):
     def copy(self) -> AnnotationTreeItem:
         """ Returns an orphaned copy of this item.
         """
+        from copy import deepcopy
         item_copy = AnnotationTreeItem(deepcopy(self._data), group=self._group, parent=None)
         item_copy.rebuildSubtree()
         return item_copy

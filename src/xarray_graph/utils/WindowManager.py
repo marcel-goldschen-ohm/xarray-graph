@@ -4,12 +4,13 @@ TODO:
 - tile windows
 - pile windows
 """
-
 from __future__ import annotations
-from qtpy.QtCore import QObject, QEvent, Slot, QSignalBlocker, QTimer
-from qtpy.QtGui import QAction
-from qtpy.QtWidgets import QMainWindow, QMenu, QActionGroup, QApplication
-import qtawesome as qta
+
+from qtpy.QtCore import QObject, Slot, QEvent
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtWidgets import QMainWindow, QMenu
 
 
 class WindowManager(QObject):
@@ -44,6 +45,7 @@ class WindowManager(QObject):
         return window_dict[key]
     
     def activeWindow(self) -> QMainWindow | None:
+        from qtpy.QtWidgets import QApplication
         active_window: QMainWindow = QApplication.instance().activeWindow()
         if active_window in self.windows():
             return active_window
@@ -74,6 +76,7 @@ class WindowManager(QObject):
         window.installEventFilter(self.windowEventFilter())
         if self.manageWindowMenus():
             window._window_menu = self.createWindowMenu()
+            from qtpy.QtCore import QTimer
             QTimer.singleShot(0, self.updateAllWindowMenus)
     
     def addWindow(self, window: QMainWindow) -> None:
@@ -88,6 +91,7 @@ class WindowManager(QObject):
         window.removeEventFilter(self.windowEventFilter())
         windows.remove(window)
         if self.manageWindowMenus():
+            from qtpy.QtCore import QTimer
             QTimer.singleShot(0, self.updateAllWindowMenus)
     
     def clear(self) -> None:
@@ -117,15 +121,19 @@ class WindowManager(QObject):
     def setManageWindowMenus(self, manage_menus: bool) -> None:
         self._manage_window_menus = manage_menus
         if manage_menus:
+            from qtpy.QtCore import QTimer
             QTimer.singleShot(0, self.updateAllWindowMenus)
     
     def createWindowMenu(self) -> QMenu:
+        from qtpy.QtWidgets import QMenu, QAction, QActionGroup
+        from qtawesome import icon
+
         menu = QMenu('Window')
 
         bring_all_to_front_action = QAction(
             parent=menu,
             text='Bring All to Front',
-            icon=qta.icon('ph.stack'),
+            icon=icon('ph.stack'),
             iconVisibleInMenu=True,
             triggered=lambda checked, mgr=self: mgr.bringAllVisibleWindowsToFront()
         )
@@ -142,6 +150,9 @@ class WindowManager(QObject):
     def updateWindowMenu(self, menu: QMenu) -> None:
         """ Update window menu with list of managed windows.
         """
+        from qtpy.QtWidgets import QApplication, QAction, QActionGroup
+        from qtawesome import icon
+
         active_window: QMainWindow = QApplication.instance().activeWindow()
         
         # clear old window list from menu
@@ -161,7 +172,7 @@ class WindowManager(QObject):
         for window in self.windows():
             action = QAction(
                 text=window.windowTitle() or 'Untitled',
-                icon=qta.icon('ph.app-window'),
+                icon=icon('ph.app-window'),
                 checkable=True,
                 checked=window is active_window,
                 triggered=lambda checked, mgr=self, window=window: mgr.selectWindow(window))
@@ -182,6 +193,7 @@ class WindowManager(QObject):
                 window.raise_()
         
         # ensure active window is on top
+        from qtpy.QtWidgets import QApplication
         active_window: QMainWindow = QApplication.instance().activeWindow()
         if active_window in self.windows():
             active_window.raise_()
@@ -194,14 +206,17 @@ class WindowManager(QObject):
             other_titles = [win.windowTitle() for win in other_windows]
             unique_title = self.uniqueName(title, other_titles)
             if unique_title != title:
+                from qtpy.QtCore import QSignalBlocker
                 with QSignalBlocker(window):
                     window.setWindowTitle(unique_title)
         if self.manageWindowMenus():
+            from qtpy.QtCore import QTimer
             QTimer.singleShot(0, self.updateAllWindowMenus)
 
     @Slot()
     def activeWindowChanged(self) -> None:
         if self.manageWindowMenus():
+            from qtpy.QtCore import QTimer
             QTimer.singleShot(0, self.updateAllWindowMenus)
     
     @staticmethod
@@ -223,6 +238,7 @@ class WindowEventFilter(QObject):
 
     def __init__(self, window_manager: WindowManager):
         super().__init__()
+        from qtpy.QtCore import QEvent
         self._window_manager = window_manager
 
     def eventFilter(self, window: QMainWindow, event: QEvent):
@@ -239,6 +255,7 @@ class WindowEventFilter(QObject):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
     # app.setQuitOnLastWindowClosed(False)
     mgr = WindowManager()

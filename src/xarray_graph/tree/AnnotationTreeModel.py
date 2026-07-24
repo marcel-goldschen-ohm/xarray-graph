@@ -4,12 +4,12 @@ Annotations are dicts which can be grouped via their 'group' key.
 
 The model accepts a flat list of annotations from which a nested group tree structure is derived.
 """
-
 from __future__ import annotations
+
 from qtpy.QtCore import Qt, QModelIndex
-from qtpy.QtWidgets import QWidget, QApplication, QMessageBox
-import qtawesome as qta
-from xarray_graph.tree import AbstractTreeModel, AnnotationTreeItem
+from qtpy.QtWidgets import QWidget
+from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
+from xarray_graph.tree.AnnotationTreeItem import AnnotationTreeItem
 
 
 class AnnotationTreeModel(AbstractTreeModel):
@@ -78,6 +78,7 @@ class AnnotationTreeModel(AbstractTreeModel):
                 return item.name()
         if role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
+                import qtawesome as qta
                 item: AnnotationTreeItem = self.itemFromIndex(index)
                 if item.isGroup():
                     return qta.icon('mdi.group')
@@ -123,6 +124,7 @@ class AnnotationTreeModel(AbstractTreeModel):
         dst_parent_item: AnnotationTreeItem = self.itemFromIndex(dst_parent_index)
 
         if not dst_parent_item.isGroup():
+            from qtpy.QtWidgets import QApplication, QMessageBox
             parent_widget: QWidget = QApplication.focusWidget()
             title = 'Invalid Move'
             text = f'Cannot move items into non-group "{dst_parent_item.path()}".'
@@ -139,6 +141,7 @@ class AnnotationTreeModel(AbstractTreeModel):
             # cannot move items into a group that is not the root
             for item in src_items_to_move:
                 if item.isGroup():
+                    from qtpy.QtWidgets import QApplication, QMessageBox
                     parent_widget: QWidget = QApplication.focusWidget()
                     title = 'Invalid Move'
                     text = f'Cannot nest group "{item.path()}" in non-root group "{dst_parent_item.path()}".'

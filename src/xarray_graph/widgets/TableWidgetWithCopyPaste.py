@@ -1,9 +1,8 @@
 """ PySide/PyQt table widget with copy/paste.
 """
 
-from qtpy.QtCore import Qt
 from qtpy.QtGui import QKeyEvent
-from qtpy.QtWidgets import QTableWidget, QApplication, QTableWidgetItem
+from qtpy.QtWidgets import QTableWidget
 
 
 class TableWidgetWithCopyPaste(QTableWidget):
@@ -16,6 +15,7 @@ class TableWidgetWithCopyPaste(QTableWidget):
     def keyPressEvent(self, event: QKeyEvent):
         QTableWidget.keyPressEvent(self, event)
 
+        from qtpy.QtCore import Qt
         is_control_pressed = event.modifiers() & Qt.KeyboardModifier.ControlModifier
         if is_control_pressed:
             if event.key() == Qt.Key.Key_C:
@@ -35,6 +35,7 @@ class TableWidgetWithCopyPaste(QTableWidget):
                     copy_text += '\n'
             else:
                 copy_text += '\t'
+        from qtpy.QtWidgets import QApplication
         QApplication.clipboard().setText(copy_text)
     
     def paste_to_cells(self):
@@ -42,6 +43,7 @@ class TableWidgetWithCopyPaste(QTableWidget):
         if selection:
             row_anchor = selection[0].row()
             column_anchor = selection[0].column()
+            from qtpy.QtWidgets import QApplication, QTableWidgetItem
             clipboard = QApplication.clipboard()
             rows = clipboard.text().split('\n')
             for indx_row, row in enumerate(rows):
@@ -53,6 +55,7 @@ class TableWidgetWithCopyPaste(QTableWidget):
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication, QTableWidgetItem
     app = QApplication()
 
     table = TableWidgetWithCopyPaste(3, 3)

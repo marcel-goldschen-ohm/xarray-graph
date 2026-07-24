@@ -1,79 +1,86 @@
-from qtpy.QtCore import QSize, QTimer
-from qtpy.QtGui import QPixmap, Qt
+# import time
+import os
+
+# disable pydevd file validation to avoid warning messages
+os.environ["PYDEVD_DISABLE_FILE_VALIDATION"] = "1"
+
+from qtpy.QtCore import Qt, QSize
 from qtpy.QtWidgets import QApplication, QSplashScreen
 from qtawesome import icon
-from xarray_graph.apps import XarrayDataTreeViewer
 
-
-def show_ui_and_close_splash(ui: XarrayDataTreeViewer, splash: QSplashScreen):
-    ui.show()
-    splash.finish(ui)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtGui import QPixmap
 
 
 def xtree():
-    app = QApplication()
-    app.setQuitOnLastWindowClosed(False)
-
-    splash_pix: QPixmap = icon('ph.cube-thin').pixmap(QSize(256, 256))
-    splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
-    splash.show()
-    splash.showMessage("xarray-tree: Loading system resources...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-    app.processEvents() # Force Qt to paint the splash screen immediately
-
-    ui = XarrayDataTreeViewer.new()
-    ui.setWindowTitle('xarray-tree')
-    QTimer.singleShot(2000, lambda: show_ui_and_close_splash(ui, splash))
-
-    show_warnings()
-    load_datatree(ui, 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask=True)
-    return app.exec()
+    run_app('xarray-tree')
 
 
 def xgraph():
+    run_app('xarray-graph')
+
+
+def run_app(app_name: str):
+    # print('-'*82)
     app = QApplication()
     app.setQuitOnLastWindowClosed(False)
 
+    # t0 = time.time()
     splash_pix: QPixmap = icon('ph.cube-thin').pixmap(QSize(256, 256))
     splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
     splash.show()
-    splash.showMessage("xarray-graph: Loading system resources...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-    app.processEvents() # Force Qt to paint the splash screen immediately
+    splash.raise_()
+    splash.repaint() # !? needed to ensure splash screen is painted before the main window is shown despite the call to app.processEvents() below
+    splash.showMessage(f"\tLoading system resources...\t", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+    app.processEvents() # force Qt to paint the splash screen immediately
+    # print(f'[{time.time() - t0:.2f} sec] Splash screen')
+    
+    if app_name == 'xarray-tree':
+        # t0 = time.time()
+        from xarray_graph.apps.XarrayDataTreeViewer import XarrayDataTreeViewer
+        # print(f'[{time.time() - t0:.2f} sec] App import')
+        # t0 = time.time()
+        ui = XarrayDataTreeViewer.new()
+        ui.setWindowTitle('xarray-tree')
+        # print(f'[{time.time() - t0:.2f} sec] App init')
+    elif app_name == 'xarray-graph':
+        # t0 = time.time()
+        from xarray_graph.apps.XarrayGraph import XarrayGraph
+        # print(f'[{time.time() - t0:.2f} sec] App import')
+        # t0 = time.time()
+        ui = XarrayGraph.new()
+        ui.setWindowTitle('xarray-graph')
+        # print(f'[{time.time() - t0:.2f} sec] App init')
+    
+    ui.show()
+    splash.finish(ui)
 
-    from xarray_graph.apps import XarrayGraph
-
-    ui = XarrayGraph.new()
-    ui.setWindowTitle('xarray-graph')
-    QTimer.singleShot(2000, lambda: show_ui_and_close_splash(ui, splash))
-
-    show_warnings()
-    load_datatree(ui, 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask=True)
-    return app.exec()
-
-
-def show_warnings() -> None:
+    # MacOS specific warning for users of Magnet window management software
     import platform
     if platform.system() == 'Darwin':
         from qtpy.QtWidgets import QMessageBox
         QMessageBox.warning(None, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
-
-
-def load_datatree(ui: XarrayDataTreeViewer, url: str = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc', ask: bool = True) -> None:
-    import requests, io
-    import xarray as xr
+    
+    # example data
     from qtpy.QtWidgets import QMessageBox
-
-    if ask:
-        answer = QMessageBox.question(ui, 'Example?', 'Load example data?')
-    if (ask == False) or (answer == QMessageBox.StandardButton.Yes):
+    answer = QMessageBox.question(ui, 'Example?', 'Load example data?')
+    url = 'https://raw.githubusercontent.com/marcel-goldschen-ohm/xarray-graph/main/examples/ERPdata.nc'
+    if answer == QMessageBox.StandardButton.Yes:
         try:
-            req = requests.get(url, stream=True)
+            from requests import get
+            req = get(url, stream=True)
             if req.status_code != 200:
                 raise ValueError(f'Failed to download example data: request status code = {req.status_code}')
-            dt: xr.DataTree = xr.open_datatree(io.BytesIO(req.content), engine='h5netcdf')
+            import xarray as xr
+            from io import BytesIO
+            dt: xr.DataTree = xr.open_datatree(BytesIO(req.content), engine='h5netcdf')
             ui.setDatatree(dt)
             ui._datatree_view.viewAll()
         except Exception as err:
             QMessageBox.critical(ui, 'Failed to load example', str(err))
+
+    return app.exec()
 
 
 if __name__ == '__main__':

@@ -1,11 +1,9 @@
 """ Generic tree item wrapper for a QAbstractItemModel.
 """
-
 from __future__ import annotations
+
 from typing import Callable
 from collections.abc import Iterator
-from warnings import warn
-from copy import deepcopy
 
 
 class AbstractTreeItem():
@@ -57,8 +55,10 @@ class AbstractTreeItem():
                 child_index = child_names.index(name)
                 item = item.children[child_index]
                 if child_names.count(name) > 1:
+                    from warnings import warn
                     warn('Path is not unique.')
             except Exception as error:
+                from warnings import warn
                 warn(str(error))
                 return None
         return item
@@ -80,6 +80,7 @@ class AbstractTreeItem():
                 child_index = child_names.index(name)
                 item = item.children[child_index]
                 if child_names.count(name) > 1:
+                    from warnings import warn
                     warn('Path is not unique.')
             except Exception as error:
                 # create new tree item to ensure validity of path
@@ -158,6 +159,7 @@ class AbstractTreeItem():
 
         This implementation is for testing/debugging. Override in a derived class to copy tree data.
         """
+        from copy import deepcopy
         item_copy = AbstractTreeItem()
         item_copy.setName(self.name()) # testing/debugging just copies name
         try:

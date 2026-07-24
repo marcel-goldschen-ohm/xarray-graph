@@ -1,2 +1,0 @@
-from xarray_graph.table.ArrayTableModel import ArrayTableModel
-from xarray_graph.table.ArrayTableView import ArrayTableView

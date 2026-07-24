@@ -1,22 +1,13 @@
 """ Tree view for a `AnnotationTreeModel` with drag-and-drop, context menu, and mouse wheel expand/collapse.
 """
-
 from __future__ import annotations
-from copy import deepcopy
-from qtpy.QtCore import QPoint, QSize, QModelIndex, QItemSelection, QItemSelectionModel
+
+from qtpy.QtCore import QPoint, QSize, QModelIndex
 from qtpy.QtGui import QKeySequence, QShortcut
-from qtpy.QtWidgets import (
-    QAbstractItemView,
-    QMenu,
-    QAction,
-    QDialog,
-    QVBoxLayout,
-    QDialogButtonBox,
-    QInputDialog,
-)
-import qtawesome as qta
-from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import AnnotationTreeItem, AnnotationTreeModel, TreeView, KeyValueTreeModel, KeyValueTreeView
+from qtpy.QtWidgets import QAbstractItemView, QMenu
+from xarray_graph.tree.TreeView import TreeView
+from xarray_graph.tree.AnnotationTreeItem import AnnotationTreeItem
+from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeModel
 
 
 class AnnotationTreeView(TreeView):
@@ -26,6 +17,7 @@ class AnnotationTreeView(TreeView):
     def __init__(self, *args, **kwargs) -> None:
         TreeView.__init__(self, *args, **kwargs)
 
+        import qtawesome as qta
         self._cut_icon = qta.icon('mdi.content-cut')
         self._copy_icon = qta.icon('mdi.content-copy')
         self._paste_icon = qta.icon('mdi.content-paste')
@@ -79,6 +71,7 @@ class AnnotationTreeView(TreeView):
             return
         root: AnnotationTreeItem = model.rootItem()
         self.selectionModel().clearSelection()
+        from qtpy.QtCore import QItemSelection
         toSelect = QItemSelection()
         item: AnnotationTreeItem
         for item in root.subtree_leaves():
@@ -90,6 +83,7 @@ class AnnotationTreeView(TreeView):
                     index: QModelIndex = model.indexFromItem(item)
                     toSelect.select(index, index)
         if toSelect.indexes():
+            from qtpy.QtCore import QItemSelectionModel
             flags = (
                 QItemSelectionModel.SelectionFlag.Select |
                 QItemSelectionModel.SelectionFlag.Rows
@@ -97,6 +91,8 @@ class AnnotationTreeView(TreeView):
             self.selectionModel().select(toSelect, flags)
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
+        from qtpy.QtWidgets import QAction
+
         model: AnnotationTreeModel = self.model()
         menu = QMenu(self)
 
@@ -164,12 +160,14 @@ class AnnotationTreeView(TreeView):
         if not items:
             return
         # copy the annotation dicts
+        from copy import deepcopy
         AnnotationTreeView._copied_annotations = [deepcopy(item._data) for item in items if item.isAnnotation()]
     
     def pasteCopy(self, parent_item: AnnotationTreeItem = None) -> None:
         model: AnnotationTreeModel = self.model()
         if not model:
             return
+        from copy import deepcopy
         annotations = [deepcopy(ann) for ann in AnnotationTreeView._copied_annotations]
         if not annotations:
             return
@@ -193,6 +191,11 @@ class AnnotationTreeView(TreeView):
     def editAnnotation(self, item: AnnotationTreeItem) -> None:
         if not item.isAnnotation():
             return
+        
+        from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
+        from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeModel
+        from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
+
         annotation: dict = item._data
         model = KeyValueTreeModel()
         model.setTreeData(annotation)
@@ -230,7 +233,8 @@ class AnnotationTreeView(TreeView):
                 if group_name not in group_names:
                     group_names.append(group_name)
         # insert new empty group node with unique name
-        group_name = xarray_utils.unique_name('Group', group_names)
+        from xarray_graph.utils.xarray_utils import unique_name
+        group_name = unique_name('Group', group_names)
         new_item = AnnotationTreeItem([], group_name)
         model.insertItems([new_item], row, parent_item)
     
@@ -238,6 +242,7 @@ class AnnotationTreeView(TreeView):
         items: list[AnnotationTreeItem] = self.selectedItems()
         if not items:
             return
+        from qtpy.QtWidgets import QInputDialog
         title = 'Group'
         label = 'Group name:'
         group, ok = QInputDialog.getText(self, title, label)

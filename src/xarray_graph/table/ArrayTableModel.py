@@ -1,7 +1,6 @@
 
 import numpy as np
 from qtpy.QtCore import Qt, QAbstractTableModel, QModelIndex
-from qtpy.QtWidgets import QApplication
 
 class ArrayTableModel(QAbstractTableModel):
 

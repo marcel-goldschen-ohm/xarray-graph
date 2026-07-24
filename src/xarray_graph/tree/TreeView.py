@@ -1,12 +1,16 @@
 """ Qt tree view for `AbstractTreeModel` with context menu and mouse wheel expand/collapse.
 """
-
 from __future__ import annotations
-from qtpy.QtCore import Signal, Slot, Qt, QPoint, QObject, QEvent, QModelIndex, QItemSelection, QItemSelectionModel
+
+from qtpy.QtCore import Signal, Slot, Qt, QModelIndex, QItemSelection, QObject, QEvent, QPoint
 from qtpy.QtGui import QKeySequence, QKeyEvent, QWheelEvent, QDragEnterEvent, QDropEvent
-from qtpy.QtWidgets import QTreeView, QSizePolicy, QAbstractScrollArea, QAbstractItemView, QAction, QWidget, QMessageBox, QMenu
-import qtawesome as qta
-from xarray_graph.tree import AbstractTreeItem, AbstractTreeModel, TreeMimeData
+from qtpy.QtWidgets import QTreeView
+from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
+from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from qtpy.QtWidgets import QMenu
 
 
 class TreeView(QTreeView):
@@ -31,6 +35,7 @@ class TreeView(QTreeView):
         super().__init__(*args, **kwargs)
 
         # general settings
+        from qtpy.QtWidgets import QSizePolicy, QAbstractScrollArea
         sizePolicy = self.sizePolicy()
         sizePolicy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         sizePolicy.setVerticalPolicy(QSizePolicy.Policy.Expanding)
@@ -40,6 +45,7 @@ class TreeView(QTreeView):
         self.setSortingEnabled(False)
 
         # selection
+        from qtpy.QtWidgets import QAbstractItemView
         # self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -56,6 +62,8 @@ class TreeView(QTreeView):
         self._view_state: dict[str, dict] = {}
 
         # actions
+        from qtpy.QtWidgets import QAction
+        import qtawesome as qta
         self._refreshAction = QAction(
             text='Refresh',
             icon=qta.icon('msc.refresh'),
@@ -197,6 +205,7 @@ class TreeView(QTreeView):
         if items is None:
             items = list(model.rootItem().subtree_depth_first())
         selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
+        from qtpy.QtCore import QItemSelection, QItemSelectionModel
         to_be_selected: QItemSelection = QItemSelection()
         to_be_deselected: QItemSelection = QItemSelection()
         for item in items:
@@ -255,6 +264,7 @@ class TreeView(QTreeView):
         if not model:
             return
         self.selectionModel().clearSelection()
+        from qtpy.QtCore import QItemSelection, QItemSelectionModel
         selection: QItemSelection = QItemSelection()
         flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
         
@@ -284,13 +294,14 @@ class TreeView(QTreeView):
         if not model:
             return
         if ask:
-            parent_widget: QWidget = self
+            parent_widget = self
             title = 'Remove'
             if text is None:
                 if len(items) == 1:
                     text = f'Remove {items[0].path()}?'
                 else:
                     text = f'Remove {len(items)} items?'
+            from qtpy.QtWidgets import QMessageBox
             answer = QMessageBox.question(parent_widget, title, text, 
                 buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
                 defaultButton=QMessageBox.StandardButton.No
@@ -320,6 +331,7 @@ class TreeView(QTreeView):
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
         self._clearSelectionAction.setEnabled(has_selection)
+        from qtpy.QtWidgets import QAbstractItemView
         if self.selectionMode() in [QAbstractItemView.SelectionMode.ContiguousSelection, QAbstractItemView.SelectionMode.ExtendedSelection, QAbstractItemView.SelectionMode.MultiSelection]:
             menu.addSeparator()
             menu.addAction(self._selectAllAction)
@@ -475,6 +487,7 @@ class TreeView(QTreeView):
             self.expandToDepth(depth - 1)
     
     def setDragAndDropEnabled(self, enabled: bool) -> None:
+        from qtpy.QtWidgets import QAbstractItemView
         if enabled:
             self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         else:
@@ -485,6 +498,7 @@ class TreeView(QTreeView):
         self.setDropIndicatorShown(enabled)
     
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        from xarray_graph.tree.AbstractTreeModel import TreeMimeData
         mime_data: TreeMimeData = event.mimeData()
         # print('dragEnterEvent', mime_data.formats())
 
@@ -506,6 +520,7 @@ class TreeView(QTreeView):
         QTreeView.dragEnterEvent(self, event)
     
     def dropEvent(self, event: QDropEvent) -> None:
+        from xarray_graph.tree.AbstractTreeModel import TreeMimeData
         mime_data: TreeMimeData = event.mimeData()
         # print('dropEvent', mime_data.formats())
         if not isinstance(mime_data, TreeMimeData):
@@ -523,6 +538,7 @@ class TreeView(QTreeView):
         dst_index: QModelIndex = self.indexAt(event.pos())
         dst_row = dst_index.row()
         drop_pos = self.dropIndicatorPosition()
+        from qtpy.QtWidgets import QAbstractItemView
         if drop_pos == QAbstractItemView.DropIndicatorPosition.OnViewport:
             dst_parent_index = QModelIndex()
             dst_row = dst_model.rowCount(dst_parent_index)

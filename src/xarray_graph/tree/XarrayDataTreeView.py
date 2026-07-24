@@ -6,31 +6,37 @@ TODO:
 - slice dims for 3d or higher dim array in editable table?
 - merge items?
 """
-
 from __future__ import annotations
-from copy import deepcopy
+
 import numpy as np
 import xarray as xr
-from qtpy.QtCore import Signal, QSignalBlocker, Qt, QModelIndex, QPoint, QSize, QTimer
-from qtpy.QtGui import QIcon, QKeySequence, QKeyEvent, QFontDatabase
-from qtpy.QtWidgets import (
-    QAction,
-    QMenu,
-    QAbstractItemView,
-    QDialog,
-    QLineEdit,
-    QVBoxLayout,
-    QDialogButtonBox,
-    QInputDialog,
-    QWidget,
-    QTextEdit,
-    QTableWidgetItem,
-)
-import qtawesome as qta
-from xarray_graph.utils import xarray_utils
-from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeView
-from xarray_graph.table import ArrayTableModel, ArrayTableView
-from xarray_graph.widgets import TableWidgetWithCopyPaste#, CollapsibleSectionsSplitter
+from qtpy.QtCore import Qt, QModelIndex, QPoint, QSize
+from qtpy.QtGui import QIcon, QKeySequence, QKeyEvent
+from qtpy.QtWidgets import QWidget, QMenu, QDialog, QTextEdit
+from xarray_graph.tree.TreeView import TreeView
+from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
+from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
+
+
+
+# from qtpy.QtWidgets import (
+#     QAction,
+#     QMenu,
+#     QAbstractItemView,
+#     QDialog,
+#     QLineEdit,
+#     QVBoxLayout,
+#     QDialogButtonBox,
+#     QInputDialog,
+#     QWidget,
+#     QTextEdit,
+#     QTableWidgetItem,
+# )
+# import qtawesome as qta
+# from xarray_graph.utils import xarray_utils
+# from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeView
+# from xarray_graph.table import ArrayTableModel, ArrayTableView
+# from xarray_graph.widgets import TableWidgetWithCopyPaste#, CollapsibleSectionsSplitter
 
 
 class XarrayDataTreeView(TreeView):
@@ -41,6 +47,7 @@ class XarrayDataTreeView(TreeView):
         super().__init__(*args, **kwargs)
 
         # icons
+        import qtawesome as qta
         self._node_icon: QIcon = qta.icon('ph.folder-thin')
         self._data_var_icon: QIcon = qta.icon('ph.cube-thin')
         self._coord_icon: QIcon = qta.icon('ph.list-numbers-thin')
@@ -51,6 +58,7 @@ class XarrayDataTreeView(TreeView):
         # self._info_shortcut.activated.connect(lambda: self.infoDialog())
 
         # actions
+        from qtpy.QtWidgets import QAction
         self._showDataVarsAction = QAction(
             text = 'Show Variables',
             icon = self._data_var_icon,
@@ -148,6 +156,7 @@ class XarrayDataTreeView(TreeView):
     def setDataVarsVisible(self, visible: bool) -> None:
         model: XarrayDataTreeModel = self.model()
         model.setDataVarsVisible(visible)
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showDataVarsAction):
             self._showDataVarsAction.setChecked(visible)
     
@@ -158,6 +167,7 @@ class XarrayDataTreeView(TreeView):
     def setCoordsVisible(self, visible: bool) -> None:
         model: XarrayDataTreeModel = self.model()
         model.setCoordsVisible(visible)
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showCoordsAction):
             self._showCoordsAction.setChecked(visible)
     
@@ -168,6 +178,7 @@ class XarrayDataTreeView(TreeView):
     def setInheritedCoordsVisible(self, visible: bool) -> None:
         model: XarrayDataTreeModel = self.model()
         model.setInheritedCoordsVisible(visible)
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showInheritedCoordsAction):
             self._showInheritedCoordsAction.setChecked(visible)
     
@@ -178,6 +189,7 @@ class XarrayDataTreeView(TreeView):
     def setInfoColumnsVisible(self, visible: bool) -> None:
         model: XarrayDataTreeModel = self.model()
         model.setInfoColumnsVisible(visible)
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showInfoColumnsAction):
             self._showInfoColumnsAction.setChecked(visible)
 
@@ -196,6 +208,8 @@ class XarrayDataTreeView(TreeView):
         else:
             # should never happen
             icon: QIcon = self._unknown_icon
+        
+        from qtpy.QtWidgets import QAction, QAbstractItemView
         
         # disabled action acts as a label for the item that was right-clicked on
         menu.addAction(QAction(
@@ -324,6 +338,7 @@ class XarrayDataTreeView(TreeView):
             if not items:
                 return
             # ensure items are in tree order
+            from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
             items = AbstractTreeItem.orderedItems(items)
             data = [item.data() for item in items]
             title = 'Selected'
@@ -349,10 +364,14 @@ class XarrayDataTreeView(TreeView):
         if not item.isVariable():
             return
         values = item.data().values.squeeze()
-        
+
+        from xarray_graph.table.ArrayTableModel import ArrayTableModel
+        from xarray_graph.table.ArrayTableView import ArrayTableView
         model: ArrayTableModel = ArrayTableModel(values)
         view: ArrayTableView = ArrayTableView()
         view.setModel(model)
+
+        from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
 
         dlg = makeDialog(self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=item.name())
         layout = QVBoxLayout(dlg)
@@ -395,7 +414,8 @@ class XarrayDataTreeView(TreeView):
         shape = tuple(parent_item._node.sizes.values())
         dims = tuple(parent_item._node.dims)
         data = np.zeros(shape)
-        name = xarray_utils.unique_name('variable', list(parent_item._node.keys()))
+        from xarray_graph.utils.xarray_utils import unique_name
+        name = unique_name('variable', list(parent_item._node.keys()))
         new_var = xr.DataArray(data, name=name, dims=dims)
         dt = model.treeData()
         path = parent_item._node.path.rstrip('/') + '/' + name
@@ -411,6 +431,7 @@ class XarrayDataTreeView(TreeView):
         if row is None or row == -1:
             row = len(parent_item.children)
         if (dim is None) or (dim not in parent_item._node.dims):
+            from qtpy.QtWidgets import QInputDialog
             dim, ok = QInputDialog.getItem(self, 'Select Dimension', 'Select dimension for new coordinate:', list(parent_item._node.dims), editable=False)
             if not ok:
                 return
@@ -439,6 +460,8 @@ class XarrayDataTreeView(TreeView):
         if not item.isNode():
             item = item.parent
         node: xr.DataTree = item.data()
+
+        from qtpy.QtWidgets import QDialog, QLineEdit, QVBoxLayout, QDialogButtonBox
         
         dim_lineedits: dict[str, QLineEdit] = {}
         for dim in node.dims:
@@ -467,7 +490,8 @@ class XarrayDataTreeView(TreeView):
                 dim_renames[dim] = new_dim
         if not dim_renames:
             return
-        xarray_utils.rename_dims(node, dim_renames)
+        from xarray_graph.utils.xarray_utils import rename_dims
+        rename_dims(node, dim_renames)
         self.refresh()
     
     def mergeSelectedNodes(self) -> None:
@@ -481,6 +505,7 @@ class XarrayDataTreeView(TreeView):
         if not items or len(items) < 2:
             return
         if dim is None:
+            from qtpy.QtWidgets import QInputDialog
             title = 'Concatenate'
             label = 'Concatenate along dim:'
             dim, ok = QInputDialog.getText(self, title, label)
@@ -494,7 +519,8 @@ class XarrayDataTreeView(TreeView):
             concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
             parent_item: XarrayDataTreeItem = items[0].parent
             parent_node: xr.DataTree = parent_item._node
-            name = xarray_utils.unique_name('Concat', list(parent_node.keys()))
+            from xarray_graph.utils.xarray_utils import unique_name
+            name = unique_name('Concat', list(parent_node.keys()))
             parent_node[name] = concatenated_dataset
             self.refresh()
         except Exception as err:
@@ -512,6 +538,7 @@ class XarrayDataTreeView(TreeView):
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             else:
                 # ensure items are in tree order
+                from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
                 items = AbstractTreeItem.orderedItems(items)
                 data = [item.data() for item in items]
                 title = 'Selected'
@@ -566,6 +593,8 @@ def makeDialog(parent: QWidget = None, size: QSize = None, pos: QPoint = None, t
 
 
 def infoDialog(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None, font_size: int = None) -> int:
+    from qtpy.QtWidgets import QVBoxLayout
+    from qtpy.QtCore import QTimer
     text_edit = infoTextEdit(data, font_size=font_size)
     dlg = makeDialog(parent, size, pos, title)
     layout = QVBoxLayout(dlg)
@@ -579,10 +608,11 @@ def infoTextEdit(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTre
     text_edit = text_edit_to_update
     if not isinstance(text_edit, QTextEdit):
         text_edit = QTextEdit()
-        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        from qtpy.QtGui import QFontDatabase
+        font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         if font_size is None:
             # font_size = QFont().pointSize()
-            font_size = QFontDatabase.systemFont(QFontDatabase.SmallestReadableFont).pointSize() + 2
+            font_size = QFontDatabase.systemFont(QFontDatabase.SystemFont.SmallestReadableFont).pointSize() + 2
         font.setPointSize(font_size)
         text_edit.setFont(font)
     else:
@@ -623,12 +653,16 @@ def infoTextEdit(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTre
 
 
 def attrsDialog(data: xr.DataTree | xr.Dataset | xr.DataArray, parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None) -> int:
+    from copy import deepcopy
     attrs_copy: dict = deepcopy(data.attrs)
 
+    from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
     view = KeyValueTreeView()
     view.setAlternatingRowColors(True)
     view.setTreeData(attrs_copy)
     view.viewAll()
+
+    from qtpy.QtWidgets import QVBoxLayout, QDialogButtonBox, QDialog
 
     dlg = makeDialog(parent, size, pos, title)
     layout = QVBoxLayout(dlg)

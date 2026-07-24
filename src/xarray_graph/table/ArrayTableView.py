@@ -2,8 +2,8 @@
 import numpy as np
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QKeyEvent
-from qtpy.QtWidgets import QTableView, QApplication
-from xarray_graph.table import ArrayTableModel
+from qtpy.QtWidgets import QTableView
+from xarray_graph.table.ArrayTableModel import ArrayTableModel
 
 
 class ArrayTableView(QTableView):
@@ -74,6 +74,7 @@ class ArrayTableView(QTableView):
 
         # store copy as tab-delimited text in clipboard
         text = self._text_from_matrix(array_selection)
+        from qtpy.QtWidgets import QApplication
         QApplication.clipboard().setText(text)
 
         # print(f"Copied array:\n{array_selection}")
@@ -89,6 +90,7 @@ class ArrayTableView(QTableView):
         array = model.array()
         
         # get copy as tab-delimited text in clipboard
+        from qtpy.QtWidgets import QApplication
         text = QApplication.clipboard().text()
         array_to_paste = self._matrix_from_text(text, array.dtype)
 
@@ -145,6 +147,7 @@ def test_array_text_conversion():
 
 
 def test_live():
+    from qtpy.QtWidgets import QApplication
     app = QApplication()
 
     # Create a sample 2D array

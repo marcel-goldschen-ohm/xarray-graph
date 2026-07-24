@@ -1,13 +1,8 @@
 """ Embedded IPython console widget.
 """
 
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QKeySequence
-from qtpy.QtWidgets import QAction
+
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
-from qtconsole.inprocess import QtInProcessKernelManager
-# from qtconsole.manager import QtKernelManager
-import qtawesome as qta
 
 
 class IPythonConsole(RichJupyterWidget):
@@ -27,8 +22,12 @@ class IPythonConsole(RichJupyterWidget):
         # self.exit_requested.connect(self.stop)
         # QApplication.instance().aboutToQuit.connect(self.stop)
 
+        from qtpy.QtCore import Qt
+        from qtpy.QtGui import QKeySequence
+        from qtpy.QtWidgets import QAction
+        from qtawesome import icon
         self._console_action = QAction(
-            icon=qta.icon('mdi.console'),
+            icon=icon('mdi.console'),
             iconVisibleInMenu=True,
             text='Console',
             toolTip='Show Console',
@@ -41,6 +40,9 @@ class IPythonConsole(RichJupyterWidget):
         self._message_queue: list[str] = []
     
     def start(self) -> None:
+        from qtconsole.inprocess import QtInProcessKernelManager
+        # from qtconsole.manager import QtKernelManager
+
         manager = QtInProcessKernelManager()
         # manager = QtKernelManager()
         manager.start_kernel()

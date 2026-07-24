@@ -1,17 +1,17 @@
 """ Plot curve with context menu and style dialog.
 """
-
 from __future__ import annotations
+
 from qtpy.QtCore import Qt, Signal, QPoint
 from qtpy.QtGui import QColor, QPainterPath, QMouseEvent
 from qtpy.QtWidgets import QMenu
-import pyqtgraph as pg
+from pyqtgraph import PlotDataItem, mkPen, mkBrush
 # from xarray_graph.graph.pyqtgraph_ext import GraphStyle, editGraphStyle
 # from xarray_graph.utils.color import toQColor
 # from xarray_graph.widgets import TableWidgetWithCopyPaste
 
 
-class PlotCurve(pg.PlotDataItem):
+class PlotCurve(PlotDataItem):
     """ Plot curve with context menu and style dialog.
     """
 
@@ -20,14 +20,14 @@ class PlotCurve(pg.PlotDataItem):
     def __init__(self, *args, **kwargs):
         # default style is first MATLAB line color
         if 'pen' not in kwargs:
-            kwargs['pen'] = pg.mkPen(QColor(0, 114, 189), width=1)
+            kwargs['pen'] = mkPen(QColor(0, 114, 189), width=1)
         if 'symbolPen' not in kwargs:
-            kwargs['symbolPen'] = pg.mkPen(QColor(0, 114, 189), width=1)
+            kwargs['symbolPen'] = mkPen(QColor(0, 114, 189), width=1)
         if 'symbolBrush' not in kwargs:
-            kwargs['symbolBrush'] = pg.mkBrush(QColor(0, 114, 189, 0))
+            kwargs['symbolBrush'] = mkBrush(QColor(0, 114, 189, 0))
         if 'symbol' not in kwargs:
             kwargs['symbol'] = None
-        pg.PlotDataItem.__init__(self, *args, **kwargs)
+        PlotDataItem.__init__(self, *args, **kwargs)
 
         # self.setZValue(1)
 
@@ -43,7 +43,7 @@ class PlotCurve(pg.PlotDataItem):
         # # self.contextMenu.addAction('Delete', lambda: self.getViewBox().deleteItem(self))
     
     def hasCurve(self):
-        pen = pg.mkPen(self.opts['pen'])
+        pen = mkPen(self.opts['pen'])
         return pen.style() != Qt.PenStyle.NoPen
     
     def hasSymbol(self):
@@ -88,7 +88,8 @@ class PlotCurve(pg.PlotDataItem):
 
         # Let the scene add on to the end of our context menu (this is optional)
         self.menu.addSection('View')
-        scene: pg.GraphicsScene = self.scene()
+        from pyqtgraph import GraphicsScene
+        scene: GraphicsScene = self.scene()
         self.menu = scene.addParentContextMenus(self, self.menu, event)
         return self.menu
     

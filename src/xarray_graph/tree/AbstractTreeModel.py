@@ -1,10 +1,10 @@
 """ Qt tree model interface for a tree of `AbstractTreeItem`s.
 """
-
 from __future__ import annotations
+
 from qtpy.QtCore import Signal, Qt, QModelIndex, QAbstractItemModel, QMimeData
-from qtpy.QtWidgets import QWidget, QApplication, QMessageBox
-from xarray_graph.tree import AbstractTreeItem
+# from qtpy.QtWidgets import QWidget, QApplication, QMessageBox
+from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
 class AbstractTreeModel(QAbstractItemModel):
@@ -251,6 +251,7 @@ class AbstractTreeModel(QAbstractItemModel):
         # only allow inserting orphaned items
         for item in items:
             if item.parent is not None:
+                from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
                 parent_widget: QWidget = QApplication.focusWidget()
                 title = 'Invalid Insert'
                 text = f'Cannot insert item "{item.path()}" because it already has a parent. Only orphaned items can be inserted. See moveItems() or transferItems() to move items that already have a parent.'
@@ -260,6 +261,7 @@ class AbstractTreeModel(QAbstractItemModel):
         # cannot insert item into one of its own descendents
         for item in items:
             if parent_item.hasAncestor(item):
+                from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
                 parent_widget: QWidget = QApplication.focusWidget()
                 title = 'Invalid Insert'
                 text = f'Cannot insert item "{item.path()}" into its own descendent "{parent_item.path()}".'
@@ -296,6 +298,7 @@ class AbstractTreeModel(QAbstractItemModel):
         for item in items_to_move:
             ok, msg = self.isItemTransferValid(item, self, dst_parent_item, dst_row)
             if not ok:
+                from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
                 parent_widget: QWidget = QApplication.focusWidget()
                 title = 'Invalid Move'
                 QMessageBox.warning(parent_widget, title, msg)
@@ -480,6 +483,7 @@ class AbstractTreeModel(QAbstractItemModel):
 
     @staticmethod
     def popupWarningDialog(text: str, system_warn: bool = True) -> None:
+        from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
         focused_widget: QWidget = QApplication.focusWidget()
         QMessageBox.warning(focused_widget, 'Warning', text)
         if system_warn:

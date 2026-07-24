@@ -1,10 +1,8 @@
 """ PyQt tree item for a key: value mapping (with any amount of nesting).
 """
-
 from __future__ import annotations
-import numpy as np
-from xarray_graph.tree import AbstractTreeItem
-from copy import deepcopy
+
+from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
 class KeyValueTreeItem(AbstractTreeItem):
@@ -111,12 +109,14 @@ class KeyValueTreeItem(AbstractTreeItem):
     def copy(self) -> KeyValueTreeItem:
         """ Returns an orphaned copy of this item.
         """
+        from copy import deepcopy
         item_copy = KeyValueTreeItem(self.key(), deepcopy(self.value()))
         item_copy.rebuildSubtree()
         return item_copy
     
 
 def test_tree():
+    import numpy as np
     import json
 
     tree = {

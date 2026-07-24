@@ -1,16 +1,10 @@
 
 
 from __future__ import annotations
+
 import os
 from pathlib import Path
-import shutil
 import xarray as xr
-import zarr
-from xarray_graph.utils import xarray_utils
-from xarray_graph.io.labchart import read_adicht_mat
-from xarray_graph.io.heka import read_heka
-from xarray_graph.io.winwcp import read_winwcp
-from xarray_graph.tree import KeyValueTreeModel
 
 
 supported_filetypes = [
@@ -33,6 +27,7 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
     # read datatree from filesystem
     if filepath.is_dir():
         # Zarr Directory
+        import zarr
         with zarr.storage.LocalStore(filepath) as store:
             datatree = xr.open_datatree(store, engine='zarr', chunks=chunks, consolidated=consolidated)
     # elif (filetype == 'Zarr Zip') or (filepath.suffix in ['.zip', '.ZIP']):
@@ -50,23 +45,28 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
     #     shutil.rmtree(tmp_dir)
     elif (filetype == 'WinWCP') or (filepath.suffix in ['.wcp', '.WCP']):
         # WinWCP
+        from xarray_graph.io.winwcp import read_winwcp
         return read_winwcp(filepath)
     elif (filetype == 'HEKA'):
         # HEKA
+        from xarray_graph.io.heka import read_heka
         return read_heka(filepath)
     elif (filetype == 'Axon ABF') or (filepath.suffix in ['.abf', '.ABF']):
         # Axon ABF
         pass # TODO
     elif (filetype == 'LabChart MATLAB (GOlab TEVC)'):
         # LabChart MATLAB (GOlab TEVC)
+        from xarray_graph.io.labchart import read_adicht_mat
         return read_adicht_mat(filepath)
     else:
         # netCDF/HDF5 [.nc, .h5, .hdf5]
         datatree: xr.DataTree = xr.open_datatree(filepath, engine=engine, chunks=chunks)
         # nested attrs not allowed in netCDF/HDF5, so we need to recover them after deserialization
-        datatree = xarray_utils.restore_attrs_objects_from_strings(datatree)
+        from xarray_graph.utils.xarray_utils import restore_attrs_objects_from_strings
+        datatree = restore_attrs_objects_from_strings(datatree)
         
-    datatree = xarray_utils.recover_post_deserialization(datatree)
+    from xarray_graph.utils.xarray_utils import recover_post_deserialization
+    datatree = recover_post_deserialization(datatree)
     
     return datatree
 
@@ -74,11 +74,13 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
 def save_datatree(datatree: xr.DataTree, filepath: str | os.PathLike, filetype: str = None, engine: str = None, consolidated: bool = False) -> None:
     filepath = Path(filepath)
 
-    datatree = xarray_utils.prepare_for_serialization(datatree)
+    from xarray_graph.utils.xarray_utils import prepare_for_serialization
+    datatree = prepare_for_serialization(datatree)
 
     # write datatree to filesystem
     if (filetype == 'Zarr Directory') or ((filetype is None) and (filepath.is_dir() or filepath.suffix in ['', '.zarr'])):
         # Zarr Directory
+        import zarr
         with zarr.storage.LocalStore(filepath) as store:
             datatree.to_zarr(store, mode='w', consolidated=consolidated)
     # elif (filetype == 'Zarr Zip') or ((filetype is None) and (filepath.suffix in ['.zip', '.ZIP'])):
@@ -99,7 +101,8 @@ def save_datatree(datatree: xr.DataTree, filepath: str | os.PathLike, filetype: 
         if filepath.suffix not in ['.nc', '.h5', '.hdf5']:
             filepath = filepath.with_suffix('.h5')
         # nested attrs not allowed in netCDF/HDF5, so we need to convert them to strings before serialization
-        datatree = xarray_utils.store_attrs_objects_as_strings(datatree)
+        from xarray_graph.utils.xarray_utils import store_attrs_objects_as_strings
+        datatree = store_attrs_objects_as_strings(datatree)
         datatree.to_netcdf(filepath, mode='w', engine=engine)
 
 
