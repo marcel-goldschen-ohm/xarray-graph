@@ -5,7 +5,7 @@ TODO:
 """
 from __future__ import annotations
 
-from qtpy.QtCore import Signal
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import QSplitter, QSplitterHandle
 
 from typing import TYPE_CHECKING
