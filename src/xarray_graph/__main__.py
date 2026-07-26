@@ -1,4 +1,4 @@
-# import time
+import time
 import os
 
 # disable pydevd file validation to avoid warning messages
@@ -36,22 +36,16 @@ def run_app(app_name: str):
     app.processEvents() # force Qt to paint the splash screen immediately
     # print(f'[{time.time() - t0:.2f} sec] Splash screen')
     
+    t0 = time.time()
     if app_name == 'xarray-tree':
-        # t0 = time.time()
         from xarray_graph.apps.XarrayDataTreeViewer import XarrayDataTreeViewer
-        # print(f'[{time.time() - t0:.2f} sec] App import')
-        # t0 = time.time()
         ui = XarrayDataTreeViewer.new()
         ui.setWindowTitle('xarray-tree')
-        # print(f'[{time.time() - t0:.2f} sec] App init')
     elif app_name == 'xarray-graph':
-        # t0 = time.time()
         from xarray_graph.apps.XarrayGraph import XarrayGraph
-        # print(f'[{time.time() - t0:.2f} sec] App import')
-        # t0 = time.time()
         ui = XarrayGraph.new()
         ui.setWindowTitle('xarray-graph')
-        # print(f'[{time.time() - t0:.2f} sec] App init')
+    print(f'[{time.time() - t0:.2f} sec] {app_name} init')
     
     ui.show()
     splash.finish(ui)
@@ -60,7 +54,7 @@ def run_app(app_name: str):
     import platform
     if platform.system() == 'Darwin':
         from qtpy.QtWidgets import QMessageBox
-        QMessageBox.warning(None, 'Magnet Warning', 'If you are using the window management software Magnet, please disable it for this app to work properly.')
+        QMessageBox.warning(None, 'Magnet Warning', 'If you are using the window management software Magnet, you may need to disable it for this app to work properly.')
     
     # example data
     from qtpy.QtWidgets import QMessageBox

@@ -9,13 +9,12 @@ import numpy as np
 import xarray as xr
 from pint import UnitRegistry, Quantity
 from cmap import Colormap
-from qtpy.QtCore import QObject, Signal
+from qtpy.QtCore import Qt, QObject, Signal
 from qtpy.QtWidgets import QWidget
 from xarray_graph.apps.XarrayDataTreeViewer import XarrayDataTreeViewer
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from qtpy.QtCore import Qt
     from qtpy.QtWidgets import QGraphicsObject
     from xarray_graph.graph.Plot import Plot
 
@@ -211,6 +210,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def mask(self) -> None:
         """ Mask selected traces or ROIs within selected traces.
         """
+        import cftime
         xranges = self.visibleXRanges()
         xdim = self.xdim()
         was_mask_item_added = False
@@ -220,14 +220,17 @@ class XarrayGraph(XarrayDataTreeViewer):
             if MASK_KEY not in node.data_vars:
                 node.dataset = node.to_dataset().assign({MASK_KEY: xr.DataArray(np.full(sizes, False, dtype=bool), dims=dims)})
                 was_mask_item_added = True
-            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims and dim != xdim}
             if xranges:
                 xdata = node[xdim].values
+                if np.issubdtype(xdata.dtype, np.datetime64) or isinstance(xdata[0], cftime.datetime):
+                    # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
+                    xdata = xdata.astype('datetime64[s]').astype(int)
                 xmask = np.full(xdata.shape, False, dtype=bool)
                 for xrange in xranges:
                     lb, ub = xrange
                     xmask[(xdata >= lb) & (xdata <= ub)] = True
-                coords[xdim] = xdata[xmask]
+                coords[xdim] = node[xdim].data[xmask]
             node.data_vars[MASK_KEY].loc[coords] = True
         
         if was_mask_item_added:
@@ -238,6 +241,7 @@ class XarrayGraph(XarrayDataTreeViewer):
     def unmask(self) -> None:
         """ Unmask selected traces or ROIs within selected traces.
         """
+        import cftime
         xranges = self.visibleXRanges()
         xdim = self.xdim()
         was_mask_item_removed = False
@@ -246,14 +250,17 @@ class XarrayGraph(XarrayDataTreeViewer):
             sizes = tuple(node.sizes.values())
             if MASK_KEY not in node.data_vars:
                 continue
-            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims and dim != xdim}
             if xranges:
                 xdata = node[xdim].values
+                if np.issubdtype(xdata.dtype, np.datetime64) or isinstance(xdata[0], cftime.datetime):
+                    # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
+                    xdata = xdata.astype('datetime64[s]').astype(int)
                 xmask = np.full(xdata.shape, False, dtype=bool)
                 for xrange in xranges:
                     lb, ub = xrange
                     xmask[(xdata >= lb) & (xdata <= ub)] = True
-                coords[xdim] = xdata[xmask]
+                coords[xdim] = node[xdim].data[xmask]
             node.data_vars[MASK_KEY].loc[coords] = False
             if not np.any(node.data_vars[MASK_KEY].values):
                 node.dataset = node.to_dataset().drop_vars(MASK_KEY)
@@ -272,21 +279,27 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.refresh()
 
     def zero(self) -> None:
+        import cftime
         xranges = self.visibleXRanges()
         xdim = self.xdim()
         for item, plot_data_var in zip(self._selected_data_var_items, self._selected_data_vars):
             node: xr.DataTree = item.node()
             data_var: xr.DataArray = item.data()
-            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims and dim != xdim}
             if xranges:
                 xdata = node[xdim].values
+                if np.issubdtype(xdata.dtype, np.datetime64) or isinstance(xdata[0], cftime.datetime):
+                    # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
+                    xdata = xdata.astype('datetime64[s]').astype(int)
                 xmask = np.full(xdata.shape, False, dtype=bool)
                 for xrange in xranges:
                     lb, ub = xrange
                     xmask[(xdata >= lb) & (xdata <= ub)] = True
-                coords[xdim] = xdata[xmask]
+                coords[xdim] = node[xdim].data[xmask]
             data_var.loc[coords] = 0
             if plot_data_var is not data_var:
+                if xranges:
+                    coords[xdim] = xdata[xmask]
                 plot_data_var.loc[coords] = 0
         
         self.replot()
@@ -303,19 +316,23 @@ class XarrayGraph(XarrayDataTreeViewer):
         except:
             return
 
+        import cftime
         xranges = self.visibleXRanges()
         xdim = self.xdim()
         for item, plot_data_var in zip(self._selected_data_var_items, self._selected_data_vars):
             node: xr.DataTree = item.node()
             data_var: xr.DataArray = item.data()
-            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims}
+            coords = {dim: values for dim, values in self._selection_visible_coords.coords.items() if dim in node.dims and dim != xdim}
             if xranges:
                 xdata = node[xdim].values
+                if np.issubdtype(xdata.dtype, np.datetime64) or isinstance(xdata[0], cftime.datetime):
+                    # convert datetime objects to datetime64[s] integers as required by pyqtgraph DateAxisItem
+                    xdata = xdata.astype('datetime64[s]').astype(int)
                 xmask = np.full(xdata.shape, False, dtype=bool)
                 for xrange in xranges:
                     lb, ub = xrange
                     xmask[(xdata >= lb) & (xdata <= ub)] = True
-                coords[xdim] = xdata[xmask]
+                coords[xdim] = node[xdim].data[xmask]
             
             units = data_var.attrs.get('units', None)
             if units is not None:
@@ -324,6 +341,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                 data_var.loc[coords] = qconstant.magnitude
             
             if plot_data_var is not data_var:
+                if xranges:
+                    coords[xdim] = xdata[xmask]
                 units = plot_data_var.attrs.get('units', None)
                 if units is not None:
                     plot_data_var.loc[coords] = qconstant.to(units).magnitude
@@ -451,7 +470,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         if orientation is not None:
             selected_coords = self._selection_visible_coords[dim]
             if selected_coords.size == 1:
-                max_default_tile_size = self._settings.get('max default tile size', self._default_settings['max default tile size'])
+                max_default_tile_size = self._settings.get('max default tile size', 10)
                 dim_coords = self._selection_combined_coords[dim]
                 if dim_coords.size <= max_default_tile_size:
                     selected_coords = dim_coords
@@ -505,7 +524,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             if item.isNode():
                 child_item: XarrayDataTreeItem
                 for child_item in item.children:
-                    if child_item.isDataVar():
+                    if child_item.isDataVar() and child_item.name() != MASK_KEY:
                         if child_item not in self._selected_data_var_items:
                             self._selected_data_var_items.append(child_item)
             elif item.isDataVar():
