@@ -6,7 +6,9 @@ PyQt UIs for Xarray DataTree including tree view and DataArray slice graphing an
 ![GitHub Release](https://img.shields.io/github/v/release/marcel-goldschen-ohm/xarray-graph?include_prereleases&cacheSeconds=1)
 ![publish](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/publish.yml/badge.svg)
 
-:construction: YouTube videos for tree and graph apps
+[<img src="images/xarray-tree-youtube.png" width="50%">](https://youtu.be/jrO5Khk9ZKY)
+
+:construction: YouTube video for graph app coming soon...
 
 ## Contents
 - [Install](#install)
@@ -56,7 +58,7 @@ uv run xarray-tree
 ```
 :bangbang: *Note: The first time you run the app it may take 30-60 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
-:construction: YouTube video
+[<img src="images/xarray-tree-youtube.png" width="50%">](https://youtu.be/jrO5Khk9ZKY)
 
 [&uarr; top](#xarray-graph)
 
