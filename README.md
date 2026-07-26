@@ -56,7 +56,7 @@ Tree UI for an Xarray DataTree.
 ```shell
 uv run xarray-tree
 ```
-:bangbang: *Note: The first time you run the app it may take 30-60 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
+:bangbang: *Note: The first time you run the app it may take 20-30 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
 [<img src="images/xarray-tree-youtube.png" width="50%">](https://youtu.be/jrO5Khk9ZKY)
 
@@ -69,7 +69,7 @@ Graph/Iterate/Fit/Analyze (x,y) slices of DataArrays in an Xarray DataTree.
 ```shell
 uv run xarray-graph
 ```
-:bangbang: *Note: The first time you run the app it may take 10-20 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
+:bangbang: *Note: The first time you run the app it may take 20-30 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
 :construction: YouTube video
 
