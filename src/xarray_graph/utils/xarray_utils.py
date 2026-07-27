@@ -266,7 +266,7 @@ def store_ordered_data_vars(dt: DataTree) -> DataTree:
     node: DataTree
     for node in dt.subtree:
         ordered_data_vars: tuple[str] = tuple(node.data_vars)
-        if ordered_data_vars:
+        if len(ordered_data_vars) > 1:
             node.attrs[ORDERED_DATA_VARS_KEY] = ', '.join(ordered_data_vars)
         elif ORDERED_DATA_VARS_KEY in node.attrs:
             del node.attrs[ORDERED_DATA_VARS_KEY]
