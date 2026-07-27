@@ -1810,7 +1810,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
         from qtpy.QtWidgets import QMenu
 
-        self._view_menu.insertAction(self.console._console_action, self._notes_action)
+        self._view_menu.insertAction(self._console_action, self._notes_action)
         sep = self._view_menu.insertSeparator(self._notes_action)
         self._view_menu.insertAction(sep, self._view_masked_action)
         self._view_menu.insertAction(self._view_masked_action, self._view_ROIs_action)
