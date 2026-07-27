@@ -1136,20 +1136,20 @@ class XarrayGraph(XarrayDataTreeViewer):
                 
                 mask = None
                 if var_name != MASK_KEY:
-                    # # search ancestors for mask data
-                    # from xarray_graph.utils.xarray_utils import aligned_root
-                    # branch_root_node = aligned_root(node)
-                    # node_ = node
-                    # while node_:
-                    #     if MASK_KEY in node_.data_vars:
-                    #         mask = node_.data_vars[MASK_KEY]
-                    #         break
-                    #     if node_ is branch_root_node:
-                    #         break
-                    #     node_ = node_.parent
+                    # search ancestors for mask data
+                    from xarray_graph.utils.xarray_utils import aligned_root
+                    branch_root_node = aligned_root(node)
+                    node_ = node
+                    while node_:
+                        if MASK_KEY in node_.data_vars:
+                            mask = node_.data_vars[MASK_KEY]
+                            break
+                        if node_ is branch_root_node:
+                            break
+                        node_ = node_.parent
                     # mask_node = node_
-                    if MASK_KEY in node.data_vars:
-                        mask = node.data_vars[MASK_KEY]
+                    # if MASK_KEY in node.data_vars:
+                    #     mask = node.data_vars[MASK_KEY]
                 
                 non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
                 if len(non_xdim_coord_permutations) == 0:
