@@ -6,7 +6,7 @@ from qtpy.QtCore import Qt, QPoint, QSize, QModelIndex
 from qtpy.QtGui import QColor
 from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
 from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
-from xarray_graph.utils.xarray_utils import str_to_value, value_to_str
+from xarray_graph.utils.utils import str_to_value, value_to_str
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -118,7 +118,7 @@ class KeyValueTreeModel(AbstractTreeModel):
                 vtype = type(value)
                 import numpy as np
                 if vtype is np.ndarray:
-                    text = str(value.dtype)
+                    text = f'{vtype.__name__} of {value.dtype}'
                 else:
                     text = vtype.__name__
                 # if vtype.__module__ == 'builtins':
@@ -161,12 +161,12 @@ class KeyValueTreeModel(AbstractTreeModel):
             elif index.column() == 1:
                 # edit value
                 old_value = item.value()
-                import numpy as np
-                if isinstance(old_value, np.ndarray):
-                    old_vtype = old_value.dtype
-                else:
-                    old_vtype = type(old_value)
-                new_value = str_to_value(value, default_type=old_vtype)
+                # import numpy as np
+                # if isinstance(old_value, np.ndarray):
+                #     old_vtype = old_value.dtype
+                # else:
+                #     old_vtype = type(old_value)
+                new_value = str_to_value(value)
                 n_old_children: int = len(item.children)
                 n_new_children: int = len(new_value) if type(new_value) in [dict, list] else 0
                 if n_old_children:

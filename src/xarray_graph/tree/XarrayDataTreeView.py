@@ -414,7 +414,7 @@ class XarrayDataTreeView(TreeView):
         shape = tuple(parent_item._node.sizes.values())
         dims = tuple(parent_item._node.dims)
         data = np.zeros(shape)
-        from xarray_graph.utils.xarray_utils import unique_name
+        from xarray_graph.utils.utils import unique_name
         name = unique_name('variable', list(parent_item._node.keys()))
         new_var = xr.DataArray(data, name=name, dims=dims)
         dt = model.treeData()
@@ -519,7 +519,7 @@ class XarrayDataTreeView(TreeView):
             concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
             parent_item: XarrayDataTreeItem = items[0].parent
             parent_node: xr.DataTree = parent_item._node
-            from xarray_graph.utils.xarray_utils import unique_name
+            from xarray_graph.utils.utils import unique_name
             name = unique_name('Concat', list(parent_node.keys()))
             parent_node[name] = concatenated_dataset
             self.refresh()

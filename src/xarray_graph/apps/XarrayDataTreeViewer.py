@@ -253,7 +253,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # new combined window
         combined_window = cls.new()
-        from xarray_graph.utils.xarray_utils import unique_name
+        from xarray_graph.utils.utils import unique_name
         combined_window_title: str = unique_name('Combined', noncombined_window_titles)
         combined_window.setWindowTitle(combined_window_title)
         combined_window.setDatatree(combined_datatree)

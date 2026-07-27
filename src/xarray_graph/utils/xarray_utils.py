@@ -2,18 +2,15 @@
 """
 
 from collections.abc import Iterator
-import numpy as np
-import xarray as xr
+from xarray import DataArray, Dataset, DataTree
 from pint import UnitRegistry
-# from ast import literal_eval
-# from asteval import Interpreter
 
 
 ORDERED_DATA_VARS_KEY = '_XG_ORDERED_DATA_VARS'
 INHERITED_DATA_VARS_KEY = '_XG_INHERITED_DATA_VARS'
 
 
-def ordered_dims_iter(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) -> Iterator[str]:
+def ordered_dims_iter(objects: list[DataTree | Dataset | DataArray]) -> Iterator[str]:
     """ Yield dimensions in the order they appear in the DataArrays for a collection of DataTree, Dataset, and DataArray objects.
     
     Xarray DataTree or Dataset do not have a defined dimension order, whereas DataArray does. This function is useful to work with dims ordered consistently based on DataArrays.
@@ -22,14 +19,14 @@ def ordered_dims_iter(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) ->
     yielded_dims: list[str] = []
     # yield dims in the order they appear in the DataArrays, skipping dims already yielded
     for obj in objects:
-        if isinstance(obj, xr.DataArray):
+        if isinstance(obj, DataArray):
             vars = [obj]
-        elif isinstance(obj, (xr.DataTree, xr.Dataset)):
+        elif isinstance(obj, (DataTree, Dataset)):
             vars = obj.data_vars.values()
         else:
             # ignore objects that aren't DataArrays, Datasets, or DataTrees
             continue
-        var: xr.DataArray
+        var: DataArray
         for var in vars:
             for dim in var.dims:
                 if dim not in yielded_dims:
@@ -37,7 +34,7 @@ def ordered_dims_iter(objects: list[xr.DataTree | xr.Dataset | xr.DataArray]) ->
                     yielded_dims.append(dim)
 
 
-def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> Iterator[xr.DataArray]:
+def ordered_coords_iter(node: DataTree, include_inherited: bool = True) -> Iterator[DataArray]:
     """ Yield coords in a defined order (index coords in dim order, then non-index coords) for a given DataTree.
     """
     if not include_inherited:
@@ -60,7 +57,7 @@ def ordered_coords_iter(node: xr.DataTree, include_inherited: bool = True) -> It
             yield coord
 
 
-def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> list[str]:
+def ordered_node_keys(node: DataTree, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> list[str]:
     """ Return a list of node keys in a defined order (ordered coords, data_vars, children) for a given DataTree.
     """
     keys = []
@@ -72,7 +69,7 @@ def ordered_node_keys(node: xr.DataTree, include_data_vars: bool = True, include
     return keys
 
 
-def move_item(src_parent_node: xr.DataTree, src_key: str, dst_parent_node: xr.DataTree, dst_key: str) -> bool:
+def move_item(src_parent_node: DataTree, src_key: str, dst_parent_node: DataTree, dst_key: str) -> bool:
     try:
         # test move in a copy
         src_parent_node_copy = src_parent_node.copy(deep=False)
@@ -87,14 +84,14 @@ def move_item(src_parent_node: xr.DataTree, src_key: str, dst_parent_node: xr.Da
     return True
 
 
-def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
+def rename_dims(node: DataTree, dims_dict: dict[str, str]) -> None:
     """ Rename dimensions in a branch of aligned nodes.
 
     The aligned branch includes all descendants of the most distant ancestor aligned with the input node.
     Also renames index coords to match the new dimension names.
     """
     # root of aligned branch to be renamed
-    branch_root: xr.DataTree = aligned_root(node)
+    branch_root: DataTree = aligned_root(node)
     # rename dims in branch
     branch_root.dataset = branch_root.to_dataset().rename_dims(dims_dict)
     for node in branch_root.descendants:
@@ -112,11 +109,11 @@ def rename_dims(node: xr.DataTree, dims_dict: dict[str, str]) -> None:
                 child.dataset = child.to_dataset().reset_coords(old_names, drop=True)
 
 
-def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: UnitRegistry) -> xr.DataArray | xr.Dataset | xr.DataTree:
+def to_base_units(data: DataArray | Dataset | DataTree, ureg: UnitRegistry) -> DataArray | Dataset | DataTree:
     """ Use pint to convert input data into base units.
     """
     from pint import Quantity
-    if isinstance(data, xr.DataArray):
+    if isinstance(data, DataArray):
         if 'units' not in data.attrs:
             return data
         quantity: Quantity = data.data * ureg(data.attrs['units'])
@@ -124,21 +121,21 @@ def to_base_units(data: xr.DataArray | xr.Dataset | xr.DataTree, ureg: UnitRegis
         da = data.copy(data=quantity.magnitude)
         da.attrs['units'] = str(quantity.units)
         return da
-    elif isinstance(data, xr.Dataset):
-        return xr.Dataset(
+    elif isinstance(data, Dataset):
+        return Dataset(
             data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
             coords={name: to_base_units(coord) for name, coord in data.coords.items()},
             attrs=data.attrs,
         )
-    elif isinstance(data, xr.DataTree):
-        dt: xr.DataTree = data.copy(deep=False)
-        node: xr.DataTree
+    elif isinstance(data, DataTree):
+        dt: DataTree = data.copy(deep=False)
+        node: DataTree
         for node in dt.subtree:
             node.dataset = to_base_units(node.to_dataset())
         return dt
 
 
-def aligned_root(node: xr.DataTree) -> xr.DataTree:
+def aligned_root(node: DataTree) -> DataTree:
     """ Return the most distant ancestor aligned with node.
 
     Xarray DataTree requires that child nodes be aligned with their parent node.
@@ -151,7 +148,7 @@ def aligned_root(node: xr.DataTree) -> xr.DataTree:
     return node
 
 
-def branch_iter(dt: xr.DataTree) -> Iterator[xr.DataTree]:
+def branch_iter(dt: DataTree) -> Iterator[DataTree]:
     """ Yield the branch root nodes for all aligned branches in the tree.
 
     Xarray DataTree requires that child nodes be aligned with their parent node.
@@ -166,171 +163,24 @@ def branch_iter(dt: xr.DataTree) -> Iterator[xr.DataTree]:
         return
     
     # keep track of branch roots already yielded
-    yielded_branches: list[xr.DataTree] = []
+    yielded_branches: list[DataTree] = []
     # yield the root node for each branch in the subtree
     for leaf in dt.leaves:
-        branch_root: xr.DataTree = aligned_root(leaf)
+        branch_root: DataTree = aligned_root(leaf)
         if branch_root not in yielded_branches:
             yield branch_root
             yielded_branches.append(branch_root)
 
 
-def index_by_identity(objects: list | tuple, target_obj):
-    """
-    Returns the index of the first occurrence of target_obj in objects based on identity.
-    Returns -1 if the object is not found.
-    """
-    for i, item in enumerate(objects):
-        if item is target_obj:
-            return i
-    return -1
-
-
-def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> str:
-    """ Return name_1, or name_2, etc. until a unique name is found that does not exist in names.
-    """
-    if name not in names:
-        return name
-    base_name = name
-    i = unique_counter_start
-    name = f'{base_name}_{i}'
-    while name in names:
-        i += 1
-        name = f'{base_name}_{i}'
-    return name
-
-
-def str_to_value(text: str, default_type = None) -> bool | int | float | str | tuple | list | dict | set | np.ndarray:
-    """ Convert a string representation of a value into the corresponding Python object.
-    
-    Handles basic values and containers and numpy arrays (keeps track of array dtype).
-    """
-    dtype = None
-    if text.rstrip().endswith('>'):
-        pos = text.rfind('<')
-        if pos != -1:
-            # assume value <type> format, strip type and parse value
-            dtype = text[pos:].strip()[1:-1]
-            text = text[:pos].strip()
-    if text.lstrip().startswith('(') and text.rstrip().endswith(')') and dtype in [None, 'tuple']:
-        # tuple
-        inner_text = text.strip()[1:-1]
-        values = [str_to_value(item.strip()) for item in split_text(inner_text)]
-        return tuple(values)
-    if text.lstrip().startswith('[') and text.rstrip().endswith(']') and dtype != 'str':
-        # list or numpy array
-        inner_text = text.strip()[1:-1]
-        values = [str_to_value(item.strip()) for item in split_text(inner_text)]
-        # if type is specified, assume it is a numpy array and convert to that type
-        if dtype:
-            values = np.array(values, dtype=dtype)
-        elif (default_type is not None) and (default_type is not list):
-            values = np.array(values, dtype=default_type)
-        return values
-    if text.lstrip().startswith('{') and text.rstrip().endswith('}') and dtype in [None, 'dict', 'set']:
-        # dict or set
-        inner_text = text.strip()[1:-1]
-        items = split_text(inner_text)
-        if not items:
-            # empty dict or set
-            if dtype == 'set':
-                return set()
-            return {}
-        if dtype == 'dict' or (dtype is None and ':' in items[0]):
-            # dict
-            values = {}
-            for item in items:
-                key, value = item.split(':', 1)
-                values[key.strip()] = str_to_value(value.strip())
-            return values
-        else:
-            # set
-            values = set()
-            for item in items:
-                values.add(str_to_value(item))
-            return values
-    if dtype:
-        # if dtype is specified but not a container, try to convert to that type
-        import builtins
-        py_dtype = getattr(builtins, dtype, None)
-        if py_dtype:
-            # if dtype is a built-in type, use it directly
-            return py_dtype(text)
-        # try numpy dtypes
-        np_dtype = np.dtype(dtype)
-        return np_dtype.type(text)
-    try:
-        # first try to convert to int
-        value = int(text)
-        if default_type and issubclass(default_type, np.integer):
-            return default_type(value)
-        return value
-    except ValueError:
-        try:
-            # next try to convert to float
-            value = float(text)
-            if default_type and issubclass(default_type, np.floating):
-                return default_type(value)
-            return value
-        except ValueError:
-            # if not a number, return as string
-            return text
-
-
-def value_to_str(value, include_type: bool = False, in_array: bool = False) -> str:
-    """ Convert a value to its string representation.
-
-    Handles basic values and containers and numpy arrays (keeps track of array dtype).
-    """
-    if isinstance(value, tuple):
-        return '(' + ', '.join([value_to_str(val, include_type=include_type) for val in value]) + ')'
-    if isinstance(value, list):
-        return '[' + ', '.join([value_to_str(val, include_type=include_type) for val in value]) + ']'
-    if isinstance(value, set):
-        return '{' + ', '.join([value_to_str(val, include_type=include_type) for val in value]) + '}'
-    if isinstance(value, dict):
-        return '{' + ', '.join([f'{key}: ' + value_to_str(val, include_type=include_type) for key, val in value.items()]) + '}'
-    if isinstance(value, np.ndarray):
-        text = '[' + ', '.join([value_to_str(val, include_type=include_type, in_array=True) for val in value]) + ']'
-        if include_type and not in_array:
-            return f'{text} <{value.dtype}>'
-        return text
-    if include_type and not in_array:
-        dtype = type(value).__name__
-        return f'{value} <{dtype}>'
-    return str(value)
-
-
-def split_text(text: str) -> list[str]:
-    parts: list[str] = ['']
-    grouping: str = ''
-    for char in text:
-        if char == '(' or char == '[' or char == '{':
-            grouping += char
-        elif grouping:
-            if grouping[-1] == '(' and char == ')':
-                grouping = grouping[:-1]
-            elif grouping[-1] == '[' and char == ']':
-                grouping = grouping[:-1]
-            elif grouping[-1] == '{' and char == '}':
-                grouping = grouping[:-1]
-        if char == ',' and not grouping:
-            parts.append('')
-        else:
-            parts[-1] += char
-    parts = [part.strip() for part in parts if part.strip()]
-    return parts
-
-
-def inherit_missing_data_vars(dt: xr.DataTree) -> xr.DataTree:
+def inherit_missing_data_vars(dt: DataTree) -> DataTree:
     """ All tree nodes inherit references (not copies) to any parent data_vars not already existing in the node.
 
     Returns a new datatree with all inherited data_vars.
     """
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
-        parent: xr.DataTree = node.parent
+        parent: DataTree = node.parent
         if not parent:
             continue
         to_inherit = {}
@@ -342,16 +192,16 @@ def inherit_missing_data_vars(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def remove_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
+def remove_inherited_data_vars(dt: DataTree) -> DataTree:
     """ Remove any data_vars in each tree node that are references to data_vars in the parent node.
 
     Returns a new datatree without any inherited data_vars.
     """
     dt = dt.copy(deep=False)
     # iterate in reverse to ensure reference chains are properly removed
-    node: xr.DataTree
+    node: DataTree
     for node in reversed(list(dt.subtree)):
-        parent: xr.DataTree = node.parent
+        parent: DataTree = node.parent
         if not parent:
             continue
         to_remove = []
@@ -363,16 +213,16 @@ def remove_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def store_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
+def store_inherited_data_vars(dt: DataTree) -> DataTree:
     """ For all tree nodes, store the names of data_vars inherited from the parent node in the node attrs.
 
     Inherited means the underlying data is a reference to the date in the parent node.
     Returns a new datatree with inherited data_vars defined in the node attrs.
     """
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
-        parent: xr.DataTree = node.parent
+        parent: DataTree = node.parent
         if not parent:
             continue
         inherited = []
@@ -386,15 +236,15 @@ def store_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def restore_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
+def restore_inherited_data_vars(dt: DataTree) -> DataTree:
     """ Inherit data_vars from parent nodes as specified in the each node's metadata.
 
     Returns a new datatree with inherited data_vars.
     """
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
-        parent: xr.DataTree = node.parent
+        parent: DataTree = node.parent
         if not parent:
             continue
         inherited = node.attrs.get(INHERITED_DATA_VARS_KEY, None)
@@ -407,13 +257,13 @@ def restore_inherited_data_vars(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def store_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
+def store_ordered_data_vars(dt: DataTree) -> DataTree:
     """ Store the current data_var order in each node's metadata.
 
     Returns a new datatree with data_var order defined in the node attrs.
     """
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
         ordered_data_vars: tuple[str] = tuple(node.data_vars)
         if ordered_data_vars:
@@ -423,13 +273,13 @@ def store_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
+def restore_ordered_data_vars(dt: DataTree) -> DataTree:
     """ Reorder data_vars in each node according to the order specified in the node's metadata.
 
     Returns a new datatree with data_var order set as defined in the node attrs.
     """
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
         ordered_data_vars = node.attrs.get(ORDERED_DATA_VARS_KEY, None)
         if ordered_data_vars is None:
@@ -441,7 +291,7 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
             if name not in reordered_data_vars:
                 reordered_data_vars[name] = ds.data_vars[name]
         if tuple(ds.data_vars) != tuple(reordered_data_vars):
-            node.dataset = xr.Dataset(
+            node.dataset = Dataset(
                 data_vars=reordered_data_vars,
                 coords=ds.coords,
                 attrs=ds.attrs,
@@ -449,13 +299,14 @@ def restore_ordered_data_vars(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def store_attrs_objects_as_strings(dt: xr.DataTree) -> xr.DataTree:
+def store_attrs_objects_as_strings(dt: DataTree) -> DataTree:
     """ Serialize any list, tuple, or dict attr objects into strings.
 
     e.g., for serialization to HDF5.
     """
+    from xarray_graph.utils.utils import value_to_str
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
         for key, value in node.attrs.items():
             if isinstance(value, (list, tuple, dict)):
@@ -467,13 +318,14 @@ def store_attrs_objects_as_strings(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def restore_attrs_objects_from_strings(dt: xr.DataTree) -> xr.DataTree:
+def restore_attrs_objects_from_strings(dt: DataTree) -> DataTree:
     """ Deserialize any list, tuple, or dict attr objects from strings.
 
     e.g., for deserialization from HDF5.
     """
+    from xarray_graph.utils.utils import str_to_value
     dt = dt.copy(deep=False)
-    node: xr.DataTree
+    node: DataTree
     for node in dt.subtree:
         for key, value in node.attrs.items():
             if isinstance(value, str):
@@ -485,7 +337,7 @@ def restore_attrs_objects_from_strings(dt: xr.DataTree) -> xr.DataTree:
     return dt
 
 
-def prepare_for_serialization(dt: xr.DataTree, flatten_attrs: bool = False) -> xr.DataTree:
+def prepare_for_serialization(dt: DataTree, flatten_attrs: bool = False) -> DataTree:
     """ Returns a new datatree ready for serialization.
     """
     dt = store_ordered_data_vars(dt)
@@ -496,7 +348,7 @@ def prepare_for_serialization(dt: xr.DataTree, flatten_attrs: bool = False) -> x
     return dt
 
 
-def recover_post_deserialization(dt: xr.DataTree, unflatten_attrs: bool = False) -> xr.DataTree:
+def recover_post_deserialization(dt: DataTree, unflatten_attrs: bool = False) -> DataTree:
     """ Returns a new datatree ready for use post serialization.
     """
     dt = restore_inherited_data_vars(dt)
@@ -507,16 +359,17 @@ def recover_post_deserialization(dt: xr.DataTree, unflatten_attrs: bool = False)
 
 
 def test():
-    dt = xr.DataTree()
-    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    from xarray.tutorial import load_dataset
+    dt = DataTree()
+    dt['air_temperature'] = load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
-    dt['air_temperature/inherits'] = xr.tutorial.load_dataset('air_temperature')
-    dt['air_temperature/inherits/again'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child/grandchild/greatgrandchild'] = xr.DataTree()
-    dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
-    dt['child/grandchild/rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    dt['air_temperature/inherits'] = load_dataset('air_temperature')
+    dt['air_temperature/inherits/again'] = load_dataset('air_temperature')
+    dt['child/grandchild/greatgrandchild'] = DataTree()
+    dt['child/grandchild/tiny'] = load_dataset('tiny')
+    dt['child/grandchild/rasm'] = load_dataset('rasm')
+    dt['rasm'] = load_dataset('rasm')
+    dt['air_temperature_gradient'] = load_dataset('air_temperature_gradient')
     print()
     print()
     print(dt)
@@ -527,36 +380,5 @@ def test():
     # print(dt)
 
 
-def test_ast_str():
-    # aeval = Interpreter()
-    # aeval("import numpy as np")
-    test_values = [
-        True,
-        False,
-        42,
-        3.14,
-        (1, 2, 3),
-        [1, 2, 3],
-        {1, 2, 3},
-        {"a": 1, "b": 2, "c": np.array([1, 2, 3]), "d": {"nested": 42}, "e": np.int64(42)},
-        np.array([1, 2, 3]),
-        np.int64(42),
-        np.float64(3.14),
-        np.array([[1, 2], [3, 4]]),
-        np.array([1, 2, 3], dtype=np.float32),
-        np.array([1, 2, 3], dtype=np.int32),
-    ]
-    values_back = []
-    for value in test_values:
-        s = value_to_str(value, include_type=True)
-        value_back = str_to_value(s)
-        print(f'{value} <{type(value).__name__}> -> "{s}" -> {value_back} <{type(value_back).__name__}>')
-        values_back.append(value_back)
-    
-    # print(values_back[7]['c'].dtype)
-    # print(type(values_back[7]['e']))
-
-
 if __name__ == '__main__':
-    # test()
-    test_ast_str()
+    test()

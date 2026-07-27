@@ -402,7 +402,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             result_path = f"{item.node().path.rstrip('/')}/Average/{data_var.name}"
             result_path_exists = result_path in dt
             if result_path_exists:
-                from xarray_graph.utils.xarray_utils import unique_name
+                from xarray_graph.utils.utils import unique_name
                 result_node_name = unique_name('Average', list(item.node().keys()))
                 result_path = f"{item.node().path.rstrip('/')}/{result_node_name}/{data_var.name}"
             dt[result_path] = data_var_avg
@@ -511,7 +511,8 @@ class XarrayGraph(XarrayDataTreeViewer):
     def onDataTreeSelectionChanged(self) -> None:
         # print('\n\nonDataTreeSelectionChanged...')
         from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
-        from xarray_graph.utils.xarray_utils import index_by_identity, aligned_root, ordered_dims_iter
+        from xarray_graph.utils.utils import index_by_identity
+        from xarray_graph.utils.xarray_utils import aligned_root, ordered_dims_iter
 
         # selected data_vars
         selected_items = self._datatree_view.selectedItems(ordered=True)
@@ -1136,7 +1137,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                 mask = None
                 if var_name != MASK_KEY:
                     # # search ancestors for mask data
-                    # branch_root_node = xarray_utils.aligned_root(node)
+                    # from xarray_graph.utils.xarray_utils import aligned_root
+                    # branch_root_node = aligned_root(node)
                     # node_ = node
                     # while node_:
                     #     if MASK_KEY in node_.data_vars:

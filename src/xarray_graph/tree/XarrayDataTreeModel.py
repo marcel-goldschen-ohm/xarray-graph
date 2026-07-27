@@ -461,7 +461,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             name_conflict = None
             item_name = item.name()
             if item_name is None:
-                from xarray_graph.utils.xarray_utils import unique_name
+                from xarray_graph.utils.utils import unique_name
                 item_name = unique_name('Node', parent_keys)
                 item.setName(item_name)
             if '/' in item_name:
@@ -498,7 +498,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     # TODO
                     pass
                 elif action == 'Keep Both':
-                    from xarray_graph.utils.xarray_utils import unique_name
+                    from xarray_graph.utils.utils import unique_name
                     new_name = unique_name(item_name, parent_keys)
                     item.setName(new_name)
                 elif action == 'Skip':
@@ -635,7 +635,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                         pass
                     elif action == 'Keep Both':
                         # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
-                        from xarray_graph.utils.xarray_utils import unique_name
+                        from xarray_graph.utils.utils import unique_name
                         new_name = unique_name(src_item_name, dst_parent_keys + src_parent_keys)
                         src_item.setName(new_name)
                     elif action == 'Skip':
