@@ -22,21 +22,6 @@ class IPythonConsole(RichJupyterWidget):
         # self.exit_requested.connect(self.stop)
         # QApplication.instance().aboutToQuit.connect(self.stop)
 
-        from qtpy.QtCore import Qt
-        from qtpy.QtGui import QKeySequence
-        from qtpy.QtWidgets import QAction
-        from qtawesome import icon
-        self._console_action = QAction(
-            icon=icon('mdi.console'),
-            iconVisibleInMenu=True,
-            text='Console',
-            toolTip='Show Console',
-            checkable=False,
-            shortcut=QKeySequence('`'),
-            shortcutContext=Qt.ShortcutContext.ApplicationShortcut,
-            triggered=lambda checked: self._show_and_raise()
-        )
-
         self._message_queue: list[str] = []
     
     def start(self) -> None:

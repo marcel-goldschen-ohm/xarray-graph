@@ -8,16 +8,16 @@ from __future__ import annotations
 # import time
 # t0 = time.time()
 from qtpy.QtWidgets import QMainWindow
-from xarray_graph.utils.WindowManager import WindowManager
 from importlib.metadata import version
 # print(f'XarrayDataTreeViewer.py imports took {time.time() - t0:.3f} seconds')
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from os import PathLike
-    import xarray as xr
+    from xarray import DataTree
     from qtpy.QtCore import QSize
     from qtpy.QtWidgets import QWidget
+    from xarray_graph.utils.WindowManager import WindowManager
     from xarray_graph.utils.IPythonConsole import IPythonConsole
     from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
     from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
@@ -32,39 +32,20 @@ class XarrayDataTreeViewer(QMainWindow):
     """ PyQt widget for visualizing and manipulating Xarray DataTrees.
     """
 
-    window_mgr = WindowManager()
+    # global window manager (will be initialized when the first window is created)
+    window_mgr: WindowManager = None
 
-    # global console (will be initialized by first instance)
+    # global console (will be initialized when needed)
     console: IPythonConsole = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # add to window manager
+        if self.window_mgr is None:
+            from xarray_graph.utils.WindowManager import WindowManager
+            type(self).window_mgr = WindowManager()
         self.window_mgr.addWindow(self)
-
-        # global console
-        if self.console is None:
-            from xarray_graph.utils.IPythonConsole import IPythonConsole
-            console = IPythonConsole()
-            console.execute('import numpy as np', hidden=True)
-            console.execute('import xarray as xr', hidden=True)
-            console.addVariables({'wm': self.window_mgr})
-            msg = """
-            ----------------------------------------------------
-            Variables:
-            wm -> WindowManager
-            
-            e.g., window = wm['window title'] or wm[index]
-                  datatree = window.datatree()
-            
-            wm.dir() or wm.ls() -> List all windows as "index: title".
-            
-            Modules loaded at startup: numpy as np, xarray as xr
-            ----------------------------------------------------
-            """
-            console.printMessage(msg)
-            type(self).console = console
         
         # datatree
         from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
@@ -84,10 +65,10 @@ class XarrayDataTreeViewer(QMainWindow):
         from qtpy.QtCore import QSize
         return super().sizeHint().expandedTo(QSize(1000, 800))
 
-    def datatree(self) -> xr.DataTree:
+    def datatree(self) -> DataTree:
         return self._datatree_view.treeData()
     
-    def setDatatree(self, datatree: xr.DataTree) -> None:
+    def setDatatree(self, datatree: DataTree) -> None:
         self._datatree_view.setTreeData(datatree)
         self.refresh()
 
@@ -138,6 +119,35 @@ class XarrayDataTreeViewer(QMainWindow):
     def settings(self) -> None:
         raise NotImplementedError('Settings dialog not implemented.')
     
+    def showConsole(self) -> None:
+        """ Show console.
+        """
+
+        # global console
+        if self.console is None:
+            from xarray_graph.utils.IPythonConsole import IPythonConsole
+            console = IPythonConsole()
+            console.execute('import numpy as np', hidden=True)
+            console.execute('import xarray as xr', hidden=True)
+            console.addVariables({'wm': self.window_mgr})
+            msg = """
+            ----------------------------------------------------
+            Variables:
+            wm -> WindowManager
+            
+            e.g., window = wm['window title'] or wm[index]
+                  datatree = window.datatree()
+            
+            wm.dir() or wm.ls() -> List all windows as "index: title".
+            
+            Modules loaded at startup: numpy as np, xarray as xr
+            ----------------------------------------------------
+            """
+            console.printMessage(msg)
+            type(self).console = console
+
+        self.console._show_and_raise()
+
     @classmethod
     def new(cls) -> XarrayDataTreeViewer:
         """ Create new XarrayDataTreeViewer top level window.
@@ -170,7 +180,7 @@ class XarrayDataTreeViewer(QMainWindow):
             if isinstance(filepath, (list, tuple)):
                 # combine multiple files as first-level groups in single datatree
                 import xarray as xr
-                datatree = xr.DataTree()
+                datatree = DataTree()
                 for path in filepath:
                     path = Path(path)
                     datatree[path.stem] = open_datatree(path, filetype=filetype)
@@ -209,9 +219,8 @@ class XarrayDataTreeViewer(QMainWindow):
                 return
         
         from pathlib import Path
-        import xarray as xr
         filepath = Path(filepath)
-        datatree: xr.DataTree = self.datatree()
+        datatree: DataTree = self.datatree()
         datatree.attrs[VERSION_KEY] = XARRAY_GRAPH_VERSION
         try:
             from xarray_graph.io.io import save_datatree
@@ -232,12 +241,11 @@ class XarrayDataTreeViewer(QMainWindow):
             return
         
         # combined datatree
-        import xarray as xr
-        combined_datatree = xr.DataTree()
+        combined_datatree = DataTree()
         window: XarrayDataTreeViewer
         for window in windows:
             title = window.windowTitle()
-            datatree = window.datatree() #or xr.DataTree()
+            datatree = window.datatree() #or DataTree()
             combined_datatree[title] = datatree
         
         noncombined_windows: list[XarrayDataTreeViewer] = [window for window in XarrayDataTreeViewer.window_mgr.windows() if window not in windows]
@@ -268,9 +276,8 @@ class XarrayDataTreeViewer(QMainWindow):
             window = XarrayDataTreeViewer.window_mgr.activeWindow()
         if window is None:
             return
-        import xarray as xr
-        dt: xr.DataTree = window.datatree()
-        groups: tuple[xr.DataTree] = tuple(dt.children.values())
+        dt: DataTree = window.datatree()
+        groups: tuple[DataTree] = tuple(dt.children.values())
         if not groups:
             return
         
@@ -287,6 +294,7 @@ class XarrayDataTreeViewer(QMainWindow):
         XarrayDataTreeViewer.window_mgr.updateAllWindowMenus()
    
     def _initActions(self) -> None:
+        from qtpy.QtCore import Qt
         from qtpy.QtGui import QKeySequence
         from qtpy.QtWidgets import QAction, QActionGroup
         from qtawesome import icon
@@ -312,6 +320,17 @@ class XarrayDataTreeViewer(QMainWindow):
             toolTip='Settings',
             shortcut=QKeySequence.StandardKey.Preferences,
             triggered=lambda checked: self.settings())
+        
+        self._console_action = QAction(
+            icon=icon('mdi.console'),
+            iconVisibleInMenu=True,
+            text='Console',
+            toolTip='Show Console',
+            checkable=False,
+            shortcut=QKeySequence('`'),
+            shortcutContext=Qt.ShortcutContext.ApplicationShortcut,
+            triggered=lambda checked: self.showConsole()
+        )
 
         self._new_action = QAction(
             iconVisibleInMenu=False,
@@ -401,7 +420,7 @@ class XarrayDataTreeViewer(QMainWindow):
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
         
         self._view_menu = menubar.addMenu('View')
-        self._view_menu.addAction(self.console._console_action)
+        self._view_menu.addAction(self._console_action)
         self._view_menu.addSeparator()
         self._theme_menu = self._view_menu.addMenu('Theme')
         self._view_menu.addSeparator()
@@ -488,13 +507,13 @@ def test_live():
     # window.refresh()
 
     import xarray as xr
-    dt = xr.DataTree()
+    dt = DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
     dt['air_temperature/inherits'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/inherits/again'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child'] = xr.DataTree()
-    dt['child/grandchild/greatgrandchild'] = xr.DataTree()
+    dt['child'] = DataTree()
+    dt['child/grandchild/greatgrandchild'] = DataTree()
     dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
     dt['rasm'] = xr.tutorial.load_dataset('rasm')
     dt['rasm/rasm'] = xr.tutorial.load_dataset('rasm')

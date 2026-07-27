@@ -4,6 +4,9 @@ import os
 # disable pydevd file validation to avoid warning messages
 os.environ["PYDEVD_DISABLE_FILE_VALIDATION"] = "1"
 
+# use lazy importing
+os.environ["PYTHONLAZYIMPORTS"] = "1"
+
 from qtpy.QtCore import Qt, QSize
 from qtpy.QtWidgets import QApplication, QSplashScreen
 from qtawesome import icon
