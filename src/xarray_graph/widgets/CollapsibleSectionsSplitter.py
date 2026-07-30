@@ -274,7 +274,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     if self.orientation() == Qt.Orientation.Vertical:
                         action_index: int = (event.pos().x() - custom_icons_rect.left()) // self.height()
                     elif self.orientation() == Qt.Orientation.Horizontal:
-                        action_index: int = (event.pos().y() - custom_icons_rect.top()) // self.width()
+                        action_index: int = (custom_icons_rect.bottom() - event.pos().y()) // self.width()
                     action: QAction = section['actions'][action_index]
                     action.trigger()
                     return
@@ -392,13 +392,23 @@ class CollapsibleSectionsHandle(QSplitterHandle):
 
         # title
         font = painter.font()
-        font.setPixelSize(rect.height() - 4)
-        painter.setFont(font)
         if self.orientation() == Qt.Orientation.Vertical:
-            painter.drawText(rect.adjusted(rect.height() + 5, 0, -1, -1), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
+            font.setPixelSize(rect.height() - 4)
+            painter.setFont(font)
+            painter.drawText(rect.adjusted(rect.height() + 5, 0, -rect.height() - 5, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
         elif self.orientation() == Qt.Orientation.Horizontal:
-            pass
-            # painter.drawText(rect.adjusted(0, rect.width() + 5, -1, -1), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
+            font.setPixelSize(rect.width() - 4)
+            painter.setFont(font)
+            painter.save()
+            painter.translate(rect.right(), rect.bottom() - rect.width() - 5)
+            # painter.setBrush(Qt.GlobalColor.red)
+            # painter.drawRect(QRect(-5, -5, 10, 10))
+            painter.rotate(-90)
+            # painter.setBrush(Qt.GlobalColor.red)
+            # painter.drawRect(QRect(0, -rect.width(), rect.height(), rect.width()))
+            painter.drawText(QRect(0, -rect.width(), rect.height(), rect.width()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
+            # painter.drawText(0, 0, section['title'])
+            painter.restore()
     
     def _expand_collapse_icon_rect(self) -> QRect:
         rect: QRect = self.rect()
@@ -426,14 +436,14 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         if self.orientation() == Qt.Orientation.Vertical:
             return QRect(rect.right() - rect.height() * (n_icons - index + 1), rect.top(), rect.height(), rect.height())
         elif self.orientation() == Qt.Orientation.Horizontal:
-            return QRect(rect.left(), rect.top() + rect.width() * (index + 1), rect.width(), rect.width())
+            return QRect(rect.left(), rect.top() + rect.width() * (n_icons - index), rect.width(), rect.width())
 
 
 def test_live():
     from qtpy.QtWidgets import QApplication, QTableView, QTreeView, QListView, QPushButton, QAction
     app = QApplication()
 
-    ui = CollapsibleSectionsSplitter()
+    ui = CollapsibleSectionsSplitter()#(orientation=Qt.Orientation.Horizontal)
     table = QTableView()
     ui.addSection('tree', QTreeView())
     ui.addSection('table', table)
