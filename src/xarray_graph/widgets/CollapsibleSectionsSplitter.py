@@ -87,10 +87,10 @@ class CollapsibleSectionsSplitter(QSplitter):
             spacer.setFixedWidth(0)
 
         self._sections.insert(index, {
-            'title': title,
-            'spacer': spacer,
-            'widget': widget,
-            'actions': None
+            'title': title, # section title displayed in the handle
+            'spacer': spacer, # spacer widget to replace the section widget when collapsed
+            'widget': widget, # widget displayed in the section when expanded
+            'actions': None # optional list of QAction objects to display as icons in the handle
         })
 
     def removeSection(self, index: int):
@@ -148,6 +148,11 @@ class CollapsibleSectionsSplitter(QSplitter):
 
     def setSectionActions(self, index: int, actions: list[QAction]):
         self._validateIndex(index)
+        for action in actions:
+            if not isinstance(action, QAction):
+                raise TypeError(f'Expected a list of QAction objects, but got {type(action)}.')
+            if action.icon().isNull():
+                raise ValueError('All actions must have an icon set, but one or more actions have a null icon.')
         self._sections[index]['actions'] = actions
         self.update()
     
