@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from qtpy.QtCore import QSize
     from qtpy.QtWidgets import QWidget
     from xarray_graph.utils.WindowManager import WindowManager
-    from xarray_graph.utils.IPythonConsole import IPythonConsole
+    from xarray_graph.widgets.IPythonConsole import IPythonConsole
     from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
     from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 
@@ -125,7 +125,7 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # global console
         if self.console is None:
-            from xarray_graph.utils.IPythonConsole import IPythonConsole
+            from xarray_graph.widgets.IPythonConsole import IPythonConsole
             console = IPythonConsole()
             console.execute('import numpy as np', hidden=True)
             console.execute('import xarray as xr', hidden=True)

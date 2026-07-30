@@ -47,7 +47,7 @@ def annotation_label(annotation: dict) -> str:
 
     # label is the first line of the 'text' field if it exists
     text = annotation.get('text', '')
-    label = text.strip(' ').split('\n')[0]
+    label = text.strip().split('\n')[0].strip()
     if label != '':
         return label
     
