@@ -48,10 +48,10 @@ class XarrayDataTreeItem(AbstractTreeItem):
     def node(self) -> xr.DataTree:
         return self._node
     
-    def parentNode(self) -> xr.DataTree | None:
-        if self._varname:
-            return self._node
-        return self._node.parent
+    # def parentNode(self) -> xr.DataTree | None:
+    #     if self._varname:
+    #         return self._node
+    #     return self._node.parent
     
     def isNode(self) -> bool:
         return self._varname == ''
@@ -115,10 +115,11 @@ class XarrayDataTreeItem(AbstractTreeItem):
         if name == old_name:
             # nothing to do
             return
-        parent_node: xr.DataTree = self.parentNode()
+        node: xr.DataTree = self.node()
+        parent_node: xr.DataTree | None = node.parent
         if parent_node is None:
             # this is the root node
-            self._node.name = name
+            node.name = name
             return
         if name in parent_node:
             raise ValueError(f'Name conflict: parent node already has an item named {name}')
@@ -148,7 +149,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
             parent_node.dataset = parent_node.to_dataset().rename_vars({old_name: name})
             self._varname = name
         elif self.isNode():
-            parent_node.children = {name if name != old_name else name: child for name, child in parent_node.children.items()}
+            parent_node.children = {(child_name if child_name != old_name else name): child for child_name, child in parent_node.children.items()}
     
     def orphan(self) -> None:
         # remove data from existing datatree and put into new orphaned datatree

@@ -609,6 +609,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 if name_conflict:
                     action = name_conflict_default_action
                     if action is None:
+                        from qtpy.QtWidgets import QApplication
                         parent_widget: QWidget = QApplication.focusWidget()
                         title = 'Name Conflict'
                         text = name_conflict
@@ -692,24 +693,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
             include_coords=self.isCoordsVisible(),
             include_inherited_coords=self.isInheritedCoordsVisible()
         )
-        # node: xr.DataTree = item.data()
-        # names: list[str] = []
-        # for data_type in tuple(XarrayDataTreeItem.DataType):
-        #     if data_type == XarrayDataTreeItem.DataType.INDEX_COORD:
-        #         if self.isCoordsVisible():
-        #             names += list(node.xindexes)
-        #     elif data_type == XarrayDataTreeItem.DataType.INHERITED_COORD:
-        #         if self.isCoordsVisible() and self.isInheritedCoordsVisible():
-        #             names += list(node._inherited_coords_set())
-        #     elif data_type == XarrayDataTreeItem.DataType.COORD:
-        #         if self.isCoordsVisible():
-        #             names += [name for name in node.coords if (name not in node.xindexes) and (name not in node._inherited_coords_set())]
-        #     elif data_type == XarrayDataTreeItem.DataType.DATA_VAR:
-        #         if self.isDataVarsVisible():
-        #             names += list(node.data_vars)
-        #     elif data_type == XarrayDataTreeItem.DataType.NODE:
-        #          names += list(node.children)
-        # return names
     
     def _updateSubtreeItems(self, parent_item: XarrayDataTreeItem) -> None:
         item: XarrayDataTreeItem
@@ -811,7 +794,7 @@ class ConflictDialog(QDialog):
         vbox.addSpacing(10)
 
         buttons = QDialogButtonBox()
-        self._continue_button: QPushButton = buttons.addButton('Skip & Continue', QDialogButtonBox.ButtonRole.AcceptRole)
+        self._continue_button: QPushButton = buttons.addButton('Skip && Continue', QDialogButtonBox.ButtonRole.AcceptRole)
         self._cancel_button: QPushButton = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         self._continue_button.setAutoDefault(False)
         self._cancel_button.setDefault(True)
