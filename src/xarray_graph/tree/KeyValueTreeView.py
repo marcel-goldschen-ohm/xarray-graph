@@ -23,6 +23,8 @@ class KeyValueTreeView(TreeView):
     def __init__(self, *args, **kwargs) -> None:
         TreeView.__init__(self, *args, **kwargs)
 
+        self.setAlternatingRowColors(True)
+
         # icons
         import qtawesome as qta
         self._dict_icon: QIcon = qta.icon('ph.folder-thin')
