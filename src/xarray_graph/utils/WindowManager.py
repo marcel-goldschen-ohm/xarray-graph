@@ -1,8 +1,9 @@
 """ PyQt QMainWindow manager.
 
+Manages a list of QMainWindow instances, including a Window menu that lists all managed windows and allows switching between them.
+
 TODO:
-- tile windows
-- pile windows
+- tile/pile windows
 """
 from __future__ import annotations
 
@@ -255,7 +256,7 @@ class WindowEventFilter(QObject):
 
 
 def test_live():
-    from qtpy.QtWidgets import QApplication
+    from qtpy.QtWidgets import QApplication, QMainWindow
     app = QApplication()
     # app.setQuitOnLastWindowClosed(False)
     mgr = WindowManager()
