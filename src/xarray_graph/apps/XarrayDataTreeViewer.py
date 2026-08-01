@@ -125,6 +125,18 @@ class XarrayDataTreeViewer(QMainWindow):
 
         # global console
         if self.console is None:
+            from qtpy.QtCore import Qt, QSize
+            from qtpy.QtGui import QPixmap
+            from qtpy.QtWidgets import QApplication, QSplashScreen
+            from qtawesome import icon as qta_icon
+            splash_pix: QPixmap = qta_icon('msc.console').pixmap(QSize(256, 256))
+            splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
+            splash.show()
+            splash.raise_()
+            splash.repaint() # !? needed to ensure splash screen is painted before the main window is shown despite the call to app.processEvents() below
+            splash.showMessage(f"\tLoading IPython console...\t", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+            QApplication.instance().processEvents() # force Qt to paint the splash screen immediately
+
             from xarray_graph.widgets.IPythonConsole import IPythonConsole
             console = IPythonConsole()
             console.execute('import numpy as np', hidden=True)
@@ -145,6 +157,10 @@ class XarrayDataTreeViewer(QMainWindow):
             """
             console.printMessage(msg)
             type(self).console = console
+
+            console._show_and_raise()
+            splash.finish(console)
+            return
 
         self.console._show_and_raise()
 
