@@ -525,6 +525,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 continue
 
             # insert item
+            # TODO: it's a bit wasteful to not use the tested insertion if it was successful, but would have to ensure item tree is updated to match
             row_for_item = XarrayDataTreeItem._findInsertionIndex(parent_item, item, row)
             success = super().insertItems([item], row_for_item, parent_item)
             if success:
@@ -664,6 +665,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     continue
 
             # move src_item
+            # TODO: it's a bit wasteful to not use the tested move if it was successful, but would have to ensure item trees are updated to match
             dst_row_for_item = XarrayDataTreeItem._findInsertionIndex(dst_parent_item, src_item, dst_row)
             # print(f'moving {src_item.path()} from {src_parent_item.path()} to {dst_parent_item.path()} at row {dst_row} -> {dst_row_for_item}')
             success = super().moveRows(src_parent_index, src_item.row(), 1, dst_parent_index, dst_row_for_item)
