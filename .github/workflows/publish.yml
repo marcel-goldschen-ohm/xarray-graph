@@ -1,4 +1,4 @@
-name: publish-to-pypi
+name: publish
 
 on:
   release:
@@ -21,24 +21,35 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
     
+    - name: Get latest release tag
+      id: get_tag
+      run: |
+        # Fetch the latest release tag name and save it to the output
+        LATEST_TAG=$(gh release view --json tagName --template '{{.tagName}}')
+        echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Check tag
+      run: echo "The latest release tag is ${{ steps.get_tag.outputs.tag }}"
+    
     - name: Install uv and set the Python version
       uses: astral-sh/setup-uv@v6
       with:
         version: "0.9.8" # uv version
         python-version: "3.12"
 
-    #- name: Install Hatch and uv-dynamic-versioning
-    #  # for dynamic version resolution from git tag
-    #  # we also need to explicitly create a venv here
-    #  run: |
-    #    uv venv
-    #    uv pip install hatch uv-dynamic-versioning
+    - name: Set project version to tag
+      run: uv version ${{ steps.get_tag.outputs.tag }}
+
+    - name: Check project version
+      run: uv version
     
     - name: Install the project
-      run: uv sync --locked --all-extras --dev --inexact
+      run: uv sync
     
     - name: Build package
       run: uv build
     
-    - name: Publish package to PyPI
-      run: uv publish
+    # - name: Publish package to PyPI
+    #   run: uv publish

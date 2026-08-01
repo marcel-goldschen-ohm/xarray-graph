@@ -20,22 +20,31 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v5
+
+    - name: Get latest tag
+      id: get_tag
+      run: |
+        git fetch --tags
+        LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+        echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+    - name: Check tag
+      run: echo "The latest tag is ${{ steps.get_tag.outputs.tag }}"
     
-    - name: Install uv and set the Python version
+    - name: Install uv and Python
       uses: astral-sh/setup-uv@v6
       with:
         version: "0.9.8" # uv version
         python-version: ${{ matrix.python-version }}
 
-    #- name: Install Hatch and uv-dynamic-versioning
-    #  # for dynamic version resolution from git tag
-    #  # we also need to explicitly create a venv here
-    #  run: |
-    #    uv venv
-    #    uv pip install hatch uv-dynamic-versioning
+    - name: Set project version to tag
+      run: uv version ${{ steps.get_tag.outputs.tag }}
+
+    - name: Check project version
+      run: uv version
     
-    - name: Install the project
-      run: uv sync --locked --all-extras --dev --inexact
+    - name: Install project
+      run: uv sync
     
     - name: Lint check
       run: |
