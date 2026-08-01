@@ -41,7 +41,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 'node': '#e69f00',
                 'data_var': '#56b4e9',
                 'coord': '#cc79a7',
-                # 'inherited_coord': '#cc79a780', # last 80 makes it 50% transparent
+                'inherited_coord': '#80cc79a7', # preview is for RRGGBBAA, but QColor uses AARRGGBB
                 'unknown': '#990000',
             },
         },
@@ -50,7 +50,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 'node': '#0B132B',
                 'data_var': "#005AD8",
                 'coord': "#8C09B7",
-                # 'inherited_coord': '#8C09B780', # last 80 makes it 50% transparent
+                'inherited_coord': '#808C09B7', # preview is for RRGGBBAA, but QColor uses AARRGGBB
                 'unknown': '#990000',
             },
         },
