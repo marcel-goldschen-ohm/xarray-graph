@@ -732,6 +732,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     row: int = row_names.index(name)
                     if row == -1:
                         row = len(item.children)
+                    row = XarrayDataTreeItem._findInsertionIndex(item, inherited_coord_item, row)
                     self.beginInsertRows(index, row, row)
                     item.insertChild(row, inherited_coord_item)
                     self.endInsertRows()
