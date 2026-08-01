@@ -65,7 +65,7 @@ def annotation_label(annotation: dict) -> str:
         if len(data_labels) == 1:
             dim_label = f'{dim}: {data_labels[0]}'
         else:
-            dim_label = f'{dim}: ({', '.join(data_labels)})'
+            dim_label = f"{dim}: ({', '.join(data_labels)})"
         dim_labels.append(dim_label)
     label = ', '.join(dim_labels)
     return label

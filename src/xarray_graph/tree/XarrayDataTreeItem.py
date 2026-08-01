@@ -37,7 +37,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         """ Returns the absolute path to this item in the datatree (e.g. '/air_temperature/air').
         """
         if self._varname:
-            return f'{self._node.path.rstrip('/')}/{self._varname}'
+            return f"{self._node.path.rstrip('/')}/{self._varname}"
         return self._node.path
     
     def data(self) -> xr.DataTree | xr.DataArray:
@@ -196,7 +196,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         # update datatree
         dt = self._node.root
         old_child_path = child_item.abspath()
-        new_child_path = f'{self._node.path.rstrip('/')}/{child_name}'
+        new_child_path = f"{self._node.path.rstrip('/')}/{child_name}"
         # print(old_child_path, '->', new_child_path)
         if child_item.isNode():
             dt[new_child_path] = child_item._node
