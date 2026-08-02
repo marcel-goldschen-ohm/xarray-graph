@@ -37,8 +37,8 @@ jobs:
     - name: Install uv and set the Python version
       uses: astral-sh/setup-uv@v6
       with:
-        version: "0.9.8" # uv version
-        python-version: "3.12"
+        version: "0.12.1" # uv version
+        python-version: "3.13"
 
     - name: Set project version to tag
       run: uv version ${{ steps.get_tag.outputs.tag }}
