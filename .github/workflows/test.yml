@@ -21,15 +21,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
 
-    - name: Get latest tag
-      id: get_tag
-      run: |
-        git fetch --tags
-        LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
-        echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+    # - name: Get latest tag
+    #   id: get_tag
+    #   run: |
+    #     git fetch --tags
+    #     LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+    #     echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-    - name: Check tag
-      run: echo "The latest tag is ${{ steps.get_tag.outputs.tag }}"
+    # - name: Check tag
+    #   run: echo "The latest tag is ${{ steps.get_tag.outputs.tag }}"
     
     - name: Install uv and Python
       uses: astral-sh/setup-uv@v6
@@ -37,11 +37,11 @@ jobs:
         version: "0.9.8" # uv version
         python-version: ${{ matrix.python-version }}
 
-    - name: Set project version to tag
-      run: uv version ${{ steps.get_tag.outputs.tag }}
+    # - name: Set project version to tag
+    #   run: uv version ${{ steps.get_tag.outputs.tag }}
 
-    - name: Check project version
-      run: uv version
+    # - name: Check project version
+    #   run: uv version
     
     - name: Install project
       run: uv sync
