@@ -41,33 +41,35 @@ pip install --upgrade xarray-graph@git+https://github.com/marcel-goldschen-ohm/x
 pip install "PySide6>=6.2.2,!=6.9.1"
 ``` -->
 
-<!-- :warning: Although the `xarray-graph` package is also available via [PyPI](https://pypi.org/project/xarray-graph/), this package is currently NOT up-to-date and should NOT be used at the moment. For now, please use uv to install from the latest repo as instructed above. -->
-
 [&uarr; top](#xarray-graph)
 
 ## XarrayDataTreeViewer
 Tree UI for an Xarray DataTree.
 
+[<img src="https://github.com/marcel-goldschen-ohm/xarray-graph/blob/main/images/xarray-tree-youtube.png?raw=true" width="50%" style="max-width: 300px">](https://youtu.be/jrO5Khk9ZKY)
+
 :rocket: To **launch the application**, run the following command (e.g., in a Terminal or shell) in the downloaded repo directory:
 ```shell
 uv run xarray-tree
 ```
-:bangbang: *Note: The first time you run the app it may take 20-30 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
+:warning: If you installed with pip, omit `uv run`.
 
-[<img src="https://github.com/marcel-goldschen-ohm/xarray-graph/blob/main/images/xarray-tree-youtube.png?raw=true" width="50%" style="max-width: 300px">](https://youtu.be/jrO5Khk9ZKY)
+:bangbang: *Note: The first time you run the app it may take 20-30 seconds to start due to loading/caching of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
 [&uarr; top](#xarray-graph)
 
 ## XarrayGraph
 Graph/Iterate/Fit/Analyze (x,y) slices of DataArrays in an Xarray DataTree.
 
+:construction: YouTube video coming soon...
+
 :rocket: To **launch the application**, run the following command (e.g., in a Terminal or shell) in the downloaded repo directory:
 ```shell
 uv run xarray-graph
 ```
-:bangbang: *Note: The first time you run the app it may take 20-30 seconds to start due to loading of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
+:warning: If you installed with pip, omit `uv run`.
 
-:construction: YouTube video
+:bangbang: *Note: The first time you run the app it may take 20-30 seconds to start due to loading/caching of graphics libraries, so be patient. Subsequent runs should start in only a few seconds.*
 
 [&uarr; top](#xarray-graph)
 
