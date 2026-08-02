@@ -1,5 +1,6 @@
 [project]
 name = "xarray-graph"
+version = "0.0.0"
 description = "PyQt UIs for Xarray DataTree including tree view and DataArray slice graphing and processing."
 authors = [
     {name = "Marcel Goldschen-Ohm", email = "goldschen-ohm@utexas.edu"},
