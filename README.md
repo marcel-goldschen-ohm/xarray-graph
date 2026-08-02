@@ -2,7 +2,7 @@
 PyQt UIs for Xarray DataTree including tree view and DataArray slice graphing and processing.
 
 ![GitHub Tag](https://img.shields.io/github/v/tag/marcel-goldschen-ohm/xarray-graph?cacheSeconds=1)
-![build-test](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/build-test.yml/badge.svg)
+![test](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/test.yml/badge.svg)
 ![GitHub Release](https://img.shields.io/github/v/release/marcel-goldschen-ohm/xarray-graph?include_prereleases&cacheSeconds=1)
 ![publish](https://github.com/marcel-goldschen-ohm/xarray-graph/actions/workflows/publish.yml/badge.svg)
 
@@ -30,22 +30,18 @@ uv sync
 uv pip install "PySide6>=6.2.2,!=6.9.1"
 ```
 
-:warning: Although the `xarray-graph` package is also available via [PyPI](https://pypi.org/project/xarray-graph/), this package is currently NOT up-to-date and should NOT be used at the moment. For now, please use uv to install from the latest repo as instructed above.
-
-<!--
-### Install with pip (optional):
----
-Install latest release version:
+### Install with pip:
 ```shell
-pip install --upgrade xarray-graph
+pip install xarray-graph
 pip install "PySide6>=6.2.2,!=6.9.1"
 ```
-Or install latest development version:
+<!-- Or install the latest development version:
 ```shell
 pip install --upgrade xarray-graph@git+https://github.com/marcel-goldschen-ohm/xarray-graph
 pip install "PySide6>=6.2.2,!=6.9.1"
-```
--->
+``` -->
+
+<!-- :warning: Although the `xarray-graph` package is also available via [PyPI](https://pypi.org/project/xarray-graph/), this package is currently NOT up-to-date and should NOT be used at the moment. For now, please use uv to install from the latest repo as instructed above. -->
 
 [&uarr; top](#xarray-graph)
 

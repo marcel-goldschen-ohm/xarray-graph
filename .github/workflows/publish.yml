@@ -52,5 +52,5 @@ jobs:
     - name: Build package
       run: uv build
     
-    # - name: Publish package to PyPI
-    #   run: uv publish
+    - name: Publish package to PyPI
+      run: uv publish
