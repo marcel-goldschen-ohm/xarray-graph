@@ -1091,8 +1091,11 @@ class XarrayGraph(XarrayDataTreeViewer):
         
         cmap = self._settings['colormap']
 
+        from qtpy.QtCore import Qt
+        from qtpy.QtGui import QPen, QBrush
         from xarray_graph.graph.View import View
         from xarray_graph.graph.PlotCurve import PlotCurve
+        from xarray_graph.graph.PlotCurveStyle import PlotCurveStyle
         from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         from pyqtgraph import AxisItem, DateAxisItem, mkPen
         bottomAxisChanged = False
@@ -1131,8 +1134,20 @@ class XarrayGraph(XarrayDataTreeViewer):
                     continue
                 node: xr.DataTree = item.node()
 
-                var_style = data_var.attrs.get('style', {})
-                var_marker = var_style.get('marker', None)
+                # data_var plot styling
+                # TODO: allow base styling in node attrs, and allow overrides in data_var attrs
+                style = data_var.attrs.get('style', {})
+                if not style:
+                    # if style not specified in data_var, check node attrs for style
+                    style = node.attrs.get('style', {})
+                if 'color' not in style:
+                    style['color'] = color
+                style = PlotCurveStyle(style)
+                linePen: QPen = style.linePen()
+                marker = style.get('marker', None)
+                if marker is not None:
+                    markerPen: QPen = style.markerPen()
+                    markerBrush: QBrush = style.markerBrush()
                 
                 mask = None
                 if var_name != MASK_KEY:
@@ -1147,9 +1162,6 @@ class XarrayGraph(XarrayDataTreeViewer):
                         if node_ is branch_root_node:
                             break
                         node_ = node_.parent
-                    # mask_node = node_
-                    # if MASK_KEY in node.data_vars:
-                    #     mask = node.data_vars[MASK_KEY]
                 
                 non_xdim_coord_permutations = plot._metadata['non_xdim_coord_permutations']
                 if len(non_xdim_coord_permutations) == 0:
@@ -1254,8 +1266,11 @@ class XarrayGraph(XarrayDataTreeViewer):
                     }
                     data_graph.setZValue(1)
                     data_graph.setName(name)
-                    data_graph.setPen(mkPen(color=color, width=1))
-                    data_graph.setSymbol(var_marker)
+                    data_graph.setPen(linePen)
+                    data_graph.setSymbol(marker)
+                    if marker is not None:
+                        data_graph.setSymbolPen(markerPen)
+                        data_graph.setSymbolBrush(markerBrush)
                 
                 # to next data_var in datatree
                 color_index += 1
