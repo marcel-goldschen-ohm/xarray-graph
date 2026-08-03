@@ -35,7 +35,7 @@ def str_to_value(text: str) -> bool | int | float | str | tuple | list | dict | 
     Handles basic values and containers and numpy arrays.
     """
     stext = text.strip()
-    if stext.lower() == 'true' or stext.lower() == 'false':
+    if stext.lower() == 'true':
         # boolean
         return True
     if stext.lower() == 'false':
