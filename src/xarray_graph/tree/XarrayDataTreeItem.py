@@ -48,10 +48,10 @@ class XarrayDataTreeItem(AbstractTreeItem):
     def node(self) -> xr.DataTree:
         return self._node
     
-    # def parentNode(self) -> xr.DataTree | None:
-    #     if self._varname:
-    #         return self._node
-    #     return self._node.parent
+    def parentNode(self) -> xr.DataTree | None:
+        if self._varname:
+            return self._node
+        return self._node.parent
     
     def isNode(self) -> bool:
         return self._varname == ''
