@@ -4,6 +4,7 @@ TODO:
 """
 from __future__ import annotations
 
+import weakref
 from copy import deepcopy
 import numpy as np
 import xarray as xr
@@ -42,6 +43,7 @@ class XarrayGraph(XarrayDataTreeViewer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._roi_item_added_connected_views = weakref.WeakSet()
         self.refresh()
 
     def setDatatree(self, datatree: xr.DataTree) -> None:
@@ -449,6 +451,51 @@ class XarrayGraph(XarrayDataTreeViewer):
                 return panel.isPreview()
         return False
 
+    def _isShuttingDown(self) -> bool:
+        from qtpy.QtCore import QCoreApplication
+        app = QCoreApplication.instance()
+        return bool(getattr(self, '_is_closing', False) or (app is None) or app.closingDown())
+
+    def _alivePlots(self, plots: list[Plot] = None) -> list[Plot]:
+        if plots is None:
+            if not hasattr(self, '_plots'):
+                return []
+            plots = self._plots.flatten().tolist()
+
+        alive_plots: list[Plot] = []
+        for plot in plots:
+            if plot is None:
+                continue
+            try:
+                plot.scene()
+            except RuntimeError:
+                continue
+            alive_plots.append(plot)
+        return alive_plots
+
+    def closeEvent(self, event) -> None:
+        self._is_closing = True
+
+        try:
+            self.stopDrawingRois()
+        except Exception:
+            pass
+
+        for panel in getattr(self, '_preview_control_panels', {}).values():
+            try:
+                panel.panelClosed.disconnect(self.updatePreview)
+            except Exception:
+                pass
+
+        for plot in self._alivePlots():
+            try:
+                plot.setXLink(None)
+                plot.setYLink(None)
+            except Exception:
+                pass
+
+        super().closeEvent(event)
+
     def replot(self) -> None:
         """ Update all plots.
         """
@@ -820,6 +867,21 @@ class XarrayGraph(XarrayDataTreeViewer):
         if self.isPreview():
             self.updatePreview()
 
+    def _connectRoiAddedSignal(self, view) -> None:
+        if view in self._roi_item_added_connected_views:
+            return
+        view.sigItemAdded.connect(self.onRoiAdded)
+        self._roi_item_added_connected_views.add(view)
+
+    def _disconnectRoiAddedSignal(self, view) -> None:
+        if view not in self._roi_item_added_connected_views:
+            return
+        try:
+            view.sigItemAdded.disconnect(self.onRoiAdded)
+        except Exception:
+            pass
+        self._roi_item_added_connected_views.discard(view)
+
     def _onRoiPlotItemChanged(self, roiItem: QGraphicsObject) -> None:
         """ Handle changes to ROI plot object.
         """
@@ -1068,8 +1130,12 @@ class XarrayGraph(XarrayDataTreeViewer):
         """ Update graphs in each plot to show current datatree selection.
         """
         # print('\n'*2, 'updatePlotData...')
-        if plots is None:
-            plots = self._plots.flatten().tolist()
+        if self._isShuttingDown():
+            return
+
+        plots = self._alivePlots(plots)
+        if not plots:
+            return
 
         dt: xr.DataTree = self.datatree()
         xdim: str = self.xdim()
@@ -1293,8 +1359,12 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.updatePreview(plots)
     
     def updatePreview(self, plots: list[Plot] = None, force: bool = False) -> None:
-        if plots is None:
-            plots = self._plots.flatten().tolist()
+        if self._isShuttingDown():
+            return
+
+        plots = self._alivePlots(plots)
+        if not plots:
+            return
 
         preview_type = self.activePreview()
         if preview_type is None:
@@ -1496,8 +1566,12 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.stopPreview()
 
     def updatePlotRois(self, plots: list[Plot] = None) -> None:
-        if plots is None:
-            plots = self._plots.flatten().tolist()
+        if self._isShuttingDown():
+            return
+
+        plots = self._alivePlots(plots)
+        if not plots:
+            return
         selectedRois = self._ROIs_view.selectedAnnotations()
 
         # remove all current ROI objects
@@ -1572,6 +1646,9 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._ROIs_view.setSelectedAnnotations(selectedRois)
     
     def startDrawingRois(self) -> None:
+        if self._isShuttingDown():
+            return
+
         from xarray_graph.graph.View import View
         from xarray_graph.graph.AxisRegion import XAxisRegion
         from xarray_graph.graph.InfLine import VLine
@@ -1583,9 +1660,9 @@ class XarrayGraph(XarrayDataTreeViewer):
         graphicsItemType = roiToGraphicsItemTypeMap.get(roiType, None)
         if graphicsItemType is None:
             return
-        for plot in self._plots.flatten().tolist():
+        for plot in self._alivePlots():
             view: View = plot.getViewBox()
-            view.sigItemAdded.connect(self.onRoiAdded)
+            self._connectRoiAddedSignal(view)
             view.startDrawingItemsOfType(graphicsItemType)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROI_selection_button):
@@ -1593,10 +1670,10 @@ class XarrayGraph(XarrayDataTreeViewer):
     
     def stopDrawingRois(self) -> None:
         from xarray_graph.graph.View import View
-        for plot in self._plots.flatten().tolist():
+        for plot in self._alivePlots():
             view: View = plot.getViewBox()
             view.stopDrawingItems()
-            view.sigItemAdded.disconnect(self.onRoiAdded)
+            self._disconnectRoiAddedSignal(view)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(False)

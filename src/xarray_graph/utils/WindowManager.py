@@ -244,14 +244,14 @@ class WindowEventFilter(QObject):
 
     def eventFilter(self, window: QMainWindow, event: QEvent):
         if event.type() == QEvent.ActivationChange:
-            window.changeEvent(event)
+            # window.changeEvent(event)
             self._window_manager.activeWindowChanged()
-            return True
+            # return True
         elif event.type() == QEvent.Close:
             if self._window_manager.removeWindowOnClose():
                 self._window_manager.removeWindow(window)
-            window.closeEvent(event)
-            return True
+            # window.closeEvent(event)
+            # return True
         return False
 
 
