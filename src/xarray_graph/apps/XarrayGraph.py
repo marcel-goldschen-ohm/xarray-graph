@@ -1375,14 +1375,22 @@ class XarrayGraph(XarrayDataTreeViewer):
             if is_preview:
                 xranges = self.visibleXRanges()
         
-        from pyqtgraph import AxisItem, DateAxisItem, mkPen
+        from pyqtgraph import ViewBox, AxisItem, DateAxisItem, mkPen
         from xarray_graph.graph.PlotCurve import PlotCurve
         for plot in plots:
+            print(f'updatePreview for plot with y-axis: {plot.getAxis('left').labelText}...')
             xaxis: AxisItem = plot.getAxis('bottom')
             if isinstance(xaxis, DateAxisItem):
                 xunits = 's'
             else:
-                xunits = xaxis.labelUnits
+                view: ViewBox = plot.getViewBox()
+                linked_view = view.linkedView(view.XAxis)
+                if linked_view is None:
+                    xunits = xaxis.labelUnits
+                else:
+                    linked_plot: Plot = linked_view.parentItem()
+                    linked_xaxis: AxisItem = linked_plot.getAxis('bottom')
+                    xunits = linked_xaxis.labelUnits
             
             # existing graphs in plot
             graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
@@ -1395,9 +1403,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             preview_count = 0
             if is_preview:
                 for graph in data_graphs:
-                    xdata = graph.xData
-                    ydata = graph.yData
-                    # data_var_item = graph._metadata['data_var_item']
+                    xdata, ydata = graph.getOriginalDataset()
+                    xpreview, ypreview = None, None
                     if preview_type == 'filter':
                         xpreview = xdata
                         ypreview = preview_control_panel.filter(xdata, ydata, self.ureg, xunits)
@@ -2357,7 +2364,8 @@ def test_live():
     # window._datatree_view.showAll()
     # window.show()
 
-    XarrayGraph.open('examples/WinWCP.wcp')
+    XarrayGraph.open('examples/ERPdata.nc')
+    # XarrayGraph.open('examples/WinWCP.wcp')
     # XarrayGraph.open('examples/LabChartTEVC.mat', filetype='LabChart MATLAB (GOlab TEVC)')
 
     app.exec()
