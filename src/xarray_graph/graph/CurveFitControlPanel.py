@@ -2,28 +2,16 @@
 """
 
 from __future__ import annotations
-import numpy as np
-import scipy as sp
-import lmfit
-from qtpy.QtCore import Qt, Signal, QSignalBlocker, QTimer
-from qtpy.QtWidgets import (
-    QWidget,
-    QLabel,
-    QComboBox,
-    QSpinBox,
-    QGroupBox,
-    QFormLayout,
-    QLineEdit,
-    QTableWidget,
-    QHeaderView,
-    QCheckBox,
-    QPushButton,
-    QHBoxLayout,
-    QSpacerItem,
-    QSizePolicy,
-    QVBoxLayout,
-    QTableWidgetItem,
-)
+
+from qtpy.QtCore import Signal
+from qtpy.QtWidgets import QWidget
+
+import typing
+if typing.TYPE_CHECKING:
+    import numpy as np
+    from lmfit.models import ExpressionModel
+    from lmfit import Parameters
+    from lmfit.model import ModelResult
 
 
 class CurveFitControlPanel(QWidget):
@@ -35,6 +23,9 @@ class CurveFitControlPanel(QWidget):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        from numpy import inf
+        from qtpy.QtWidgets import QLabel, QComboBox, QLineEdit, QGroupBox, QFormLayout, QCheckBox, QPushButton, QHBoxLayout, QVBoxLayout, QSpinBox, QTableWidget, QTableWidgetItem, QHeaderView, QSizePolicy, QSpacerItem
 
         self.setWindowTitle('Curve Fit')
 
@@ -54,17 +45,17 @@ class CurveFitControlPanel(QWidget):
             'Gaussian': {
                 'expression': 'a * exp(-(x-b)**2 / (2 * c**2))',
                 'params': {
-                    'a': {'value': 1, 'vary': True, 'min': 0, 'max': np.inf},
-                    'b': {'value': 0, 'vary': True, 'min': -np.inf, 'max': np.inf},
-                    'c': {'value': 1, 'vary': True, 'min': 0, 'max': np.inf},
+                    'a': {'value': 1, 'vary': True, 'min': 0, 'max': inf},
+                    'b': {'value': 0, 'vary': True, 'min': -inf, 'max': inf},
+                    'c': {'value': 1, 'vary': True, 'min': 0, 'max': inf},
                 },
             },
             'Hill Equation': {
                 'expression': 'Y0 + Y1 / (1 + (EC50 / x)**n)',
                 'params': {
-                    'Y0': {'value': 0, 'vary': False, 'min': -np.inf, 'max': np.inf},
-                    'Y1': {'value': 1, 'vary': True, 'min': -np.inf, 'max': np.inf},
-                    'EC50': {'value': 1, 'vary': True, 'min': 1e-15, 'max': np.inf},
+                    'Y0': {'value': 0, 'vary': False, 'min': -inf, 'max': inf},
+                    'Y1': {'value': 1, 'vary': True, 'min': -inf, 'max': inf},
+                    'EC50': {'value': 1, 'vary': True, 'min': 1e-15, 'max': inf},
                     'n': {'value': 1, 'vary': True, 'min': 1e-2, 'max': 10},
                 },
             },
@@ -161,6 +152,33 @@ class CurveFitControlPanel(QWidget):
         self._onFitTypeChanged()
         self.blockSignals(False)
     
+    def state(self) -> dict:
+        return {
+            'fit_type': self._type_combobox.currentText(),
+            'polynomial_degree': self._polynomial_degree_spinbox.value(),
+            'spline_segments': self._spline_segments_spinbox.value(),
+            'expression': self._expression_edit.text(),
+            'expression_params': self.expressionTableParams(),
+            'limit_input_to_ROIs': self._limit_input_to_ROIs_checkbox.isChecked(),
+            'limit_output_to_ROIs': self._limit_output_to_ROIs_checkbox.isChecked(),
+            'residuals': self._residuals_checkbox.isChecked(),
+            'preview': self._preview_checkbox.isChecked()
+        }
+
+    def setState(self, state: dict) -> None:
+        self.blockSignals(True)
+        self._type_combobox.setCurrentText(state.get('fit_type', 'Expression'))
+        self._polynomial_degree_spinbox.setValue(state.get('polynomial_degree', 2))
+        self._spline_segments_spinbox.setValue(state.get('spline_segments', 10))
+        self._expression_edit.setText(state.get('expression', ''))
+        self.setExpressionTableParams(state.get('expression_params', {}))
+        self._limit_input_to_ROIs_checkbox.setChecked(state.get('limit_input_to_ROIs', True))
+        self._limit_output_to_ROIs_checkbox.setChecked(state.get('limit_output_to_ROIs', False))
+        self._residuals_checkbox.setChecked(state.get('residuals', False))
+        self._preview_checkbox.setChecked(state.get('preview', True))
+        self.blockSignals(False)
+        self._onFitTypeChanged()
+
     def _onFitTypeChanged(self) -> None:
         fit_types = [self._type_combobox.itemText(i) for i in range(self._type_combobox.count())]
         fit_type = self._type_combobox.currentText()
@@ -171,6 +189,7 @@ class CurveFitControlPanel(QWidget):
         self._polynomial_groupbox.setVisible(is_polynomial)
         self._spline_groupbox.setVisible(is_spline)
         self._expression_groupbox.setVisible(is_expression)
+        from qtpy.QtWidgets import QSizePolicy
         if is_expression:
             self._spacer.changeSize(0, 0, QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
         else:
@@ -197,7 +216,9 @@ class CurveFitControlPanel(QWidget):
         if expression == '':
             self.setExpressionTableParams({})
         else:
-            model = lmfit.models.ExpressionModel(expression, independent_vars=['x'])
+            from numpy import inf
+            from lmfit.models import ExpressionModel
+            model = ExpressionModel(expression, independent_vars=['x'])
             old_params: dict = self.expressionTableParams()
             new_params = {}
             for name in model.param_names:
@@ -207,31 +228,35 @@ class CurveFitControlPanel(QWidget):
                     new_params[name] = {
                         'value': 0,
                         'vary': True,
-                        'min': -np.inf,
-                        'max': np.inf
+                        'min': -inf,
+                        'max': inf
                     }
             self.setExpressionTableParams(new_params)
         
         self.fitChanged.emit()
     
     def setExpression(self, expression: str, params: dict = None) -> None:
+        from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._expression_edit):
             self._expression_edit.setText(expression)
         if params is not None:
             self.setExpressionTableParams(params)
         self._onExpressionChanged()
 
-    def expressionModel(self) -> lmfit.models.ExpressionModel | None:
+    def expressionModel(self) -> ExpressionModel | None:
         expression = self._expression_edit.text().strip()
         if 'x' not in expression:
             return None
-        model = lmfit.models.ExpressionModel(expression, independent_vars=['x'])
+        from lmfit.models import ExpressionModel
+        model = ExpressionModel(expression, independent_vars=['x'])
         params = self.expressionTableParams()
         for name in model.param_names:
             model.set_param_hint(name, **params[name])
         return model
     
     def expressionTableParams(self) -> dict:
+        from qtpy.QtCore import Qt
+        from numpy import inf
         params = {}
         for row in range(self._expression_params_table.rowCount()):
             name = self._expression_params_table.item(row, 0).text()
@@ -243,11 +268,11 @@ class CurveFitControlPanel(QWidget):
             try:
                 value_min = float(self._expression_params_table.item(row, 3).text())
             except:
-                value_min = -np.inf
+                value_min = -inf
             try:
                 value_max = float(self._expression_params_table.item(row, 4).text())
             except:
-                value_max = np.inf
+                value_max = inf
             params[name] = {
                 'value': value,
                 'vary': vary,
@@ -256,8 +281,13 @@ class CurveFitControlPanel(QWidget):
             }
         return params
     
-    def setExpressionTableParams(self, params: dict | lmfit.Parameters) -> None:
-        if isinstance(params, lmfit.Parameters):
+    def setExpressionTableParams(self, params: dict | Parameters) -> None:
+        from numpy import inf
+        from lmfit import Parameters
+        from qtpy.QtCore import Qt
+        from qtpy.QtWidgets import QTableWidgetItem
+
+        if isinstance(params, Parameters):
             params = params.valuesdict()
 
         self._expression_params_table.model().dataChanged.disconnect()  # needed because blockSignals not working!?
@@ -271,8 +301,8 @@ class CurveFitControlPanel(QWidget):
         for name, attrs in params.items():
             value = attrs.get('value', 0)
             vary = attrs.get('vary', True)
-            value_min = attrs.get('min', -np.inf)
-            value_max = attrs.get('max', np.inf)
+            value_min = attrs.get('min', -inf)
+            value_max = attrs.get('max', inf)
 
             name_item = QTableWidgetItem(name)
             name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -294,6 +324,7 @@ class CurveFitControlPanel(QWidget):
     def fit(self, x: np.ndarray, y: np.ndarray, xranges: list[tuple[float, float]] = []) -> dict:
         """ Fit y(x). Returns a dict of fit parameters.
         """
+        import numpy as np
 
         fit_type = self._type_combobox.currentText()
         fit_result = {
@@ -347,15 +378,16 @@ class CurveFitControlPanel(QWidget):
             n_segments = self._spline_segments_spinbox.value()
             segment_length = max(3, int(len(x) / n_segments))
             knots = x[segment_length:-segment_length:segment_length]
-            knots, coef, degree = sp.interpolate.splrep(x, y, t=knots)
+            from scipy.interpolate import splrep
+            knots, coef, degree = splrep(x, y, t=knots)
             fit_result['knots'] = knots
             fit_result['coef'] = coef
             fit_result['degree'] = degree
         elif fit_type == 'Expression' or fit_type in list(self._named_expressions.keys()):
-            model: lmfit.models.ExpressionModel = self.expressionModel()
+            model: ExpressionModel = self.expressionModel()
             if model is None:
                 return None
-            result: lmfit.model.ModelResult = model.fit(y, params=model.make_params(), x=x)
+            result: ModelResult = model.fit(y, params=model.make_params(), x=x)
             # print(result.fit_report())
             fit_result['result'] = result
         
@@ -377,7 +409,8 @@ class CurveFitControlPanel(QWidget):
         #     ydata = bspline(x)
         elif fit_type == 'Spline':
             knots, coef, degree = [fit_result[key] for key in ['knots', 'coef', 'degree']]
-            ypred = sp.interpolate.splev(x, (knots, coef, degree ), der=0)
+            from scipy.interpolate import splev
+            ypred = splev(x, (knots, coef, degree ), der=0)
         elif fit_type == 'Expression' or fit_type in list(self._named_expressions.keys()):
             if fit_result is None:
                 model = self.expressionModel()
@@ -385,8 +418,8 @@ class CurveFitControlPanel(QWidget):
                     return None
                 params = model.make_params()
             else:
-                result: lmfit.model.ModelResult = fit_result['result']
-                model: lmfit.models.ExpressionModel = result.model
+                result: ModelResult = fit_result['result']
+                model: ExpressionModel = result.model
                 params = result.params
             ypred = model.eval(params=params, x=x)
 
@@ -418,6 +451,7 @@ class CurveFitControlPanel(QWidget):
     
     def closeEvent(self, event):
         status = super().closeEvent(event)
+        from qtpy.QtCore import QTimer
         QTimer.singleShot(0, self.panelClosed.emit)
         return status
 

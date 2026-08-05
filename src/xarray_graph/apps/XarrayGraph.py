@@ -47,7 +47,10 @@ class XarrayGraph(XarrayDataTreeViewer):
 
     def setDatatree(self, datatree: xr.DataTree) -> None:
         super().setDatatree(datatree)
-        self._notes_view.setPlainText(datatree.attrs.get(NOTES_KEY, ''))
+        try:
+            self._notes_view.setPlainText(datatree.attrs.get(NOTES_KEY, ''))
+        except AttributeError:
+            pass
 
     def xdim(self) -> str | None:
         try:
@@ -124,6 +127,12 @@ class XarrayGraph(XarrayDataTreeViewer):
                 view.setXRange(xmin, xmax)
     
     def notes(self) -> None:
+        from qtpy.QtWidgets import QTextEdit
+        self._notes_view = QTextEdit()
+        self._notes_view.setWindowTitle('Notes')
+        dt = self.datatree()
+        self._notes_view.setPlainText(dt.attrs.get(NOTES_KEY, ''))
+        self._notes_view.textChanged.connect(self._onNotesChanged)
         self._notes_view.show()
     
     def rois(self) -> list[dict]:
@@ -411,44 +420,65 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.refresh()
     
     def filter(self) -> None:
-        self.startPreview('filter')
+        self._preview_type = 'filter'
+        from xarray_graph.graph.FilterControlPanel import FilterControlPanel
+        self._preview_panel = FilterControlPanel()
+        self._preview_panel.filterChanged.connect(self.updatePreview)
+        self._preview_panel.previewToggled.connect(self.updatePreview)
+        self._preview_panel.filterRequested.connect(self.savePreview)
+        self._preview_panel.panelClosed.connect(self.stopPreview)
+        state = getattr(self, f'{self._preview_type}_state', None)
+        if state:
+            self._preview_panel.setState(state)
+        self._preview_panel.show()
+        self._preview_panel.raise_()
+        self.updatePreview()
 
     def curveFit(self) -> None:
-        self.startPreview('curve fit')
+        self._preview_type = 'curve_fit'
+        from xarray_graph.graph.CurveFitControlPanel import CurveFitControlPanel
+        self._preview_panel = CurveFitControlPanel()
+        self._preview_panel.fitChanged.connect(self.updatePreview)
+        self._preview_panel.previewToggled.connect(self.updatePreview)
+        self._preview_panel.fitRequested.connect(self.savePreview)
+        self._preview_panel.panelClosed.connect(self.stopPreview)
+        state = getattr(self, f'{self._preview_type}_state', None)
+        if state:
+            self._preview_panel.setState(state)
+        self._preview_panel.show()
+        self._preview_panel.raise_()
+        self.updatePreview()
 
     def measure(self) -> None:
-        self.startPreview('measure')
-    
-    def startPreview(self, operation: str) -> None:
-        # self._preview_type = operation
-        for name, panel in self._preview_control_panels.items():
-            if name == operation:
-                panel.show()
-                panel.raise_()
-            else:
-                panel.hide()
-        
+        self._preview_type = 'measure'
+        from xarray_graph.graph.MeasureControlPanel import MeasureControlPanel
+        self._preview_panel = MeasureControlPanel()
+        self._preview_panel.measureChanged.connect(self.updatePreview)
+        self._preview_panel.previewToggled.connect(self.updatePreview)
+        self._preview_panel.measureRequested.connect(self.savePreview)
+        self._preview_panel.panelClosed.connect(self.stopPreview)
+        state = getattr(self, f'{self._preview_type}_state', None)
+        if state:
+            self._preview_panel.setState(state)
+        self._preview_panel.show()
+        self._preview_panel.raise_()
         self.updatePreview()
     
     def stopPreview(self) -> None:
-        # self._preview_type = None
-        for name, panel in self._preview_control_panels.items():
-            if panel.isVisible():
-                panel.hide()
-        
+        try:
+            setattr(self, f'{self._preview_type}_state', self._preview_panel.state())
+            self._preview_panel.deleteLater()
+        except Exception:
+            pass
+        self._preview_type = None
+        self._preview_panel = None
         self.updatePreview()
     
     def activePreview(self) -> str | None:
-        # return getattr(self, '_preview_type', None)
-        for name, panel in self._preview_control_panels.items():
-            if panel.isVisible():
-                return name
+        return getattr(self, '_preview_type', None)
     
     def isPreview(self) -> bool:
-        for name, panel in self._preview_control_panels.items():
-            if panel.isVisible():
-                return panel.isPreview()
-        return False
+        return getattr(self, '_preview_type', None) is not None
 
     def _isShuttingDown(self) -> bool:
         from qtpy.QtCore import QCoreApplication
@@ -1369,8 +1399,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         if preview_type is None:
             is_preview = False
         else:
-            preview_control_panel = self._preview_control_panels[preview_type]
-            is_preview = force or preview_control_panel.isPreview()
+            preview_panel = self._preview_panel
+            is_preview = force or preview_panel.isPreview()
             if is_preview:
                 xranges = self.visibleXRanges()
         
@@ -1405,15 +1435,15 @@ class XarrayGraph(XarrayDataTreeViewer):
                     xpreview, ypreview = None, None
                     if preview_type == 'filter':
                         xpreview = xdata
-                        ypreview = preview_control_panel.filter(xdata, ydata, self.ureg, xunits)
-                    elif preview_type == 'curve fit':
+                        ypreview = preview_panel.filter(xdata, ydata, self.ureg, xunits)
+                    elif preview_type == 'curve_fit':
                         xpreview = xdata
-                        fit_params = preview_control_panel.fit(xdata, ydata, xranges)
-                        ypreview = preview_control_panel.predict(xdata, fit_params, xranges)
-                        if preview_control_panel.isResiduals():
+                        fit_params = preview_panel.fit(xdata, ydata, xranges)
+                        ypreview = preview_panel.predict(xdata, fit_params, xranges)
+                        if preview_panel.isResiduals():
                             ypreview = ydata - ypreview
                     elif preview_type == 'measure':
-                        xy = preview_control_panel.measure(xdata, ydata, xranges)
+                        xy = preview_panel.measure(xdata, ydata, xranges)
                         xpreview = xy[:,0]
                         ypreview = xy[:,1]
                     else:
@@ -1457,18 +1487,17 @@ class XarrayGraph(XarrayDataTreeViewer):
                     graph.deleteLater()
     
     def savePreview(self, plots: list[Plot] = None, result_name: str = None, dst: str = 'child node') -> None:
-        # print('\n'*2, 'savePreview...')
         if plots is None:
             plots = self._plots.flatten().tolist()
         
         if result_name is None:
             preview_type = self.activePreview()
-            preview_panel = self._preview_control_panels[preview_type]
+            preview_panel = self._preview_panel
             if preview_type == 'filter':
                 filter_type = preview_panel.filterType()
                 cutoff = preview_panel.cutoffString()
                 result_name = f'{filter_type} {cutoff} Filter'
-            elif preview_type == 'curve fit':
+            elif preview_type == 'curve_fit':
                 fit_type = preview_panel.fitType()
                 result_name = f'{fit_type} Fit'
             elif preview_type == 'measure':
@@ -1997,43 +2026,6 @@ class XarrayGraph(XarrayDataTreeViewer):
         hsplitter.addWidget(self._datatree_ROIs_splitter)
         hsplitter.addWidget(panel)
         self.setCentralWidget(hsplitter)
-
-        # notes
-        from qtpy.QtWidgets import QTextEdit
-        self._notes_view = QTextEdit()
-        self._notes_view.setWindowTitle('Notes')
-        self._notes_view.textChanged.connect(self._onNotesChanged)
-
-        # filter
-        from xarray_graph.graph.FilterControlPanel import FilterControlPanel
-        self._filter_control_panel = FilterControlPanel()
-        self._filter_control_panel.filterChanged.connect(self.updatePreview)
-        self._filter_control_panel.previewToggled.connect(self.updatePreview)
-        self._filter_control_panel.panelClosed.connect(self.updatePreview)
-        self._filter_control_panel.filterRequested.connect(self.savePreview)
-
-        # curve fit
-        from xarray_graph.graph.CurveFitControlPanel import CurveFitControlPanel
-        self._curve_fit_control_panel = CurveFitControlPanel()
-        self._curve_fit_control_panel.fitChanged.connect(self.updatePreview)
-        self._curve_fit_control_panel.previewToggled.connect(self.updatePreview)
-        self._curve_fit_control_panel.panelClosed.connect(self.updatePreview)
-        self._curve_fit_control_panel.fitRequested.connect(self.savePreview)
-
-        # measure
-        from xarray_graph.graph.MeasureControlPanel import MeasureControlPanel
-        self._measure_control_panel = MeasureControlPanel()
-        self._measure_control_panel.measureChanged.connect(self.updatePreview)
-        self._measure_control_panel.previewToggled.connect(self.updatePreview)
-        self._measure_control_panel.panelClosed.connect(self.updatePreview)
-        self._measure_control_panel.measureRequested.connect(self.savePreview)
-
-        # preview
-        self._preview_control_panels = {
-            'filter': self._filter_control_panel,
-            'curve fit': self._curve_fit_control_panel,
-            'measure': self._measure_control_panel
-        }
     
     def _initTopToolbar(self) -> None:
         icon_size = self._settings.get('icon size', 24)

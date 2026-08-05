@@ -2,23 +2,15 @@
 """
 
 from __future__ import annotations
-import numpy as np
-import scipy as sp
-import xarray as xr
-import pint
-from qtpy.QtCore import Signal, QSignalBlocker, QTimer
-from qtpy.QtWidgets import (
-    QWidget,
-    QLabel,
-    QComboBox,
-    QLineEdit,
-    QGroupBox,
-    QFormLayout,
-    QCheckBox,
-    QPushButton,
-    QHBoxLayout,
-    QVBoxLayout,
-)
+
+from qtpy.QtCore import Signal
+from qtpy.QtWidgets import QWidget
+
+import typing
+if typing.TYPE_CHECKING:
+    import numpy as np
+    from xarray import DataArray
+    from pint import UnitRegistry
 
 
 class FilterControlPanel(QWidget):
@@ -28,11 +20,10 @@ class FilterControlPanel(QWidget):
     filterRequested = Signal()
     panelClosed = Signal()
 
-    ureg = pint.UnitRegistry()
-    ureg.formatter.default_format = '~'  # short format for symbols (e.g., "A" instead of "ampere")
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        from qtpy.QtWidgets import QLabel, QComboBox, QLineEdit, QGroupBox, QFormLayout, QCheckBox, QPushButton, QHBoxLayout, QVBoxLayout
 
         self.setWindowTitle('Filter')
 
@@ -55,11 +46,6 @@ class FilterControlPanel(QWidget):
         self._cutoff_edit.setToolTip('single [, band]')
         self._cutoff_edit.editingFinished.connect(lambda: self.filterChanged.emit())
 
-        # self._cutoff_units_edit = QLineEdit('')
-        # self._cutoff_units_edit.setPlaceholderText('cylces / sample interval')#\u0394x')
-        # self._cutoff_units_edit.setToolTip('if not specified, defaults to: cylces / sample interval')
-        # self._cutoff_units_edit.editingFinished.connect(lambda: self.filterChanged.emit())
-
         self._band_group = QGroupBox()
         form = QFormLayout(self._band_group)
         form.setContentsMargins(3, 3, 3, 3)
@@ -68,7 +54,6 @@ class FilterControlPanel(QWidget):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.addRow(self._band_type_combobox)
         form.addRow('Cutoff', self._cutoff_edit)
-        # form.addRow('Cutoff units', self._cutoff_units_edit)
 
         self._preview_checkbox = QCheckBox('Preview', checked=True)
         self._preview_checkbox.stateChanged.connect(lambda state: self.previewToggled.emit())
@@ -94,8 +79,27 @@ class FilterControlPanel(QWidget):
         self._onFilterChanged()
         self.blockSignals(False)
     
+    def state(self) -> dict:
+        return {
+            'filter': self._type_combobox.currentText(),
+            'band': self._band_type_combobox.currentText(),
+            'cutoff': self._cutoff_edit.text(),
+            'preview': self._preview_checkbox.isChecked()
+        }
+
+    def setState(self, state: dict) -> None:
+        self.blockSignals(True)
+        self._type_combobox.setCurrentText(state.get('filter', 'Gaussian'))
+        self._band_type_combobox.setCurrentText(state.get('band', 'Lowpass'))
+        self._cutoff_edit.setText(state.get('cutoff', ''))
+        self._preview_checkbox.setChecked(state.get('preview', True))
+        self.blockSignals(False)
+        self._onFilterChanged()
+
     def _onFilterChanged(self) -> None:
         filter_type = self._type_combobox.currentText()
+
+        from qtpy.QtCore import QSignalBlocker
 
         if filter_type == 'Gaussian':
             with QSignalBlocker(self._band_type_combobox):
@@ -112,9 +116,9 @@ class FilterControlPanel(QWidget):
 
         self.filterChanged.emit()
     
-    def filter(self, x: xr.DataArray | np.ndarray, y: xr.DataArray | np.ndarray, ureg: pint.UnitRegistry = None, xunits: str = None) -> xr.DataArray | np.ndarray:
-        if ureg is None:
-            ureg = self.ureg
+    def filter(self, x: DataArray | np.ndarray, y: DataArray | np.ndarray, ureg: UnitRegistry = None, xunits: str = None) -> DataArray | np.ndarray:
+        import numpy as np
+        from xarray import DataArray
 
         filter_type = self._type_combobox.currentText()
         band_type = self._band_type_combobox.currentText()
@@ -122,7 +126,7 @@ class FilterControlPanel(QWidget):
         if not cutoffs:
             return
         
-        if isinstance(x, xr.DataArray):
+        if isinstance(x, DataArray):
             xdata = x.data
             if xunits is None:
                 xunits = x.attrs.get('units', None)
@@ -132,7 +136,7 @@ class FilterControlPanel(QWidget):
         if xunits:
             dx *= ureg(xunits)
         
-        if isinstance(y, xr.DataArray):
+        if isinstance(y, DataArray):
             ydata = y.data
         elif isinstance(y, np.ndarray):
             ydata = y
@@ -147,9 +151,10 @@ class FilterControlPanel(QWidget):
             else:
                 lowpass_cycles_per_sample = lowpass_cutoff.magnitude
             sigma = 1 / (2 * np.pi * lowpass_cycles_per_sample)
-            yfiltered = sp.ndimage.gaussian_filter1d(ydata, sigma)
+            from scipy.ndimage import gaussian_filter1d
+            yfiltered = gaussian_filter1d(ydata, sigma)
         
-        if isinstance(y, xr.DataArray):
+        if isinstance(y, DataArray):
             return y.copy(data=yfiltered)
         elif isinstance(y, np.ndarray):
             return yfiltered
@@ -172,6 +177,7 @@ class FilterControlPanel(QWidget):
     
     def closeEvent(self, event):
         status = super().closeEvent(event)
+        from qtpy.QtCore import QTimer
         QTimer.singleShot(0, self.panelClosed.emit)
         return status
 

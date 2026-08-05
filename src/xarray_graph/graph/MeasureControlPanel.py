@@ -1,22 +1,13 @@
 """ Measurement control panel UI.
 """
-
 from __future__ import annotations
-import numpy as np
-import pint
-from qtpy.QtCore import Qt, Signal, QTimer
-from qtpy.QtWidgets import (
-    QWidget,
-    QLabel,
-    QComboBox,
-    QSpinBox,
-    QGroupBox,
-    QFormLayout,
-    QCheckBox,
-    QPushButton,
-    QHBoxLayout,
-    QVBoxLayout,
-)
+
+from qtpy.QtCore import Signal
+from qtpy.QtWidgets import QWidget
+
+import typing
+if typing.TYPE_CHECKING:
+    import numpy as np
 
 
 class MeasureControlPanel(QWidget):
@@ -26,11 +17,11 @@ class MeasureControlPanel(QWidget):
     measureRequested = Signal()
     panelClosed = Signal()
 
-    ureg = pint.UnitRegistry()
-    ureg.formatter.default_format = '~'  # short format for symbols (e.g., "A" instead of "ampere")
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        from qtpy.QtCore import Qt
+        from qtpy.QtWidgets import QLabel, QComboBox, QSpinBox, QGroupBox, QFormLayout, QCheckBox, QPushButton, QHBoxLayout, QVBoxLayout
 
         self.setWindowTitle('Measure')
 
@@ -95,7 +86,7 @@ class MeasureControlPanel(QWidget):
 
         self._measure_per_ROI_checkbox = QCheckBox('Measure for each ROI')
         self._measure_per_ROI_checkbox.setChecked(True)
-        self._measure_in_ROIs_only_checkbox.setEnabled(not self._measure_per_ROI_checkbox.isChecked)
+        self._measure_in_ROIs_only_checkbox.setEnabled(not self._measure_per_ROI_checkbox.isChecked())
         self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self._measure_in_ROIs_only_checkbox.setEnabled(Qt.CheckState(state) == Qt.CheckState.Unchecked))
         self._measure_per_ROI_checkbox.stateChanged.connect(lambda state: self.measureChanged.emit())
 
@@ -127,6 +118,25 @@ class MeasureControlPanel(QWidget):
         self._onMeasurementTypeChanged()
         self.blockSignals(False)
     
+    def state(self) -> dict:
+        return {
+            'measure_type': self._type_combobox.currentText(),
+            'avg_plus_minus_samples': self._avg_plus_minus_samples_spinbox.value(),
+            'measure_in_ROIs_only': self._measure_in_ROIs_only_checkbox.isChecked(),
+            'measure_per_ROI': self._measure_per_ROI_checkbox.isChecked(),
+            'preview': self._preview_checkbox.isChecked()
+        }
+
+    def setState(self, state: dict) -> None:
+        self.blockSignals(True)
+        self._type_combobox.setCurrentText(state.get('measure_type', 'Mean'))
+        self._avg_plus_minus_samples_spinbox.setValue(state.get('avg_plus_minus_samples', 0))
+        self._measure_in_ROIs_only_checkbox.setChecked(state.get('measure_in_ROIs_only', True))
+        self._measure_per_ROI_checkbox.setChecked(state.get('measure_per_ROI', True))
+        self._preview_checkbox.setChecked(state.get('preview', True))
+        self.blockSignals(False)
+        self._onMeasurementTypeChanged()
+
     def _onMeasurementTypeChanged(self):
         measurement_type = self._type_combobox.currentText()
         self._avg_plus_minus_samples_group.setVisible(measurement_type in ['Min', 'Max'])
@@ -134,6 +144,8 @@ class MeasureControlPanel(QWidget):
         self.measureChanged.emit()
     
     def measure(self, x: np.ndarray, y: np.ndarray, xranges: list[tuple[float, float]]) -> np.ndarray:
+        import numpy as np
+
         measurement_type = self._type_combobox.currentText()
 
         mask = ~np.isnan(x) & ~np.isnan(y)
@@ -202,6 +214,7 @@ class MeasureControlPanel(QWidget):
     
     def closeEvent(self, event):
         status = super().closeEvent(event)
+        from qtpy.QtCore import QTimer
         QTimer.singleShot(0, self.panelClosed.emit)
         return status
 
