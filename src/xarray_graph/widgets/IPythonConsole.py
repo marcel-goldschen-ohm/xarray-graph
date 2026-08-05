@@ -57,19 +57,28 @@ class IPythonConsole(RichJupyterWidget):
             import textwrap
             message = textwrap.dedent(message).strip()
         if self.isVisible():
+            print("Printing message to console:", message)
             self._append_plain_text(message, before_prompt=True)
         else:
             # will be displayed the next time _show_and_raise() is called
+            print("Queueing message to console:", message)
             self._message_queue.append(message)
-    
+
+    def _printMessagesInQueue(self) -> None:
+        if not self.isVisible():
+            raise RuntimeError("Cannot print messages in queue because console is not visible.")
+        while self._message_queue:
+            print("Printing queued message to console:", self._message_queue[0])
+            msg = self._message_queue.pop(0)
+            self.printMessage(msg, dedent=False)
+
     def _show_and_raise(self):
         """ Show the console and raise it to the front.
         """
         self.show()
         self.raise_()
-        while self._message_queue:
-            msg = self._message_queue.pop(0)
-            self.printMessage(msg)
+        from qtpy.QtCore import QTimer
+        QTimer.singleShot(0, self._printMessagesInQueue)
     
     
 def test_live():

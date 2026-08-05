@@ -523,6 +523,7 @@ def test_live():
     # window.refresh()
 
     import xarray as xr
+    from xarray import DataTree
     dt = DataTree()
     dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
