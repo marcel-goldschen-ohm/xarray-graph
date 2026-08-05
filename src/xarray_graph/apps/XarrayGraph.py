@@ -1377,7 +1377,6 @@ class XarrayGraph(XarrayDataTreeViewer):
         from pyqtgraph import ViewBox, AxisItem, DateAxisItem, mkPen
         from xarray_graph.graph.PlotCurve import PlotCurve
         for plot in plots:
-            print(f'updatePreview for plot with y-axis: {plot.getAxis('left').labelText}...')
             xaxis: AxisItem = plot.getAxis('bottom')
             if isinstance(xaxis, DateAxisItem):
                 xunits = 's'
