@@ -5,6 +5,8 @@ Style is stored in hashable dict.
 from __future__ import annotations
 
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import QWidget
 
 import typing
 if typing.TYPE_CHECKING:
@@ -40,33 +42,17 @@ class PlotCurveStyle(dict):
     }
 
     # lines
-    penStyles = [Qt.PenStyle.NoPen, Qt.PenStyle.SolidLine, Qt.PenStyle.DashLine, Qt.PenStyle.DotLine, Qt.PenStyle.DashDotLine, Qt.PenStyle.DashDotDotLine]
-    penStyleLabels = ['No Line', 'Solid Line', 'Dash Line', 'Dot Line', 'Dash Dot Line', 'Dash Dot Dot Line']
-    lineStyles = ['none', 'solid', 'dashed', 'dotted', 'dashdot', 'dashdotdot']
-    lineStyleSymbols = ['', '-', '--', ':', '-.', '-..']
+    lineStyles = {
+        'pens': [Qt.PenStyle.NoPen, Qt.PenStyle.SolidLine, Qt.PenStyle.DashLine, Qt.PenStyle.DotLine, Qt.PenStyle.DashDotLine, Qt.PenStyle.DashDotDotLine],
+        'labels': ['No Line', 'Solid Line', 'Dash Line', 'Dot Line', 'Dash Dot Line', 'Dash Dot Dot Line'],
+        'symbols': ['', '-', '--', ':', '-.', '-..'],
+        'strings': ['none', 'solid', 'dashed', 'dotted', 'dashdot', 'dashdotdot'],
+    }
 
-    # {label: marker key}
-    pyqtgraphMarkers = {
-        'None': 'none',
-        'Circle': 'o',
-        'Square': 's',
-        'Triangle': 't',
-        'Diamond': 'd',
-        'Plus': '+',
-        'Triangle Up': 't1',
-        'Triangle Right': 't2',
-        'Triangle Left': 't3',
-        'Pentagon': 'p',
-        'Hexagon': 'h',
-        'Star': 'star',
-        'Vertical Line': '|',
-        'Horizontal Line': '_',
-        'Cross': 'x',
-        'Arrow Up': 'arrow_up',
-        'Arrow Right': 'arrow_right',
-        'Arrow Down': 'arrow_down',
-        'Arrow Left': 'arrow_left',
-        'Crosshair': 'crosshair'
+    # markers
+    markers = {
+        'pyqtgraph': ['none', 'o', 's', 't', 'd', '+', 't1', 't2', 't3', 'p', 'h', 'star', '|', '_', 'x', 'arrow_up', 'arrow_right', 'arrow_down', 'arrow_left', 'crosshair'],
+        'labels': ['None', 'Circle', 'Square', 'Triangle', 'Diamond', 'Plus', 'Triangle Up', 'Triangle Right', 'Triangle Left', 'Pentagon', 'Hexagon', 'Star', 'Vertical Line', 'Horizontal Line', 'Cross', 'Arrow Up', 'Arrow Right', 'Arrow Down', 'Arrow Left', 'Crosshair'],
     }
 
     def __init__(self, *args, **kwargs):
@@ -81,57 +67,42 @@ class PlotCurveStyle(dict):
             'markeredgestyle': '-',
             'markeredgewidth': 1,
         }
-    
+
     def __getitem__(self, key: str):
         key = self.getKey(key)
         if key in self:
             return dict.__getitem__(self, key)
         # key not found...
         if key == 'markeredgewidth':
+            # fallback to linewidth
             if 'linewidth' in self:
                 return self['linewidth']
         elif key == 'markeredgecolor':
+            # fallback to color
             if 'color' in self:
                 return self['color']
         elif key == 'markerfacecolor':
+            # fallback to markeredgecolor
             if 'markeredgecolor' in self:
                 return self['markeredgecolor']
-            elif 'color' in self:
+            # fallback to color
+            if 'color' in self:
                 return self['color']
         if key in self._defaults:
             return self._defaults[key]
     
     def __setitem__(self, key: str, value):
-        key = self.getKey(key)
-        if key.endswith('color'):
-            if value is not None:
-                from xarray_graph.utils.color import toColorStr
-                value = toColorStr(value)
-        elif key in ['linestyle', 'markeredgestyle']:
-            if value is None:
-                value = 'none'
-            elif isinstance(value, (int, Qt.PenStyle)):
-                value = PlotCurveStyle.lineStyles[value]
-            elif isinstance(value, str):
-                if value == '.-':
-                    value = '-.'
-                elif value == '..-' or value == '.-.':
-                    value = '-..'
-        elif key == 'linewidth':
-            if value is not None:
-                value = max(0, value)
-        elif key == 'marker':
-            if value is None:
-                value = 'none'
-        elif key == 'markersize':
-            if value is not None:
-                value = max(0, value)
-        elif key == 'markeredgewidth':
-            if value is not None:
-                value = max(0, value)
         if value is None:
             del self[key]
             return
+        key = self.getKey(key)
+        if key.endswith('color'):
+            from xarray_graph.utils.color import toQColor
+            value = toQColor(value)
+        elif key in ['linestyle', 'markeredgestyle']:
+            value = self._toLineStyle(value)
+        elif key in ['linewidth', 'markersize', 'markeredgewidth']:
+            value = max(0, value)
         dict.__setitem__(self, key, value)
     
     def __delitem__(self, key: str):
@@ -146,16 +117,66 @@ class PlotCurveStyle(dict):
             key = PlotCurveStyle.keymap[key]
         return key
 
-    def penStyle(self, linestyle: str) -> Qt.PenStyle:
-        if linestyle in self.lineStyles:
-            return self.penStyles[self.lineStyles.index(linestyle)]
-        if linestyle in self.lineStyleSymbols:
-            return self.penStyles[self.lineStyleSymbols.index(linestyle)]
+    @staticmethod
+    def _strToPen(linestyle: str) -> Qt.PenStyle:
+        try:
+            index = PlotCurveStyle.lineStyles['strings'].index(linestyle)
+            return PlotCurveStyle.lineStyles['pens'][index]
+        except ValueError:
+            try:
+                index = PlotCurveStyle.lineStyles['symbols'].index(linestyle)
+                return PlotCurveStyle.lineStyles['pens'][index]
+            except ValueError:
+                try:
+                    index = PlotCurveStyle.lineStyles['labels'].index(linestyle)
+                    return PlotCurveStyle.lineStyles['pens'][index]
+                except ValueError:
+                    raise ValueError(f'Invalid linestyle: {linestyle}')
+
+    @staticmethod
+    def _penToStr(pen: Qt.PenStyle, opt: str = 'strings') -> str:
+        if opt not in ['strings', 'symbols', 'labels']:
+            raise ValueError(f'Invalid option: "{opt}". Must be one of: "strings", "symbols", "labels"')
+        try:
+            index = PlotCurveStyle.lineStyles['pens'].index(pen)
+            return PlotCurveStyle.lineStyles[opt][index]
+        except ValueError:
+            raise ValueError(f'Invalid pen style: {pen}')
+
+    @staticmethod
+    def _toLineStyle(value: str | Qt.PenStyle) -> str:
+        try:
+            if isinstance(value, str):
+                if value == '.-':
+                    value = '-.'
+                elif value == '..-' or value == '.-.':
+                    value = '-..'
+                pen = PlotCurveStyle._strToPen(value)
+                return PlotCurveStyle._penToStr(pen)
+            elif isinstance(value, Qt.PenStyle):
+                return PlotCurveStyle._penToStr(value)
+        except ValueError:
+            raise ValueError(f'Invalid linestyle: {value}')
+
+    def color(self) -> QColor:
+        from xarray_graph.utils.color import toQColor
+        color = self['color']
+        return toQColor(color)
+
+    def markerEdgeColor(self) -> QColor:
+        from xarray_graph.utils.color import toQColor
+        color = self['markeredgecolor']
+        return toQColor(color)
+
+    def markerFaceColor(self) -> QColor:
+        from xarray_graph.utils.color import toQColor
+        color = self['markerfacecolor']
+        return toQColor(color)
 
     def linePen(self) -> QPen:
         color = self['color']
         linestyle = self['linestyle']
-        penstyle = self.penStyle(linestyle)
+        penstyle = self._strToPen(linestyle)
         linewidth = self['linewidth']
         from pyqtgraph import mkPen
         return mkPen(color=color, style=penstyle, width=linewidth)
@@ -163,7 +184,7 @@ class PlotCurveStyle(dict):
     def markerPen(self) -> QPen:
         color = self['markeredgecolor']
         linestyle = self['markeredgestyle']
-        penstyle = self.penStyle(linestyle)
+        penstyle = self._strToPen(linestyle)
         linewidth = self['markeredgewidth']
         from pyqtgraph import mkPen
         return mkPen(color=color, style=penstyle, width=linewidth)
@@ -173,122 +194,232 @@ class PlotCurveStyle(dict):
         from pyqtgraph import mkBrush
         return mkBrush(color=color)
 
-    # def createWidget(self, key: str) -> QWidget:
-    #     key = self.getKey(key)
-    #     if key in ['color', 'markeredgecolor', 'markerfacecolor']:
-    #         widget = ColorButton()
-    #         widget.setColor(self[key])
-    #         return widget
-    #     elif key in ['linestyle', 'markeredgestyle']:
-    #         widget = QComboBox()
-    #         widget.addItems(PlotCurveStyle.penStyleLabels)
-    #         widget.setCurrentIndex(PlotCurveStyle.penStyleKeys.index(self[key]))
-    #         return widget
-    #     elif key in ['linewidth', 'markersize', 'markeredgewidth']:
-    #         widget = QDoubleSpinBox()
-    #         widget.setMinimum(0)
-    #         widget.setValue(self[key])
-    #         return widget
-    #     elif key == 'marker':
-    #         widget = QComboBox()
-    #         marker_labels = list(PlotCurveStyle.pyqtgraphMarkers.keys())
-    #         marker_keys = list(PlotCurveStyle.pyqtgraphMarkers.values())
-    #         widget.addItems(marker_labels)
-    #         marker = self[key]
-    #         if marker is None:
-    #             marker = 'None'
-    #         elif marker in marker_keys:
-    #             marker = marker_labels[marker_keys.index(marker)]
-    #         widget.setCurrentIndex(marker_labels.index(marker))
-    #         return widget
 
-    # def updateWidget(self, key: str, widget: QWidget) -> None:
-    #     key = self.getKey(key)
-    #     if key in ['color', 'markeredgecolor', 'markerfacecolor']:
-    #         widget.setColor(self[key])
-    #     elif key in ['linestyle', 'markeredgestyle']:
-    #         widget.setCurrentIndex(PlotCurveStyle.penStyleKeys.index(self[key]))
-    #     elif key in ['linewidth', 'markersize', 'markeredgewidth']:
-    #         widget.setValue(self[key])
-    #     elif key == 'marker':
-    #         marker_labels = list(PlotCurveStyle.pyqtgraphMarkers.keys())
-    #         marker_keys = list(PlotCurveStyle.pyqtgraphMarkers.values())
-    #         marker = self[key]
-    #         if marker is None:
-    #             marker = 'None'
-    #         elif marker in marker_keys:
-    #             marker = marker_labels[marker_keys.index(marker)]
-    #         widget.setCurrentIndex(marker_labels.index(marker))
+class PlotCurveStylePanel(QWidget):
 
-    # def updateFromWidget(self, key: str, widget: QWidget) -> None:
-    #     key = self.getKey(key)
-    #     if key in ['color', 'markeredgecolor', 'markerfacecolor']:
-    #         self[key] = widget.color()
-    #     elif key in ['linestyle', 'markeredgestyle']:
-    #         self[key] = PlotCurveStyle.penStyleKeys[widget.currentIndex()]
-    #     elif key in ['linewidth', 'markersize', 'markeredgewidth']:
-    #         self[key] = widget.value()
-    #     elif key == 'marker':
-    #         self[key] = widget.currentText()
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
 
+        from xarray_graph.widgets.ColorButton import ColorButton
+        from qtpy.QtWidgets import QLabel, QComboBox, QDoubleSpinBox, QCheckBox, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox
 
-# class GraphStylePanel(QWidget):
+        self._color_label = QLabel('Color')
+        self._color_button = ColorButton()
+        self._color_button.colorChanged.connect(self._on_color_changed)
 
-#     def __init__(self, styles: list[str] = None, *args, **kwargs):
-#         QWidget.__init__(self, *args, **kwargs)
+        self._linestyle_label = QLabel('Style')
+        self._linestyle_combobox = QComboBox()
+        self._linestyle_combobox.addItems(PlotCurveStyle.lineStyles['labels'])
+        self._linestyle_combobox.setCurrentIndex(1)  # default to solid line
 
-#         if styles is None:
-#             styles = ['color', 'linestyle', 'linewidth', 'marker', 'markersize', 'markeredgestyle', 'markeredgewidth', 'markeredgecolor', 'markerfacecolor']
-#         styles = [PlotCurveStyle.getKey(key) for key in styles]
+        self._linewidth_label = QLabel('Width')
+        self._linewidth_spinbox = QDoubleSpinBox()
+        self._linewidth_spinbox.setMinimum(0)
+        self._linewidth_spinbox.setValue(1)
 
-#         self._widgets: dict[str, QWidget] = {key: PlotCurveStyle().createWidget(key) for key in styles}
+        self._marker_label = QLabel('Marker')
+        self._marker_combobox = QComboBox()
+        self._marker_combobox.addItems(list(PlotCurveStyle.markers['labels']))
+        self._marker_combobox.setCurrentIndex(0)  # default to no marker
 
-#         vbox = QVBoxLayout(self)
-#         vbox.setContentsMargins(10, 10, 10, 10)
-#         vbox.setSpacing(10)
+        self._markersize_label = QLabel('Size')
+        self._markersize_spinbox = QDoubleSpinBox()
+        self._markersize_spinbox.setMinimum(0)
+        self._markersize_spinbox.setValue(10)
 
-#         sections = [
-#             [
-#                 'Line',
-#                 ['color', 'linestyle', 'linewidth'],
-#                 ['Color', 'Style', 'Width']
-#             ],
-#             [
-#                 'Marker',
-#                 ['marker', 'markersize', 'markeredgestyle', 'markeredgewidth', 'markeredgecolor', 'markerfacecolor'],
-#                 ['Marker', 'Size', 'Edge Style', 'Edge Width', 'Edge Color', 'Face Color']
-#             ],
-#         ]
-#         for section in sections:
-#             title, keys, labels = section
-#             if set(keys).intersection(styles):
-#                 # sectionWidget = CollapsibleSection(title=title)
-#                 sectionWidget = QGroupBox(title=title)
-#                 form = QFormLayout(sectionWidget)
-#                 form.setContentsMargins(0, 0, 0, 0)
-#                 form.setSpacing(6)
-#                 form.setHorizontalSpacing(10)
-#                 for key, label in zip(keys, labels):
-#                     if key in styles:
-#                         form.addRow(label, self._widgets[key])
-#                 # sectionWidget.setContentLayout(form)
-#                 vbox.addWidget(sectionWidget)
-        
-#         # # expand 1st section
-#         # if vbox.count() > 0:
-#         #     vbox.itemAt(0).widget().expand()
-        
-#         vbox.addStretch()
+        self._markeredgestyle_label = QLabel('Edge Style')
+        self._markeredgestyle_combobox = QComboBox()
+        self._markeredgestyle_combobox.addItems(PlotCurveStyle.lineStyles['labels'])
+        self._markeredgestyle_combobox.setCurrentIndex(1)  # default to solid line
+
+        self._markeredgewidth_label = QLabel('Edge Width')
+        self._markeredgewidth_spinbox = QDoubleSpinBox()
+        self._markeredgewidth_spinbox.setMinimum(0)
+        self._markeredgewidth_spinbox.setValue(1)
+
+        self._markeredgecolor_label = QLabel('Edge Color')
+        self._markeredgecolor_button = ColorButton()
+
+        self._markerfacecolor_label = QLabel('Face Color')
+        self._markerfacecolor_button = ColorButton()
+
+        self._default_color_checkbox = QCheckBox('Dynamic')
+        self._default_color_checkbox.setToolTip('Let app choose color.')
+        self._default_color_checkbox.stateChanged.connect(self._on_default_color_changed)
+
+        self._default_markeredgecolor_checkbox = QCheckBox('Use Color')
+        self._default_markeredgecolor_checkbox.stateChanged.connect(self._on_default_markeredgecolor_changed)
+
+        self._default_markerfacecolor_checkbox = QCheckBox('Use Color')
+        self._default_markerfacecolor_checkbox.stateChanged.connect(self._on_default_markerfacecolor_changed)
+
+        self._markerfacecolor_nofill_checkbox = QCheckBox('No Fill')
+        self._markerfacecolor_nofill_checkbox.stateChanged.connect(self._on_markerfacecolor_nofill_changed)
+        self._markerfacecolor_nofill_checkbox.setStyleSheet("QCheckBox { padding-right: 10px; }") # QCheckBox doesn't correctly account for margins?
+
+        self._widgets: dict[str, QWidget] = {
+            'color': self._color_button,
+            'linestyle': self._linestyle_combobox,
+            'linewidth': self._linewidth_spinbox,
+            'marker': self._marker_combobox,
+            'markersize': self._markersize_spinbox,
+            'markeredgestyle': self._markeredgestyle_combobox,
+            'markeredgewidth': self._markeredgewidth_spinbox,
+            'markeredgecolor': self._markeredgecolor_button,
+            'markerfacecolor': self._markerfacecolor_button,
+        }
     
-#     def graphStyle(self) -> PlotCurveStyle:
-#         graphStyle = PlotCurveStyle()
-#         for key, widget in self._widgets.items():
-#             graphStyle.updateFromWidget(key, widget)
-#         return graphStyle
+        def _get_hbox_container() -> tuple[QWidget, QHBoxLayout]:
+            container = QWidget()
+            hbox = QHBoxLayout(container)
+            hbox.setContentsMargins(0, 0, 0, 0)
+            hbox.setSpacing(10)
+            return container, hbox
+        
+        color_widget, hbox = _get_hbox_container()
+        hbox.addWidget(self._color_button)
+        hbox.addWidget(self._default_color_checkbox)
+
+        markeredgecolor_widget, hbox = _get_hbox_container()
+        hbox.addWidget(self._markeredgecolor_button)
+        hbox.addWidget(self._default_markeredgecolor_checkbox)
+
+        markerfacecolor_widget, hbox = _get_hbox_container()
+        hbox.addWidget(self._markerfacecolor_button)
+        hbox.addWidget(self._default_markerfacecolor_checkbox)
+        hbox.addWidget(self._markerfacecolor_nofill_checkbox)
+
+        line_group = QGroupBox('Line')
+        form = QFormLayout(line_group)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(6)
+        form.setHorizontalSpacing(10)
+        form.addRow(self._color_label, color_widget)
+        form.addRow(self._linestyle_label, self._linestyle_combobox)
+        form.addRow(self._linewidth_label, self._linewidth_spinbox)
+
+        marker_group = QGroupBox('Marker')
+        form = QFormLayout(marker_group)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(6)
+        form.setHorizontalSpacing(10)
+        form.addRow(self._marker_label, self._marker_combobox)
+        form.addRow(self._markersize_label, self._markersize_spinbox)
+        form.addRow(self._markeredgestyle_label, self._markeredgestyle_combobox)
+        form.addRow(self._markeredgewidth_label, self._markeredgewidth_spinbox)
+        form.addRow(self._markeredgecolor_label, markeredgecolor_widget)
+        form.addRow(self._markerfacecolor_label, markerfacecolor_widget)
+
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(10, 10, 10, 10)
+        vbox.setSpacing(10)
+        vbox.addWidget(line_group)
+        vbox.addWidget(marker_group)
+        vbox.addStretch()
+        
+        # self._default_color_checkbox.setChecked(True)
+        # self._default_markeredgecolor_checkbox.setChecked(True)
+        # self._default_markerfacecolor_checkbox.setChecked(True)
     
-#     def setGraphStyle(self, graphStyle: PlotCurveStyle):
-#         for key, widget in self._widgets.items():
-#             graphStyle.updateWidget(key, widget)
+    def _color(self) -> QColor:
+        if self._default_color_checkbox.isChecked():
+            return QColor()
+        return self._color_button.color()
+
+    def _on_color_changed(self, color: QColor):
+        if self._default_markeredgecolor_checkbox.isChecked():
+            self._markeredgecolor_button.setColor(color)
+        if self._default_markerfacecolor_checkbox.isChecked():
+            self._markerfacecolor_button.setColor(color)
+
+    def _on_default_color_changed(self, state: int):
+        if state:
+            self._color_button.setColor(QColor())
+        self._color_button.setEnabled(not state)
+
+    def _on_default_markeredgecolor_changed(self, state: int):
+        if state:
+            self._markeredgecolor_button.setColor(self._color_button.color())
+        self._markeredgecolor_button.setEnabled(not state)
+
+    def _on_default_markerfacecolor_changed(self, state: int):
+        if state:
+            self._markerfacecolor_nofill_checkbox.setChecked(False)
+            self._markerfacecolor_button.setColor(self._color_button.color())
+        self._markerfacecolor_button.setEnabled(not state)
+
+    def _on_markerfacecolor_nofill_changed(self, state: int):
+        if state:
+            self._default_markerfacecolor_checkbox.setChecked(False)
+            self._markerfacecolor_button.setColor(QColor())
+        self._markerfacecolor_button.setEnabled(not state)
+
+    def style(self) -> PlotCurveStyle:
+        style = PlotCurveStyle()
+        for key, widget in self._widgets.items():
+            try:
+                if key in ['color', 'markeredgecolor', 'markerfacecolor']:
+                    if key == 'markerfacecolor' and self._markerfacecolor_nofill_checkbox.isChecked():
+                        value = 'none'
+                    else:
+                        value = widget.color()
+                elif key in ['linestyle', 'markeredgestyle']:
+                    index = widget.currentIndex()
+                    value = PlotCurveStyle.lineStyles['strings'][index]
+                elif key in ['linewidth', 'markersize', 'markeredgewidth']:
+                    value = widget.value()
+                elif key == 'marker':
+                    index = widget.currentIndex()
+                    value = PlotCurveStyle.markers['pyqtgraph'][index]
+                else:
+                    # should not happen
+                    continue
+                style[key] = value
+            except Exception:
+                continue
+        return style
+    
+    def setStyle(self, style: PlotCurveStyle):
+        for key, widget in self._widgets.items():
+            try:
+                value = style[key]
+                if key == 'color':
+                    if key in style:
+                        self._default_color_checkbox.setChecked(False)
+                        self._color_button.setColor(value)
+                    else:
+                        self._default_color_checkbox.setChecked(True)
+                elif key in ['linestyle', 'markeredgestyle']:
+                    try:
+                        pen = PlotCurveStyle._strToPen(value)
+                        index = PlotCurveStyle.lineStyles['pens'].index(pen)
+                        widget.setCurrentIndex(index)
+                    except ValueError:
+                        continue
+                elif key in ['linewidth', 'markersize', 'markeredgewidth']:
+                    value = max(0, value)
+                    widget.setValue(value)
+                elif key == 'marker':
+                    try:
+                        index = PlotCurveStyle.markers['pyqtgraph'].index(value)
+                        widget.setCurrentIndex(index)
+                    except ValueError:
+                        continue
+                elif key == 'markeredgecolor':
+                    if key in style:
+                        self._default_markeredgecolor_checkbox.setChecked(False)
+                        self._markeredgecolor_button.setColor(value)
+                    else:
+                        self._default_markeredgecolor_checkbox.setChecked(True)
+                elif key == 'markerfacecolor':
+                    if key in style:
+                        self._default_markerfacecolor_checkbox.setChecked(False)
+                        self._markerfacecolor_nofill_checkbox.setChecked(value == 'none')
+                        self._markerfacecolor_button.setColor(value)
+                    else:
+                        self._default_markerfacecolor_checkbox.setChecked(True)
+            except Exception:
+                continue
 
 
 # def editGraphStyle(graphStyle: PlotCurveStyle, styles: list[str] = None, parent: QWidget = None, title: str = None) -> PlotCurveStyle | None:
@@ -314,20 +445,18 @@ class PlotCurveStyle(dict):
 #         return panel.graphStyle()
 
 
-def test():
+def test_live():
+    from qtpy.QtWidgets import QApplication
+    app = QApplication()
     style = PlotCurveStyle()
-    pen = style.linePen()
-    print(pen)
-
-
-# def test_live():
-#     app = QApplication()
-#     ui = GraphStylePanel()
-#     ui.show()
-#     # QTimer.singleShot(1000, lambda: print(editGraphStyle(GraphStyle())))
-#     app.exec()
+    style['color'] = 'red'
+    style['marker'] = 'o'
+    style['markerfacecolor'] = 'none'
+    ui = PlotCurveStylePanel()
+    ui.setStyle(style)
+    ui.show()
+    app.exec()
 
 
 if __name__ == '__main__':
-    test()
-    # test_live()
+    test_live()

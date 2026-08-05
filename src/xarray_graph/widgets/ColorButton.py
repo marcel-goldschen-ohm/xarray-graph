@@ -22,25 +22,20 @@ class ColorButton(QToolButton):
         return self._color
 
     def setColor(self, color: ColorType):
-        if color is None:
-            color: QColor = QColor('transparent')
-            self.setStyleSheet(f'background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()}); border: 1px solid black;')
-            from qtawesome import icon as qta_icon
-            self.setIcon(qta_icon('ri.question-mark'))
-            self._color = None
-            return
         from qtpy.QtGui import QIcon
         from xarray_graph.utils.color import toQColor
         color: QColor = toQColor(color)
         self.setStyleSheet(f'background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()}); border: 1px solid black;')
-        self.setIcon(QIcon())
+        if color == QColor():
+            from qtawesome import icon as qta_icon
+            self.setIcon(qta_icon('ri.question-mark'))
+        else:
+            self.setIcon(QIcon())
         self._color = color
         self.colorChanged.emit(color)
     
     def pickColor(self):
         color: QColor = self.color()
-        if color is None:
-            color = QColor('white')
         from qtpy.QtWidgets import QColorDialog
         color = QColorDialog.getColor(color, self, "Select Color", options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if color.isValid():
