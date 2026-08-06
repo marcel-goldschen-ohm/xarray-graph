@@ -367,53 +367,57 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         # QToolButton background
         from qtpy.QtWidgets import QStylePainter, QStyle
         painter = QStylePainter(self)
-        painter.drawComplexControl(QStyle.CC_ToolButton, opt)
+        try:
+            painter.drawComplexControl(QStyle.CC_ToolButton, opt)
 
-        from qtpy.QtGui import QIcon, QPixmap
+            from qtpy.QtGui import QIcon, QPixmap
 
-        # expand/collapse icon
-        bbox: QRect = self._expand_collapse_icon_rect()
-        is_expanded: bool = splitter.widget(index) is section['widget']
-        icon: QIcon = splitter._expanded_icon if is_expanded else splitter._collapsed_icon
-        pixmap: QPixmap = icon.pixmap(bbox.size(), QIcon.Mode.Normal, QIcon.State.On)
-        painter.drawPixmap(bbox.left(), bbox.top(), pixmap)
+            # expand/collapse icon
+            bbox: QRect = self._expand_collapse_icon_rect()
+            is_expanded: bool = splitter.widget(index) is section['widget']
+            icon: QIcon = splitter._expanded_icon if is_expanded else splitter._collapsed_icon
+            pixmap: QPixmap = icon.pixmap(bbox.size(), QIcon.Mode.Normal, QIcon.State.On)
+            painter.drawPixmap(bbox.left(), bbox.top(), pixmap)
 
-        # focus section icon
-        bbox: QRect = self._focus_icon_rect()
-        is_focused: bool = index == getattr(splitter, '_focused_index', None)
-        icon: QIcon = splitter._unfocus_icon if is_focused else splitter._focus_icon
-        pixmap: QPixmap = icon.pixmap(bbox.size(), QIcon.Mode.Normal, QIcon.State.On)
-        painter.drawPixmap(bbox.left(), bbox.top(), pixmap)
+            # focus section icon
+            bbox: QRect = self._focus_icon_rect()
+            is_focused: bool = index == getattr(splitter, '_focused_index', None)
+            icon: QIcon = splitter._unfocus_icon if is_focused else splitter._focus_icon
+            pixmap: QPixmap = icon.pixmap(bbox.size(), QIcon.Mode.Normal, QIcon.State.On)
+            painter.drawPixmap(bbox.left(), bbox.top(), pixmap)
 
-        # custom actions icons
-        n_actions: int = len(section['actions']) if section['actions'] is not None else 0
-        if n_actions > 0:
-            action: QAction
-            for i, action in enumerate(section['actions'] or []):
-                bbox: QRect = self._custom_icon_rect(i, n_actions)
-                icon: QIcon = action.icon()
-                pixmap: QPixmap = icon.pixmap(bbox.size(), QIcon.Mode.Normal, QIcon.State.On)
-                painter.drawPixmap(bbox.left(), bbox.top(), pixmap)
+            # custom actions icons
+            n_actions: int = len(section['actions']) if section['actions'] is not None else 0
+            if n_actions > 0:
+                action: QAction
+                for i, action in enumerate(section['actions'] or []):
+                    bbox: QRect = self._custom_icon_rect(i, n_actions)
+                    icon: QIcon = action.icon()
+                    pixmap: QPixmap = icon.pixmap(bbox.size(), QIcon.Mode.Normal, QIcon.State.On)
+                    painter.drawPixmap(bbox.left(), bbox.top(), pixmap)
 
-        # title
-        font = painter.font()
-        if self.orientation() == Qt.Orientation.Vertical:
-            font.setPixelSize(rect.height() - 4)
-            painter.setFont(font)
-            painter.drawText(rect.adjusted(rect.height() + 5, 0, -rect.height() - 5, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
-        elif self.orientation() == Qt.Orientation.Horizontal:
-            font.setPixelSize(rect.width() - 4)
-            painter.setFont(font)
-            painter.save()
-            painter.translate(rect.right(), rect.bottom() - rect.width() - 5)
-            # painter.setBrush(Qt.GlobalColor.red)
-            # painter.drawRect(QRect(-5, -5, 10, 10))
-            painter.rotate(-90)
-            # painter.setBrush(Qt.GlobalColor.red)
-            # painter.drawRect(QRect(0, -rect.width(), rect.height(), rect.width()))
-            painter.drawText(QRect(0, -rect.width(), rect.height(), rect.width()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
-            # painter.drawText(0, 0, section['title'])
-            painter.restore()
+            # title
+            font = painter.font()
+            if self.orientation() == Qt.Orientation.Vertical:
+                font.setPixelSize(rect.height() - 4)
+                painter.setFont(font)
+                painter.drawText(rect.adjusted(rect.height() + 5, 0, -rect.height() - 5, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
+            elif self.orientation() == Qt.Orientation.Horizontal:
+                font.setPixelSize(rect.width() - 4)
+                painter.setFont(font)
+                painter.save()
+                painter.translate(rect.right(), rect.bottom() - rect.width() - 5)
+                # painter.setBrush(Qt.GlobalColor.red)
+                # painter.drawRect(QRect(-5, -5, 10, 10))
+                painter.rotate(-90)
+                # painter.setBrush(Qt.GlobalColor.red)
+                # painter.drawRect(QRect(0, -rect.width(), rect.height(), rect.width()))
+                painter.drawText(QRect(0, -rect.width(), rect.height(), rect.width()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
+                # painter.drawText(0, 0, section['title'])
+                painter.restore()
+        finally:
+            if painter.isActive():
+                painter.end()
     
     def _expand_collapse_icon_rect(self) -> QRect:
         rect: QRect = self.rect()
