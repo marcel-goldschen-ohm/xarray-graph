@@ -1433,6 +1433,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 for graph in data_graphs:
                     xdata, ydata = graph.getOriginalDataset()
                     xpreview, ypreview = None, None
+                    preview_tooltip = None
                     if preview_type == 'filter':
                         xpreview = xdata
                         ypreview = preview_panel.filter(xdata, ydata, self.ureg, xunits)
@@ -1442,6 +1443,28 @@ class XarrayGraph(XarrayDataTreeViewer):
                         ypreview = preview_panel.predict(xdata, fit_params, xranges)
                         if preview_panel.isResiduals():
                             ypreview = ydata - ypreview
+                        fit_attrs = fit_params
+                        if fit_attrs:
+                            if 'value' in fit_attrs:
+                                fit_attrs = None
+                            else:
+                                if 'result' in fit_attrs:
+                                    result = fit_attrs['result']
+                                    fit_attrs['expression'] = result.model.expr
+                                    fit_attrs['params'] = {
+                                        name: {
+                                            'value': result.best_values[name],
+                                            'init_value': result.init_params[name].value,
+                                            'bounds': [result.init_params[name].min, result.init_params[name].max],
+                                            'vary': result.init_params[name].vary,
+                                        }
+                                        for name in result.best_values
+                                    }
+                                    del fit_attrs['result']
+                                    preview_tooltip = '\n'.join([f'{name}: {param["value"]:.5g}' for name, param in fit_attrs['params'].items()])
+                                else:
+                                    from xarray_graph.utils.utils import value_to_str
+                                    preview_tooltip = value_to_str(fit_attrs)
                     elif preview_type == 'measure':
                         xy = preview_panel.measure(xdata, ydata, xranges)
                         xpreview = xy[:,0]
@@ -1467,6 +1490,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                         'coords': graph._metadata['coords'],
                         'units': graph._metadata['units'],
                     }
+                    if preview_type == 'curve_fit' and fit_attrs:
+                        preview_graph._metadata['fit'] = fit_attrs
                     preview_graph.setZValue(2)
                     preview_graph.setName(graph.name() + f" ({preview_type})")
                     if preview_type == 'measure':
@@ -1477,6 +1502,9 @@ class XarrayGraph(XarrayDataTreeViewer):
                     else:
                         preview_graph.setPen(mkPen(color=PREVIEW_COLOR, width=2))
                     graph._metadata['preview'] = preview_graph
+
+                    if preview_tooltip:
+                        preview_graph.setToolTip(preview_tooltip)
             
             # remove extra graph items from plot
             cleanup_graphs = [(preview_graphs, preview_count)]
@@ -1577,6 +1605,8 @@ class XarrayGraph(XarrayDataTreeViewer):
                         result_attrs['units'] = data_var_units
                     result_var = xr.DataArray(data=result_ydata, attrs=result_attrs)
                     dt[result_path] = result_var
+                if 'fit' in preview_graph._metadata:
+                    dt[result_path].attrs['fit'] = preview_graph._metadata['fit']
         
         self.refresh() # overkill?
         if dst == 'child node':
