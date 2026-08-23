@@ -32,38 +32,47 @@ class AbstractTreeItem():
             # update item linkage only (no data management during init)
             parent.children.insert(sibling_index, self)
 
+        # item name is used for path access. Override name() and setName() in a derived class to get/set name from data.
+        self._name: str = ''
+
         # store view state
         self._view_state: dict = {}
     
+    def __repr__(self) -> str:
+        """ Returns a single-line string representation of this item.
+        """
+        return self.name() or (self._path_sep if self.isRoot() else str(id(self)))
+
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
         """
-        return self._tree_repr(lambda item: item.name() or self._path_sep)
+        item_str_func: Callable[[AbstractTreeItem], str] = lambda item: repr(item)
+        return self._tree_repr(item_str_func)
     
-    def __getitem__(self, path: str) -> AbstractTreeItem | None:
+    def __getitem__(self, path: str) -> AbstractTreeItem:
         """ Return subtree item at path starting from this item.
 
         !! For unique item access, all paths in the tree must be unique.
            Unique paths are not a requirement, it is up to you to enforce this if you want it.
            If the path is not unique, the first item with path is returned.
         """
-        item: AbstractTreeItem = self
+        item = self
         stripped_path = path.strip(self._path_sep)
         if not stripped_path:
             return self
         path_parts = stripped_path.split(self._path_sep)
         for name in path_parts:
-            try:
-                child_names = [child.name() for child in item.children]
-                child_index = child_names.index(name)
-                item = item.children[child_index]
-                if child_names.count(name) > 1:
-                    from warnings import warn
-                    warn('Path is not unique.')
-            except Exception as error:
+            # try:
+            child_names = [child.name() for child in item.children]
+            child_index = child_names.index(name)
+            item = item.children[child_index]
+            if child_names.count(name) > 1:
                 from warnings import warn
-                warn(str(error))
-                return None
+                warn('Path is not unique.')
+            # except Exception as error:
+            #     from warnings import warn
+            #     warn(str(error))
+            #     return None
         return item
     
     def __setitem__(self, path: str, new_item: AbstractTreeItem) -> None:
@@ -73,7 +82,7 @@ class AbstractTreeItem():
            Unique paths are not a requirement, it is up to you to enforce this if you want it.
            If the path is not unique, the first item with path will be set to the new item.
         """
-        item: AbstractTreeItem = self
+        item = self
         path_parts = path.strip('/').split('/')
         if len(path_parts) == 0:
             raise ValueError('An item cannot set itself to a new item.')
@@ -122,18 +131,14 @@ class AbstractTreeItem():
         
         This implementation is for testing/debugging. Override in a derived class to get name from data.
         """
-        raise NotImplementedError('Implement in derived class with data-specific logic.')
-        # use below for testing/debugging if not implementing setName in derived class
-        # return getattr(self, '_name', str(id(self)))
+        return getattr(self, '_name', str(id(self)))
     
     def setName(self, name: str) -> None:
         """ Tree path key.
         
         This implementation is for testing/debugging. Override in a derived class to modify data.
         """
-        raise NotImplementedError('Implement in derived class with data-specific logic.')
-        # use below for testing/debugging if not implementing setName in derived class
-        # self._name = name
+        self._name = name
     
     def orphan(self) -> None:
         """ Remove this item from its parent.
@@ -231,16 +236,15 @@ class AbstractTreeItem():
                 return True
         return False
     
-    def _tree_repr(self, func: Callable[[AbstractTreeItem], str] = None) -> str:
+    def _tree_repr(self, item_str_func: Callable[[AbstractTreeItem], str] = None) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
 
-        Each item is described by the single line str returned by func(item).
-        See __str__ for example.
+        Each item is described by the single line str returned by item_str_func(item).
         """
-        if func is None:
-            func = lambda item: item.name() or self._path_sep
+        if item_str_func is None:
+            item_str_func = lambda item: repr(item)
         items: list[AbstractTreeItem] = list(self.subtree_depth_first())
-        lines: list[str] = [func(item) for item in items]
+        lines: list[str] = [item_str_func(item) for item in items]
         for i, item in enumerate(items):
             if item is self:
                 continue

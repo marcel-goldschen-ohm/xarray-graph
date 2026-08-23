@@ -5,8 +5,9 @@ TODO:
 """
 from __future__ import annotations
 
+from typing import Callable
 from qtpy.QtCore import QPoint, QSize, QModelIndex
-from qtpy.QtWidgets import QAction, QAbstractItemView, QMenu
+from qtpy.QtWidgets import QAbstractItemView, QMenu
 from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
 from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeModel
 from xarray_graph.tree.TreeView import TreeView
@@ -31,31 +32,33 @@ class KeyValueTreeView(TreeView):
         self._list_icon: QIcon = qta.icon('ph.list-numbers-thin')
 
         # actions
+        from qtpy.QtGui import QAction  # type: ignore
         self._showTypeColumnAction = QAction(
             text='Show Type Column',
             icon=qta.icon('fa6s.info'),
             iconVisibleInMenu=True,
             checkable=True,
             checked=False,
-            toolTip='Show data type column in the tree view. Uncheck to hide column.',
-            triggered=lambda checked: self._updateModelFromViewOptions(),
+            toolTip='Show data type column in the tree view. Uncheck to hide column.'
         )
+        self._showTypeColumnAction.triggered.connect(lambda checked: self._updateModelFromViewOptions())
     
     def treeData(self) -> dict | list:
         """ Get the root key:value map.
         """
-        model: KeyValueTreeModel = self.model()
+        model = self.model()
+        assert isinstance(model, KeyValueTreeModel)
         return model.treeData()
     
     def setTreeData(self, data: dict | list) -> None:
         """ Set the root key:value map.
         """
-        model: KeyValueTreeModel = self.model()
+        model = self.model()
         if model is None:
             model = KeyValueTreeModel()
             model.setTreeData(data)
             self.setModel(model)
-        else:
+        elif isinstance(model, KeyValueTreeModel):
             self.storeViewState()
             model.setTreeData(data)
             self.restoreViewState()
@@ -68,29 +71,39 @@ class KeyValueTreeView(TreeView):
             self._updateModelFromViewOptions()
 
     def _updateViewOptionsFromModel(self):
-        model: KeyValueTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, KeyValueTreeModel):
+            return
         self._showTypeColumnAction.blockSignals(True)
         self._showTypeColumnAction.setChecked(model.isTypesColumnVisible())
         self._showTypeColumnAction.blockSignals(False)
 
     def _updateModelFromViewOptions(self):
-        model: KeyValueTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, KeyValueTreeModel):
+            return
         self.storeViewState()
         model.setTypesColumnVisible(self._showTypeColumnAction.isChecked())
         self.restoreViewState()
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
-        model: KeyValueTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, KeyValueTreeModel):
+            raise TypeError(f'Model is not a KeyValueTreeModel: {type(model)}')
+
+        from qtpy.QtGui import QAction  # type: ignore
+        
         menu = QMenu(self)
 
         # item that was clicked on
-        item: KeyValueTreeItem = model.itemFromIndex(index)
+        item = model.itemFromIndex(index)
+        assert isinstance(item, KeyValueTreeItem)
         if item.isDict():
-            icon: QIcon = self._dict_icon
+            icon: QIcon | None = self._dict_icon
         elif item.isList():
-            icon: QIcon = self._list_icon
+            icon: QIcon | None = self._list_icon
         else:
-            icon: QIcon = None
+            icon: QIcon | None = None
         
         # disabled action acts as a label for the item that was right-clicked on
         if icon:
@@ -107,19 +120,25 @@ class KeyValueTreeView(TreeView):
                 parent=menu,
                 enabled=False
             ))
+
         # item-specific actions
         if item is not model.rootItem():
-            menu.addAction(QAction(
+            action = QAction(
                 text='Insert New',
-                parent=menu,
-                triggered=lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row),
-            ))
+                parent=menu
+            )
+            callback: Callable[[bool, KeyValueTreeItem, int], None] = lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row)
+            action.triggered.connect(callback)
+            menu.addAction(action)
+
         if item.isContainer():
-            menu.addAction(QAction(
+            action = QAction(
                 text='Append New Child',
-                parent=menu,
-                triggered=lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row),
-            ))
+                parent=menu
+            )
+            callback: Callable[[bool, KeyValueTreeItem, int], None] = lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row)
+            action.triggered.connect(callback)
+            menu.addAction(action)
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -162,49 +181,66 @@ class KeyValueTreeView(TreeView):
         
         return menu
     
-    def pasteCopy(self, parent_item: KeyValueTreeItem = None, row: int = None) -> None:
-        if not self.hasCopy():
-            return
-        model: KeyValueTreeModel = self.model()
-        if not model:
-            return
-        if parent_item is None:
-            selected_items = self.selectedItems()
-            if selected_items:
-                parent_item = selected_items[0]
-            else:
-                parent_item = model.rootItem()
-        if row is None or row == -1:
-            row = len(parent_item.children)
-        # ----------------------------------------------------------
-        # KeyValueTreeView specific logic
-        if not parent_item.isContainer() and not parent_item.isRoot():
-            row = parent_item.siblingIndex()
-            parent_item = parent_item.parent
-        # ----------------------------------------------------------
-        items_to_paste = [item.copy() for item in TreeView._copied_items]
-        model.insertItems(items_to_paste, row, parent_item)
+    def pasteCopy(self, parent_item: KeyValueTreeItem | None = None, row: int = None) -> None:
+        try:
+            if not self.hasCopy():
+                return
+            model = self.model()
+            if not isinstance(model, KeyValueTreeModel):
+                return
+            if parent_item is None:
+                selected_items = self.selectedItems()
+                if selected_items:
+                    first_selected_item = selected_items[0]
+                    assert isinstance(first_selected_item, KeyValueTreeItem)
+                    parent_item = first_selected_item
+                else:
+                    root_item = model.rootItem()
+                    assert isinstance(root_item, KeyValueTreeItem)
+                    parent_item = root_item
+            if row is None or row == -1:
+                row = len(parent_item.children)
+            if not parent_item.isContainer() and not parent_item.isRoot():
+                row = parent_item.siblingIndex()
+                assert isinstance(parent_item.parent, KeyValueTreeItem)
+                parent_item = parent_item.parent
+            items_to_paste = [item.copy() for item in TreeView._copied_items]
+            model.insertItems(items_to_paste, row, parent_item)
+        except Exception as err:
+            from qtpy.QtWidgets import QApplication, QMessageBox
+            focus_widget = QApplication.focusWidget()
+            QMessageBox.warning(focus_widget, 'Error', f'Error pasting items: {err}')
     
-    def insertNew(self, parent_item: KeyValueTreeItem, row: int = None) -> None:
-        model: KeyValueTreeModel = self.model()
-        if not model:
-            return
-        if parent_item is None:
-            selected_items = self.selectedItems()
-            if selected_items:
-                parent_item = selected_items[0]
-            else:
-                parent_item = model.rootItem()
-        if row is None or row == -1:
-            row = len(parent_item.children)
-        if not parent_item.isContainer() and not parent_item.isRoot():
-            row = parent_item.siblingIndex()
-            parent_item = parent_item.parent
-        
-        names = [item.name() for item in parent_item.children]
-        name = model.uniqueName('New', names)
-        new_item = KeyValueTreeItem(name, None)
-        model.insertItems([new_item], row, parent_item)
+    def insertNew(self, parent_item: KeyValueTreeItem | None = None, row: int = None) -> None:
+        try:
+            model = self.model()
+            if not isinstance(model, KeyValueTreeModel):
+                return
+            if parent_item is None:
+                selected_items = self.selectedItems()
+                if selected_items:
+                    first_selected_item = selected_items[0]
+                    assert isinstance(first_selected_item, KeyValueTreeItem)
+                    parent_item = first_selected_item
+                else:
+                    root_item = model.rootItem()
+                    assert isinstance(root_item, KeyValueTreeItem)
+                    parent_item = root_item
+            if row is None or row == -1:
+                row = len(parent_item.children)
+            if not parent_item.isContainer() and not parent_item.isRoot():
+                row = parent_item.siblingIndex()
+                assert isinstance(parent_item.parent, KeyValueTreeItem)
+                parent_item = parent_item.parent
+            
+            names = [item.name() for item in parent_item.children]
+            name = model.uniqueName('New', names)
+            new_item = KeyValueTreeItem(name, None)
+            model.insertItems([new_item], row, parent_item)
+        except Exception as err:
+            from qtpy.QtWidgets import QApplication, QMessageBox
+            focus_widget = QApplication.focusWidget()
+            QMessageBox.warning(focus_widget, 'Error', f'Error pasting items: {err}')
 
 
 def test_live():

@@ -317,10 +317,11 @@ class TreeView(QTreeView):
         
         Override in a derived class with the specific actions you want.
         """
-        menu = QMenu(self)
         model = self.model()
         if not isinstance(model, AbstractTreeModel):
-            return menu
+            raise TypeError(f'Model is not an AbstractTreeModel: {type(model)}')
+
+        menu = QMenu(self)
 
         # item that was clicked on
         # item: AbstractTreeItem = model.itemFromIndex(index)
@@ -383,23 +384,28 @@ class TreeView(QTreeView):
         model = self.model()
         if not isinstance(model, AbstractTreeModel):
             return
-        if parent_item is None:
-            selected_items = self.selectedItems()
-            if selected_items:
-                parent_item = selected_items[0]
-            else:
-                parent_item = model.rootItem()
-        if row is None or row == -1:
-            row = len(parent_item.children)
-        items_to_paste = [item.copy() for item in TreeView._copied_items]
-        model.insertItems(items_to_paste, row, parent_item)
-        # update view state of pasted items and all their descendents as specified in the copied items
-        all_pasted_items = []
-        for item in items_to_paste:
-            for subitem in item.subtree_depth_first():
-                if subitem not in all_pasted_items:
-                    all_pasted_items.append(subitem)
-        self.restoreViewState(all_pasted_items)
+        try:
+            if parent_item is None:
+                selected_items = self.selectedItems()
+                if selected_items:
+                    parent_item = selected_items[0]
+                else:
+                    parent_item = model.rootItem()
+            if row is None or row == -1:
+                row = len(parent_item.children)
+            items_to_paste = [item.copy() for item in TreeView._copied_items]
+            model.insertItems(items_to_paste, row, parent_item)
+            # update view state of pasted items and all their descendents as specified in the copied items
+            all_pasted_items = []
+            for item in items_to_paste:
+                for subitem in item.subtree_depth_first():
+                    if subitem not in all_pasted_items:
+                        all_pasted_items.append(subitem)
+            self.restoreViewState(all_pasted_items)
+        except Exception as err:
+            from qtpy.QtWidgets import QApplication, QMessageBox
+            focus_widget = QApplication.focusWidget()
+            QMessageBox.warning(focus_widget, 'Error', f'Error pasting items: {err}')
     
     def hasCopy(self) -> bool:
         return len(TreeView._copied_items) > 0

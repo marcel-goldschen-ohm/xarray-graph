@@ -40,7 +40,8 @@ class KeyValueTreeModel(AbstractTreeModel):
     def treeData(self) -> dict | list:
         """ Get the root key:value map.
         """
-        root_item: KeyValueTreeItem = self.rootItem()
+        root_item = self.rootItem()
+        assert isinstance(root_item, KeyValueTreeItem)
         return root_item.value()
     
     def setTreeData(self, data: dict | list) -> None:
@@ -71,7 +72,7 @@ class KeyValueTreeModel(AbstractTreeModel):
             return 3
         return 2
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         """ Default item flags.
         
         Supports drag-and-drop if it is enabled in `supportedDropActions`.
@@ -83,8 +84,10 @@ class KeyValueTreeModel(AbstractTreeModel):
                 return Qt.ItemFlag.ItemIsDropEnabled
             return Qt.ItemFlag.NoItemFlags
         
-        item: KeyValueTreeItem = self.itemFromIndex(index)
-        parent_item: KeyValueTreeItem = item.parent
+        item = self.itemFromIndex(index)
+        assert isinstance(item, KeyValueTreeItem)
+        parent_item = item.parent
+        assert isinstance(parent_item, KeyValueTreeItem)
         if index.column() == 2:
             # types column is not editable
             flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
@@ -107,7 +110,9 @@ class KeyValueTreeModel(AbstractTreeModel):
             return
         
         if role == Qt.ItemDataRole.DisplayRole or role == Qt.ItemDataRole.EditRole:
-            item: KeyValueTreeItem = self.itemFromIndex(index)
+            item = self.itemFromIndex(index)
+            if not isinstance(item, KeyValueTreeItem):
+                return
             if index.column() == 0:
                 return item.key()
             elif index.column() == 1:
@@ -117,21 +122,17 @@ class KeyValueTreeModel(AbstractTreeModel):
                 value = item.value()
                 vtype = type(value)
                 import numpy as np
-                if vtype is np.ndarray:
+                if isinstance(value, np.ndarray):
                     text = f'{vtype.__name__} of {value.dtype}'
                 else:
                     text = vtype.__name__
-                # if vtype.__module__ == 'builtins':
-                #     text = vtype.__name__
-                # else:
-                #     text = f'{vtype.__module__}.{vtype.__name__}'
-                # if vtype is np.ndarray:
-                #     text += f' of {value.dtype}'
                 return text
         
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
-                item: KeyValueTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
+                if not isinstance(item, KeyValueTreeItem):
+                    return
                 if isinstance(item.value(), dict):
                     return self._dict_icon
                 elif isinstance(item.value(), list):
@@ -152,7 +153,9 @@ class KeyValueTreeModel(AbstractTreeModel):
             return False
         
         if role == Qt.ItemDataRole.EditRole:
-            item: KeyValueTreeItem = self.itemFromIndex(index)
+            item = self.itemFromIndex(index)
+            if not isinstance(item, KeyValueTreeItem):
+                return False
             if index.column() == 0:
                 # edit key
                 item.setKey(value)
@@ -160,21 +163,15 @@ class KeyValueTreeModel(AbstractTreeModel):
                 return True
             elif index.column() == 1:
                 # edit value
-                old_value = item.value()
-                # import numpy as np
-                # if isinstance(old_value, np.ndarray):
-                #     old_vtype = old_value.dtype
-                # else:
-                #     old_vtype = type(old_value)
                 new_value = str_to_value(value)
                 n_old_children: int = len(item.children)
-                n_new_children: int = len(new_value) if type(new_value) in [dict, list] else 0
+                n_new_children: int = len(new_value) if isinstance(new_value, (dict, list)) else 0
                 if n_old_children:
                     from qtpy.QtWidgets import QApplication, QMessageBox
-                    parent_widget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title = 'Overwrite?'
                     text = f'Overwrite non-empty key:value map "{item.path()}"?'
-                    answer = QMessageBox.question(parent_widget, title, text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                    answer = QMessageBox.question(focus_widget, title, text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
                     if answer == QMessageBox.StandardButton.No:
                         return False
                     

@@ -14,10 +14,57 @@ class KeyValueTreeItem(AbstractTreeItem):
         self._value = value
         super().__init__(parent, sibling_index)
 
+    def __repr__(self) -> str:
+            """ Returns a single-line string representation of this item.
+            """
+            return f'{self.key()}: {self.value()}'
+    
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
         """
-        return self._tree_repr(lambda item: f'{item.key()}: {item.value()}')
+        return self._tree_repr()
+    
+    def key(self):
+        # if this item is in a list, return the item's sibling index
+        parent = self.parent
+        if isinstance(parent, KeyValueTreeItem) and isinstance(parent.value(), list):
+            return self.siblingIndex()
+        # otherwise, return the item's key
+        return self._key
+    
+    def setKey(self, key) -> None:
+        # if this item is in a dict, update the key in the parent dict
+        parent = self.parent
+        if isinstance(parent, KeyValueTreeItem):
+            parent_map: dict | list = parent.value()
+            if isinstance(parent_map, dict):
+                # we only need to update the underlying data for dicts, since lists are indexed by sibling order
+                parent_map[key] = parent_map.pop(self.key())
+        # update this item's key
+        self._key = key
+    
+    def value(self):
+        return self._value
+    
+    def setValue(self, value) -> None:
+        parent = self.parent
+        if isinstance(parent, KeyValueTreeItem):
+            parent_map: dict | list = parent.value()
+            parent_map[self.key()] = value
+        self._value = value
+        self.rebuildSubtree()
+    
+    def name(self) -> str:
+        # the name is just the key
+        key = self.key()
+        if key is None and self.parent is None:
+            # root item can have no key, so we return the path separator as its name
+            return self._path_sep
+        return str(key)
+    
+    def setName(self, name: str) -> None:
+        # the name is just the key
+        self.setKey(name)
     
     def isList(self) -> bool:
         return isinstance(self.value(), list)
@@ -41,51 +88,14 @@ class KeyValueTreeItem(AbstractTreeItem):
             for key, val in enumerate(value):
                 child = KeyValueTreeItem(key, val, parent=self)
                 child.rebuildSubtree()
-    
-    def key(self):
-        # if this item is in a list, return the item's sibling index
-        parent: KeyValueTreeItem = self.parent
-        if parent and isinstance(parent.value(), list):
-            return self.siblingIndex()
-        # otherwise, return the item's key
-        return self._key
-    
-    def setKey(self, key) -> None:
-        # if this item is in a dict, update the key in the parent dict
-        parent: KeyValueTreeItem = self.parent
-        if parent:
-            parent_map: dict | list = parent.value()
-            if isinstance(parent_map, dict):
-                parent_map[key] = parent_map.pop(self.key())
-        # update this item's key
-        self._key = key
-    
-    def value(self):
-        return self._value
-    
-    def setValue(self, value) -> None:
-        parent: KeyValueTreeItem = self.parent
-        if parent:
-            parent_map: dict | list = parent.value()
-            parent_map[self.key()] = value
-        self._value = value
-        self.rebuildSubtree()
-    
-    def name(self) -> str:
-        key = self.key()
-        if key is None and self.parent is None:
-            return self._path_sep
-        return str(key)
-    
-    def setName(self, name: str) -> None:
-        self.setKey(name)
 
     def orphan(self) -> None:
         if not self.parent:
             return
         
         # Remove value from parent map
-        parent: KeyValueTreeItem = self.parent
+        parent = self.parent
+        assert isinstance(parent, KeyValueTreeItem)
         parent.value().pop(self.key())
         
         # Update item linkage
@@ -96,9 +106,12 @@ class KeyValueTreeItem(AbstractTreeItem):
         # Insert child value into this map
         value = self.value()
         if isinstance(value, dict):
-            value[item._key] = item._value
+            item_key = item.key()
+            if item_key in value:
+                raise KeyError(f'Key {item_key} already exists in dict')
+            value[item_key] = item.value()
         elif isinstance(value, list):
-            value.insert(index, item._value)
+            value.insert(index, item.value())
         else:
             raise TypeError(f'Cannot insert child into value of type {type(value)}')
 
@@ -152,6 +165,7 @@ def test_tree():
     print('-'*82)
     print('move /c/d to /d')
     d = root['c/d']
+    assert isinstance(d, KeyValueTreeItem)
     d.orphan()
     root.appendChild(d)
     print(root)
@@ -175,15 +189,18 @@ def test_tree():
 
     print('-'*82)
     print('/c/me:hi -> /c/me:bye')
-    me: KeyValueTreeItem = root['c/me']
+    me = root['c/me']
+    assert isinstance(me, KeyValueTreeItem)
     me.setValue('bye')
     print(root)
 
     print('-'*82)
     print('move /b/1 to first child of /c')
     b1 = root['b/1']
+    assert isinstance(b1, KeyValueTreeItem)
     b1.orphan()
-    c: KeyValueTreeItem = root['c']
+    c = root['c']
+    assert isinstance(c, KeyValueTreeItem)
     c.insertChild(0, b1)
     print(root)
 
