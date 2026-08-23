@@ -62,7 +62,9 @@ class ArrayTableView(QTableView):
         nrows, ncols = len(urows), len(ucols)
         if nrows == 0 or ncols == 0:
             return
-        model: ArrayTableModel = self.model()
+        model = self.model()
+        if not isinstance(model, ArrayTableModel):
+            return
         array = model.array()
         if array.ndim == 1:
             array_selection = array[rows]
@@ -86,7 +88,9 @@ class ArrayTableView(QTableView):
         if selsize == 0:
             return
         
-        model: ArrayTableModel = self.model()
+        model = self.model()
+        if not isinstance(model, ArrayTableModel):
+            return
         array = model.array()
         
         # get copy as tab-delimited text in clipboard
