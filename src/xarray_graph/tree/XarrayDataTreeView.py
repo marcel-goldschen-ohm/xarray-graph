@@ -18,27 +18,6 @@ from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
 from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 
 
-
-# from qtpy.QtWidgets import (
-#     QAction,
-#     QMenu,
-#     QAbstractItemView,
-#     QDialog,
-#     QLineEdit,
-#     QVBoxLayout,
-#     QDialogButtonBox,
-#     QInputDialog,
-#     QWidget,
-#     QTextEdit,
-#     QTableWidgetItem,
-# )
-# import qtawesome as qta
-# from xarray_graph.utils import xarray_utils
-# from xarray_graph.tree import AbstractTreeItem, TreeView, XarrayDataTreeItem, XarrayDataTreeModel, KeyValueTreeView
-# from xarray_graph.table import ArrayTableModel, ArrayTableView
-# from xarray_graph.widgets import TableWidgetWithCopyPaste#, CollapsibleSectionsSplitter
-
-
 class XarrayDataTreeView(TreeView):
 
     # finishedEditingAttrs = Signal(XarrayDataTreeItem)
@@ -58,16 +37,16 @@ class XarrayDataTreeView(TreeView):
         # self._info_shortcut.activated.connect(lambda: self.infoDialog())
 
         # actions
-        from qtpy.QtWidgets import QAction
+        from qtpy.QtGui import QAction  # type: ignore
         self._showDataVarsAction = QAction(
             text = 'Show Variables',
             icon = self._data_var_icon,
             iconVisibleInMenu=True,
             checkable = True,
             checked = True,
-            toolTip = 'Show/hide data_vars in the tree view.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
+            toolTip = 'Show/hide data_vars in the tree view.'
         )
+        self._showDataVarsAction.triggered.connect(lambda checked: self._updateModelFromViewOptions())
 
         self._showCoordsAction = QAction(
             text = 'Show Coordinates',
@@ -75,9 +54,9 @@ class XarrayDataTreeView(TreeView):
             iconVisibleInMenu=True,
             checkable = True,
             checked = False,
-            toolTip = 'Show/hide coords in the tree view.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
+            toolTip = 'Show/hide coords in the tree view.'
         )
+        self._showCoordsAction.triggered.connect(lambda checked: self._updateModelFromViewOptions())
 
         self._showInheritedCoordsAction = QAction(
             text = 'Show Inherited Coordinates',
@@ -85,9 +64,9 @@ class XarrayDataTreeView(TreeView):
             iconVisibleInMenu=True,
             checkable = True,
             checked = False,
-            toolTip = 'Show/hide inherited coords in the tree view.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
+            toolTip = 'Show/hide inherited coords in the tree view.'
         )
+        self._showInheritedCoordsAction.triggered.connect(lambda checked: self._updateModelFromViewOptions())
 
         self._showInfoColumnsAction = QAction(
             text = 'Show Dimensions && Units',
@@ -95,9 +74,9 @@ class XarrayDataTreeView(TreeView):
             iconVisibleInMenu=True,
             checkable = True,
             checked = False,
-            toolTip = 'Show dimensions and units columns in the tree view. Uncheck to hide columns.',
-            triggered = lambda checked: self._updateModelFromViewOptions()
+            toolTip = 'Show dimensions and units columns in the tree view. Uncheck to hide columns.'
         )
+        self._showInfoColumnsAction.triggered.connect(lambda checked: self._updateModelFromViewOptions())
     
     def setModel(self, model: XarrayDataTreeModel, updateViewOptionsFromModel: bool = True) -> None:
         super().setModel(model)
@@ -107,7 +86,9 @@ class XarrayDataTreeView(TreeView):
             self._updateModelFromViewOptions()
 
     def _updateViewOptionsFromModel(self):
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            return
         
         self._showDataVarsAction.blockSignals(True)
         self._showDataVarsAction.setChecked(model.isDataVarsVisible())
@@ -126,7 +107,10 @@ class XarrayDataTreeView(TreeView):
         self._showInfoColumnsAction.blockSignals(False)
 
     def _updateModelFromViewOptions(self):
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            return
+        
         self.storeViewState()
         model.setDataVarsVisible(self._showDataVarsAction.isChecked())
         model.setCoordsVisible(self._showCoordsAction.isChecked())
@@ -135,70 +119,91 @@ class XarrayDataTreeView(TreeView):
         self.restoreViewState()
     
     def treeData(self) -> xr.DataTree:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        assert isinstance(model, XarrayDataTreeModel)
         return model.treeData()
     
     def setTreeData(self, data: xr.DataTree) -> None:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
         if model is None:
             model = XarrayDataTreeModel()
             model.setTreeData(data)
             self.setModel(model)
-        else:
+        elif isinstance(model, XarrayDataTreeModel):
             self.storeViewState()
             model.setTreeData(data)
             self.restoreViewState()
     
     def isDataVarsVisible(self) -> bool:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isDataVarsVisible()
     
     def setDataVarsVisible(self, visible: bool) -> None:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setDataVarsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showDataVarsAction):
             self._showDataVarsAction.setChecked(visible)
     
     def isCoordsVisible(self) -> bool:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isCoordsVisible()
     
     def setCoordsVisible(self, visible: bool) -> None:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setCoordsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showCoordsAction):
             self._showCoordsAction.setChecked(visible)
     
     def isInheritedCoordsVisible(self) -> bool:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isInheritedCoordsVisible()
     
     def setInheritedCoordsVisible(self, visible: bool) -> None:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setInheritedCoordsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showInheritedCoordsAction):
             self._showInheritedCoordsAction.setChecked(visible)
     
     def isInfoColumnsVisible(self) -> bool:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isInfoColumnsVisible()
     
     def setInfoColumnsVisible(self, visible: bool) -> None:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setInfoColumnsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showInfoColumnsAction):
             self._showInfoColumnsAction.setChecked(visible)
 
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
-        model: XarrayDataTreeModel = self.model()
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
+            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
+
         menu = QMenu(self)
 
         # item that was clicked on
-        item: XarrayDataTreeItem = model.itemFromIndex(index)
+        item = model.itemFromIndex(index)
+        assert isinstance(item, XarrayDataTreeItem)
         if item.isNode():
             icon: QIcon = self._node_icon
         elif item.isDataVar():
@@ -209,7 +214,8 @@ class XarrayDataTreeView(TreeView):
             # should never happen
             icon: QIcon = self._unknown_icon
         
-        from qtpy.QtWidgets import QAction, QAbstractItemView
+        from qtpy.QtGui import QAction  # type: ignore
+        from qtpy.QtWidgets import QAbstractItemView
         
         # disabled action acts as a label for the item that was right-clicked on
         menu.addAction(QAction(
@@ -219,48 +225,65 @@ class XarrayDataTreeView(TreeView):
             iconVisibleInMenu=True,
             enabled=False
         ))
+
         # item-specific actions
-        menu.addAction(QAction(
+        action = QAction(
             text='Info',
             parent=menu,
             shortcut=QKeySequence('Ctrl+I'),
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked, item=item: self.infoDialog(item)
-        ))
+            shortcutVisibleInContextMenu=True
+        )
+        action.triggered.connect(lambda checked, item=item: self.infoDialog(item))
+        menu.addAction(action)
+
         if not item.isInheritedCoord():
-            menu.addAction(QAction(
+            action = QAction(
                 text='Attrs',
-                parent=menu,
-                triggered=lambda checked, item=item: self.attrsDialog(item)
-            ))
+                parent=menu
+            )
+            action.triggered.connect(lambda checked, item=item: self.attrsDialog(item))
+            menu.addAction(action)
+
             if item.isVariable():
-                menu.addAction(QAction(
+                values = item.data().values
+                assert isinstance(values, np.ndarray)
+                ndim = values.squeeze().ndim
+                action = QAction(
                     text='Data',
                     parent=menu,
-                    triggered=lambda checked, item=item: self.dataDialog(item),
-                    enabled=item.isCoord() or (item.isDataVar() and item.data().values.squeeze().ndim == 1)
-                ))
+                    enabled=item.isCoord() or (item.isDataVar() and ndim == 1)
+                )
+                action.triggered.connect(lambda checked, item=item: self.dataDialog(item))
+                menu.addAction(action)
+
             if item.isNode():
-                menu.addAction(QAction(
+                action = QAction(
                     text='Rename Dimensions',
-                    parent=menu,
-                    triggered=lambda checked, item=item: self.renameDimensions(item),
-                ))
-                menu.addAction(QAction(
+                    parent=menu
+                )
+                action.triggered.connect(lambda checked, item=item: self.renameDimensions(item))
+                menu.addAction(action)
+
+                action = QAction(
                     text='New Child Node',
-                    parent=menu,
-                    triggered=lambda checked, parent_item=item: self.insertNewChildNode(parent_item),
-                ))
-                menu.addAction(QAction(
+                    parent=menu
+                )
+                action.triggered.connect(lambda checked, parent_item=item: self.insertNewChildNode(parent_item))
+                menu.addAction(action)
+
+                action = QAction(
                     text='New Data Variable',
-                    parent=menu,
-                    triggered=lambda checked, parent_item=item: self.insertNewDataVar(parent_item),
-                ))
-                menu.addAction(QAction(
+                    parent=menu
+                )
+                action.triggered.connect(lambda checked, parent_item=item: self.insertNewDataVar(parent_item))
+                menu.addAction(action)
+
+                action = QAction(
                     text='New Coordinate',
-                    parent=menu,
-                    triggered=lambda checked, parent_item=item: self.insertNewCoord(parent_item),
-                ))
+                    parent=menu
+                )
+                action.triggered.connect(lambda checked, parent_item=item: self.insertNewCoord(parent_item))
+                menu.addAction(action)
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -287,25 +310,31 @@ class XarrayDataTreeView(TreeView):
         
         # combine items
         has_multi_selection: bool = has_selection and len(self.selectedIndexes()) > 1
-        is_multi_nodes_selected: bool = has_multi_selection and len([item for item in self.selectedItems() if item.isNode()]) > 1
+        is_multi_nodes_selected: bool = has_multi_selection and len([item for item in self.selectedItems() if isinstance(item, XarrayDataTreeItem) and item.isNode()]) > 1
         menu.addSeparator()
-        menu.addAction(QAction(
+
+        action = QAction(
             text='Merge Selected Nodes (TODO)',
             parent=menu,
-            triggered=lambda checked: self.mergeSelectedNodes(),
             enabled=False #is_multi_nodes_selected
-        ))
-        menu.addAction(QAction(
+        )
+        action.triggered.connect(lambda checked: self.mergeSelectedNodes())
+        menu.addAction(action)
+
+        action = QAction(
             text='Concatenate Selected Nodes',
             parent=menu,
-            triggered=lambda checked: self.concatenateSelectedNodes(),
             enabled=is_multi_nodes_selected
-        ))
-        menu.addAction(QAction(
+        )
+        action.triggered.connect(lambda checked: self.concatenateSelectedNodes())
+        menu.addAction(action)
+
+        action = QAction(
             text='Insert New Root Node',
-            parent=menu,
-            triggered=lambda checked: self.insertNewRootNode(),
-        ))
+            parent=menu
+        )
+        action.triggered.connect(lambda checked: self.insertNewRootNode())
+        menu.addAction(action)
         
         # expand/collapse
         menu.addSeparator()
@@ -334,13 +363,13 @@ class XarrayDataTreeView(TreeView):
             data = item.data()
             title = item.path()
         elif items is None:
-            items: list[XarrayDataTreeItem] = self.selectedItems()
-            if not items:
+            items_ = self.selectedItems()
+            if not items_:
                 return
             # ensure items are in tree order
             from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
-            items = AbstractTreeItem.orderedItems(items)
-            data = [item.data() for item in items]
+            items_ = AbstractTreeItem.orderedItems(items_)
+            data = [item.data() for item in items_ if isinstance(item, XarrayDataTreeItem)]
             title = 'Selected'
         elif len(items) == 1:
             item = items[0]
@@ -363,7 +392,9 @@ class XarrayDataTreeView(TreeView):
     def dataDialog(self, item: XarrayDataTreeItem) -> None:
         if not item.isVariable():
             return
-        values = item.data().values.squeeze()
+        values = item.data().values
+        assert isinstance(values, np.ndarray)
+        values = values.squeeze()
 
         from xarray_graph.table.ArrayTableModel import ArrayTableModel
         from xarray_graph.table.ArrayTableView import ArrayTableView
@@ -394,8 +425,8 @@ class XarrayDataTreeView(TreeView):
     def insertNewChildNode(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
         if not parent_item.isNode():
             return
-        model: XarrayDataTreeModel = self.model()
-        if not self.model:
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
             return
         if row is None or row == -1:
             row = len(parent_item.children)
@@ -406,8 +437,8 @@ class XarrayDataTreeView(TreeView):
     def insertNewDataVar(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
         if not parent_item.isNode():
             return
-        model: XarrayDataTreeModel = self.model()
-        if not self.model:
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
             return
         if row is None or row == -1:
             row = len(parent_item.children)
@@ -425,14 +456,15 @@ class XarrayDataTreeView(TreeView):
     def insertNewCoord(self, parent_item: XarrayDataTreeItem, row: int = None, dim: str = None) -> None:
         if not parent_item.isNode():
             return
-        model: XarrayDataTreeModel = self.model()
-        if not self.model:
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
             return
         if row is None or row == -1:
             row = len(parent_item.children)
         if (dim is None) or (dim not in parent_item._node.dims):
             from qtpy.QtWidgets import QInputDialog
-            dim, ok = QInputDialog.getItem(self, 'Select Dimension', 'Select dimension for new coordinate:', list(parent_item._node.dims), editable=False)
+            dims: list[str] = [str(dim) for dim in parent_item.node().dims]
+            dim, ok = QInputDialog.getItem(self, 'Select Dimension', 'Select dimension for new coordinate:', dims, editable=False)
             if not ok:
                 return
         if dim in parent_item._node.coords:
@@ -447,8 +479,8 @@ class XarrayDataTreeView(TreeView):
         self.refresh()
 
     def insertNewRootNode(self) -> None:
-        model: XarrayDataTreeModel = self.model()
-        if not self.model:
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
             return
         dt: xr.DataTree = model.treeData()
         root_name = dt.name or 'old root'
@@ -458,13 +490,16 @@ class XarrayDataTreeView(TreeView):
     
     def renameDimensions(self, item: XarrayDataTreeItem) -> None:
         if not item.isNode():
+            assert isinstance(item.parent, XarrayDataTreeItem)
             item = item.parent
-        node: xr.DataTree = item.data()
+        node = item.data()
+        assert isinstance(node, xr.DataTree)
 
         from qtpy.QtWidgets import QDialog, QLineEdit, QVBoxLayout, QDialogButtonBox
         
         dim_lineedits: dict[str, QLineEdit] = {}
         for dim in node.dims:
+            dim = str(dim)
             dim_lineedits[dim] = QLineEdit()
             dim_lineedits[dim].setPlaceholderText(dim)
         
@@ -498,10 +533,10 @@ class XarrayDataTreeView(TreeView):
         pass # TODO
     
     def concatenateSelectedNodes(self, dim: str = None) -> None:
-        model: XarrayDataTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, XarrayDataTreeModel):
             return
-        items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if item.isNode()]
+        items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if isinstance(item, XarrayDataTreeItem) and item.isNode()]
         if not items or len(items) < 2:
             return
         if dim is None:
@@ -517,8 +552,9 @@ class XarrayDataTreeView(TreeView):
         try:
             datasets: list[xr.Dataset] = [item._node.to_dataset() for item in items]
             concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
-            parent_item: XarrayDataTreeItem = items[0].parent
-            parent_node: xr.DataTree = parent_item._node
+            parent_item = items[0].parent
+            assert isinstance(parent_item, XarrayDataTreeItem)
+            parent_node: xr.DataTree = parent_item.node()
             from xarray_graph.utils.utils import unique_name
             name = unique_name('Concat', list(parent_node.keys()))
             parent_node[name] = concatenated_dataset
@@ -528,19 +564,22 @@ class XarrayDataTreeView(TreeView):
     
     def keyPressEvent(self, event: QKeyEvent):
         if (event.key() == Qt.Key.Key_I) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
-            items: list[XarrayDataTreeItem] = self.selectedItems()
+            items = self.selectedItems()
             if not items:
-                model: XarrayDataTreeModel = self.model()
-                items = [model.rootItem()]
+                model = self.model()
+                if isinstance(model, XarrayDataTreeModel):
+                    items = [model.rootItem()]
             if len(items) == 1:
-                data = items[0].data()
-                title = items[0].path()
+                item = items[0]
+                assert isinstance(item, XarrayDataTreeItem)
+                data = item.data()
+                title = item.path()
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             else:
                 # ensure items are in tree order
                 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
                 items = AbstractTreeItem.orderedItems(items)
-                data = [item.data() for item in items]
+                data = [item.data() for item in items if isinstance(item, XarrayDataTreeItem)]
                 title = 'Selected'
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             return
@@ -552,30 +591,6 @@ class XarrayDataTreeView(TreeView):
         if size.height() > hmin:
             size.setHeight(max(hmin, size.height() - 100))
         return size
-
-
-# class InfoAttrsWidget(QWidget):
-    
-#     def __init__(self, data: xr.DataTree | xr.Dataset | xr.DataArray, parent: QWidget = None, font_size: int = None) -> None:
-#         super().__init__(parent)
-
-#         self._info_text_edit = infoTextEdit(data, font_size=font_size)
-
-#         self._attrs_view = KeyValueTreeView()
-#         self._attrs_view.setAlternatingRowColors(True)
-#         self._attrs_view.setTreeData(data.attrs)
-#         self._attrs_view.showAll()
-
-#         self._selection_splitter = CollapsibleSectionsSplitter()
-#         self._selection_splitter.addSection('Info', self._info_text_edit)
-#         self._selection_splitter.addSection('Attrs', self._attrs_view)
-
-#         # needed to ensure collapsing all sections doesn't shrink neighboring widgets in the parent horizontal splitter
-#         vbox = QVBoxLayout(self)
-#         vbox.setContentsMargins(0, 0, 0, 0)
-#         vbox.setSpacing(0)
-#         vbox.addWidget(self._selection_splitter, stretch=10000)
-#         vbox.addStretch(1)
 
 
 def makeDialog(parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None) -> QDialog:
@@ -592,7 +607,7 @@ def makeDialog(parent: QWidget = None, size: QSize = None, pos: QPoint = None, t
     return dlg
 
 
-def infoDialog(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None, font_size: int = None) -> int:
+def infoDialog(data: xr.DataTree | xr.DataArray | list[xr.DataTree | xr.DataArray], parent: QWidget = None, size: QSize = None, pos: QPoint = None, title: str = None, font_size: int = None) -> int:
     from qtpy.QtWidgets import QVBoxLayout
     from qtpy.QtCore import QTimer
     text_edit = infoTextEdit(data, font_size=font_size)
@@ -604,7 +619,7 @@ def infoDialog(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree 
     return dlg.exec()
 
 
-def infoTextEdit(data: xr.DataTree | xr.Dataset | xr.DataArray | list[xr.DataTree | xr.Dataset | xr.DataArray], text_edit_to_update: QTextEdit = None, font_size: int = None) -> QTextEdit:
+def infoTextEdit(data: xr.DataTree | xr.DataArray | list[xr.DataTree | xr.DataArray], text_edit_to_update: QTextEdit = None, font_size: int = None) -> QTextEdit:
     text_edit = text_edit_to_update
     if not isinstance(text_edit, QTextEdit):
         text_edit = QTextEdit()

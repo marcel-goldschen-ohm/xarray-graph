@@ -75,7 +75,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         # theme
         from qtpy.QtWidgets import QApplication
-        color_scheme = QApplication.instance().styleHints().colorScheme()
+        app = QApplication.instance()
+        assert isinstance(app, QApplication)
+        color_scheme = app.styleHints().colorScheme()
         if color_scheme == Qt.ColorScheme.Dark:
             self.setTheme('Dark')
         elif color_scheme == Qt.ColorScheme.Light:
@@ -140,8 +142,11 @@ class XarrayDataTreeModel(AbstractTreeModel):
     def treeData(self) -> xr.DataTree:
         """ Get the datatree.
         """
-        root_item: XarrayDataTreeItem = self.rootItem()
-        return root_item.data()
+        root_item = self.rootItem()
+        assert isinstance(root_item, XarrayDataTreeItem)
+        datatree = root_item.data()
+        assert isinstance(datatree, xr.DataTree)
+        return datatree
     
     def setTreeData(self, data: xr.DataTree) -> None:
         """ Set the datatree.
@@ -217,7 +222,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return 3
         return 1
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         """ Default item flags.
         
         Supports drag-and-drop if it is enabled in `supportedDropActions`.
@@ -229,7 +234,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 return Qt.ItemFlag.ItemIsDropEnabled
             return Qt.ItemFlag.NoItemFlags
         
-        item: XarrayDataTreeItem = self.itemFromIndex(index)
+        item = self.itemFromIndex(index)
+        assert isinstance(item, XarrayDataTreeItem)
         if item.isInheritedCoord():
             return Qt.ItemFlag.ItemIsEnabled
         
@@ -260,7 +266,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return
         
         if role in [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]:
-            item: XarrayDataTreeItem = self.itemFromIndex(index)
+            item = self.itemFromIndex(index)
+            assert isinstance(item, XarrayDataTreeItem)
             if index.column() == 0:
                 # main column
                 return item.name()
@@ -287,7 +294,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
-                item: XarrayDataTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
+                assert isinstance(item, XarrayDataTreeItem)
                 if item.isNode():
                     return self._node_icon
                 elif item.isDataVar():
@@ -305,7 +313,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return self._unknown_icon
         
         elif role == Qt.ItemDataRole.ForegroundRole:
-            item: XarrayDataTreeItem = self.itemFromIndex(index)
+            item = self.itemFromIndex(index)
+            assert isinstance(item, XarrayDataTreeItem)
             if item.isNode():
                 return self._node_color
             elif item.isDataVar():
@@ -328,12 +337,13 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     return False
                 if '/' in new_name:
                     from qtpy.QtWidgets import QApplication, QMessageBox
-                    parent_widget: QWidget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title='Invalid Name'
                     text = f'Object names cannot contain path separators "/".'
-                    QMessageBox.warning(parent_widget, title, text)
+                    QMessageBox.warning(focus_widget, title, text)
                     return False
-                item: XarrayDataTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
+                assert isinstance(item, XarrayDataTreeItem)
                 if item.isInheritedCoord():
                     # cannot rename inherited coords
                     return False
@@ -341,14 +351,15 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 if new_name == old_name:
                     # nothing to do
                     return False
-                parent_node: xr.DataTree = item.parentNode()
+                parent_node = item.parentNode()
+                assert isinstance(parent_node, xr.DataTree)
                 # ensure no name conflict with existing objects
                 if new_name in parent_node:
                     from qtpy.QtWidgets import QApplication, QMessageBox
-                    parent_widget: QWidget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title='Existing Name'
                     text = f'"{new_name}" already exists in parent DataTree.'
-                    QMessageBox.warning(parent_widget, title, text)
+                    QMessageBox.warning(focus_widget, title, text)
                     return False
                 if item.isIndexCoord():
                     # rename dimension in entire branch
@@ -366,9 +377,9 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     # xarray_utils.rename_dims(parent_node, {old_name: new_name})
                     item._varname = new_name
                     # update item name in branch
-                    branch_root_item: XarrayDataTreeItem = item.root()[branch_root.path.strip('/')]
-                    branch_item: XarrayDataTreeItem
+                    branch_root_item = item.root()[branch_root.path.strip('/')]
                     for branch_item in branch_root_item.subtree_depth_first():
+                        assert isinstance(branch_item, XarrayDataTreeItem)
                         if branch_item._varname == old_name:
                             branch_item._varname = new_name
                     # self._updateSubtreeItems(branch_root_item)
@@ -386,7 +397,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 return False
             elif index.column() == 2:
                 # units column - set units attribute for variable
-                item: XarrayDataTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
+                assert isinstance(item, XarrayDataTreeItem)
                 if item.isVariable():
                     units: str = value.strip()
                     item.data().attrs['units'] = units
@@ -399,9 +411,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
     def removeRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         if self.isInheritedCoordsVisible():
-            parent_item: XarrayDataTreeItem = self.itemFromIndex(parent_index)
-            items_to_remove: list[XarrayDataTreeItem] = parent_item.children[row: row + count]
-            is_coord_removed = any(item.isCoord() for item in items_to_remove)
+            parent_item = self.itemFromIndex(parent_index)
+            assert isinstance(parent_item, XarrayDataTreeItem)
+            items_to_remove = parent_item.children[row: row + count]
+            is_coord_removed = any(item.isCoord() for item in items_to_remove if isinstance(item, XarrayDataTreeItem))
         success = super().removeRows(row, count, parent_index)
         if self.isInheritedCoordsVisible() and success and is_coord_removed:
             # clean up inherited coords in parent's subtree
@@ -414,11 +427,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         if not parent_item.isNode():
             from qtpy.QtWidgets import QApplication, QMessageBox
-            # raise ValueError('Can only insert items into nodes.')
-            parent_widget: QWidget = QApplication.focusWidget()
+            focus_widget = QApplication.focusWidget()
             title = 'Invalid Insertion'
             text = f'Cannot insert items in non-node "{parent_item.path()}".'
-            QMessageBox.warning(parent_widget, title, text)
+            QMessageBox.warning(focus_widget, title, text)
             return False
 
         # insert items one at a time (because actual insertion position may differ from requested position to maintain data type order)
@@ -446,10 +458,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 if skip_all_conflicts:
                     continue
                 from qtpy.QtWidgets import QApplication
-                parent_widget: QWidget = QApplication.focusWidget()
+                focus_widget = QApplication.focusWidget()
                 title = 'Conflict'
                 text = conflict
-                dlg = ConflictDialog(parent_widget, title, text)
+                dlg = ConflictDialog(focus_widget, title, text)
                 if dlg.exec() == QDialog.DialogCode.Rejected:
                     # abort
                     break
@@ -472,10 +484,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 action = name_conflict_default_action
                 if action is None:
                     from qtpy.QtWidgets import QApplication
-                    parent_widget: QWidget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title = 'Name Conflict'
                     text = name_conflict
-                    dlg = NameConflictDialog(parent_widget, title, text)
+                    dlg = NameConflictDialog(focus_widget, title, text)
                     dlg._merge_button.setEnabled(False) # TODO
                     if dlg.exec() == QDialog.DialogCode.Rejected:
                         # abort
@@ -485,7 +497,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                         name_conflict_default_action = action
                 if action == 'Overwrite':
                     # remove item to be overwritten in parent
-                    item_to_remove: XarrayDataTreeItem = parent_item[item_name]
+                    item_to_remove = parent_item[item_name]
                     row_to_remove = item_to_remove.row()
                     parent_index = self.indexFromItem(parent_item)
                     success = super().removeRows(row_to_remove, 1, parent_index)
@@ -513,10 +525,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
             if conflict:
                 if skip_all_conflicts:
                     continue
-                parent_widget: QWidget = QApplication.focusWidget()
+                focus_widget = QApplication.focusWidget()
                 title = 'Conflict'
                 text = conflict
-                dlg = ConflictDialog(parent_widget, title, text)
+                dlg = ConflictDialog(focus_widget, title, text)
                 if dlg.exec() == QDialog.DialogCode.Rejected:
                     # abort
                     break
@@ -554,29 +566,32 @@ class XarrayDataTreeModel(AbstractTreeModel):
         if (dst_row < 0) or (dst_row > num_dst_rows):
             return False
         
-        src_parent_item: XarrayDataTreeItem = self.itemFromIndex(src_parent_index)
-        dst_parent_item: XarrayDataTreeItem = self.itemFromIndex(dst_parent_index)
+        src_parent_item = self.itemFromIndex(src_parent_index)
+        dst_parent_item = self.itemFromIndex(dst_parent_index)
+        if not isinstance(src_parent_item, XarrayDataTreeItem) or not isinstance(dst_parent_item, XarrayDataTreeItem):
+            return False
 
         if src_parent_item is dst_parent_item:
             if src_row <= dst_row <= src_row + count:
                 # nothing moved
                 return False
         
-        src_items: list[XarrayDataTreeItem] = src_parent_item.children[src_row: src_row + count]
+        src_items = src_parent_item.children[src_row: src_row + count]
 
         # move items one at a time (because actual insertion position may differ from requested position to maintain data type order)
-        moved_items: list[XarrayDataTreeItem] = []
+        moved_items = []
         src_parent_keys: list[str] = list(src_parent_item._node.keys())
         dst_parent_keys: list[str] = list(dst_parent_item._node.keys())
         skip_all_conflicts = False
         name_conflict_default_action = None
         for src_item in src_items:
+            assert isinstance(src_item, XarrayDataTreeItem)
             conflict = None
             if src_parent_item is not dst_parent_item:
                 # check conflicts
                 if dst_parent_item.hasAncestor(src_item):
                     conflict = f'Cannot move "{src_item.path()}" to its own descendent "{dst_parent_item.path()}".'
-                elif dst_parent_item._node.has_data and src_item._node.has_data:
+                elif dst_parent_item._node.has_data and src_item.node().has_data:
                     # check alignment conflict
                     try:
                         src_data = src_item.data()
@@ -589,10 +604,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     if skip_all_conflicts:
                         continue
                     from qtpy.QtWidgets import QApplication
-                    parent_widget: QWidget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title = 'Conflict'
                     text = conflict
-                    dlg = ConflictDialog(parent_widget, title, text)
+                    dlg = ConflictDialog(focus_widget, title, text)
                     if dlg.exec() == QDialog.DialogCode.Rejected:
                         # abort
                         break
@@ -611,10 +626,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     action = name_conflict_default_action
                     if action is None:
                         from qtpy.QtWidgets import QApplication
-                        parent_widget: QWidget = QApplication.focusWidget()
+                        focus_widget = QApplication.focusWidget()
                         title = 'Name Conflict'
                         text = name_conflict
-                        dlg = NameConflictDialog(parent_widget, title, text)
+                        dlg = NameConflictDialog(focus_widget, title, text)
                         dlg._merge_button.setEnabled(False) # TODO
                         if dlg.exec() == QDialog.DialogCode.Rejected:
                             # abort
@@ -624,7 +639,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                             name_conflict_default_action = action
                     if action == 'Overwrite':
                         # remove item to be overwritten in dst parent
-                        dst_item_to_remove: XarrayDataTreeItem = dst_parent_item[src_item_name]
+                        dst_item_to_remove = dst_parent_item[src_item_name]
                         row_to_remove = dst_item_to_remove.row()
                         success = super().removeRows(row_to_remove, 1, dst_parent_index)
                         if not success:
@@ -637,8 +652,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                         pass
                     elif action == 'Keep Both':
                         # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
-                        from xarray_graph.utils.utils import unique_name
-                        new_name = unique_name(src_item_name, dst_parent_keys + src_parent_keys)
+                        new_name = AbstractTreeModel.uniqueName(src_item_name, dst_parent_keys + src_parent_keys)
                         src_item.setName(new_name)
                     elif action == 'Skip':
                         continue
@@ -653,10 +667,10 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     if skip_all_conflicts:
                         continue
                     from qtpy.QtWidgets import QApplication
-                    parent_widget: QWidget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title = 'Conflict'
                     text = conflict
-                    dlg = ConflictDialog(parent_widget, title, text)
+                    dlg = ConflictDialog(focus_widget, title, text)
                     if dlg.exec() == QDialog.DialogCode.Rejected:
                         # abort
                         break
@@ -690,29 +704,33 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return []
         from xarray_graph.utils.xarray_utils import ordered_node_keys
         return ordered_node_keys(
-            item._node,
+            item.node(),
             include_data_vars=self.isDataVarsVisible(),
             include_coords=self.isCoordsVisible(),
             include_inherited_coords=self.isInheritedCoordsVisible()
         )
     
     def _updateSubtreeItems(self, parent_item: XarrayDataTreeItem) -> None:
-        item: XarrayDataTreeItem
         for item in parent_item.subtree_depth_first():
+            if not isinstance(item, XarrayDataTreeItem):
+                continue
             if not item.isNode():
                 continue
             
             index: QModelIndex = self.indexFromItem(item)
-            node: xr.DataTree = item.data()
+            node: xr.DataTree = item.node()
             inherited_coord_names = node._inherited_coords_set()
-            coord_names = list(node.coords)
+            coord_names: list[str] = [str(name) for name in node.coords.keys()]
             
             # remove invalid coord items (no need to touch datatree)
-            # note: invalid coord items may have a data type of None after tree manipulation
             coord_items_to_remove: list[XarrayDataTreeItem] = []
-            child: XarrayDataTreeItem
             for child in item.children:
-                if (child.isCoord() and child.name() not in node.coords) or (child.dataType() is None) or (not self.isInheritedCoordsVisible() and child.isInheritedCoord()):
+                assert isinstance(child, XarrayDataTreeItem)
+                try:
+                    child.dataType()  # will raise ValueError if invalid
+                    if (child.isCoord() and child.name() not in node.coords) or (not self.isInheritedCoordsVisible() and child.isInheritedCoord()):
+                        coord_items_to_remove.append(child)
+                except ValueError:
                     coord_items_to_remove.append(child)
             for coord_item in reversed(coord_items_to_remove):
                 self.beginRemoveRows(index, coord_item.row(), coord_item.row())
@@ -723,7 +741,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 continue
             
             # add missing coord items (no need to touch datatree)
-            existing_coord_names: list[str] = [child.name() for child in item.children if child.isCoord()]
+            existing_coord_names: list[str] = [child.name() for child in item.children if isinstance(child, XarrayDataTreeItem) and child.isCoord()]
             missing_coord_names: list[str] = [name for name in coord_names if (name not in existing_coord_names) and (self.isInheritedCoordsVisible() or name not in inherited_coord_names)]
             if missing_coord_names:
                 row_names: list[str] = self._visibleRowNames(item)
@@ -736,45 +754,11 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     self.beginInsertRows(index, row, row)
                     item.insertChild(row, inherited_coord_item)
                     self.endInsertRows()
-    
-    # @staticmethod
-    # def _itemBlocks(items: list[XarrayDataTreeItem]) -> list[list[XarrayDataTreeItem]]:
-    #     """ Group items by data type, parent, and contiguous rows.
-
-    #     Each block can be input to removeRows() or moveRows().
-    #     Blocks are ordered depth-first. Typically you should remove/move blocks in reverse depth-first order to ensure insertion row indices remain valid after handling each block.
-    #     """
-    #     # so we don't modify the input list
-    #     items = items.copy()
-
-    #     # order by data type
-    #     data_type_order = tuple(XarrayDataTreeItem.DataType)
-    #     items.sort(key=lambda item: data_type_order.index(item.dataType()))
-
-    #     # order items depth-first so that it is easier to group them into blocks
-    #     items.sort(key=lambda item: item.level())
-    #     items.sort(key=lambda item: item.siblingIndex())
-
-    #     # group items into blocks by [data type,] parent, and contiguous rows
-    #     blocks: list[list[XarrayDataTreeItem]] = [[items[0]]]
-    #     for item in items[1:]:
-    #         added_to_block = False
-    #         for block in blocks:
-    #             if (item.parent is block[0].parent) and (item.dataType() == block[0].dataType()):
-    #                 if item.siblingIndex() == block[-1].siblingIndex() + 1:
-    #                     block.append(item)
-    #                 else:
-    #                     blocks.append([item])
-    #                 added_to_block = True
-    #                 break
-    #         if not added_to_block:
-    #             blocks.append([item])
-    #     return blocks
 
 
 class ConflictDialog(QDialog):
 
-    def __init__(self, parent: QWidget, title: str, text: str):
+    def __init__(self, parent: QWidget | None, title: str, text: str):
         super().__init__(parent, modal=True)
 
         from qtpy.QtWidgets import QVBoxLayout, QTextEdit, QRadioButton, QButtonGroup, QDialogButtonBox, QPushButton
@@ -811,7 +795,7 @@ class ConflictDialog(QDialog):
 
 class NameConflictDialog(QDialog):
 
-    def __init__(self, parent: QWidget, title: str, text: str):
+    def __init__(self, parent: QWidget | None, title: str, text: str):
         super().__init__(parent, modal=True)
 
         from qtpy.QtWidgets import QVBoxLayout, QTextEdit, QRadioButton, QButtonGroup, QCheckBox, QDialogButtonBox, QPushButton
@@ -859,9 +843,9 @@ class NameConflictDialog(QDialog):
         """ Return the selected action button's text.
         """
         from qtpy.QtWidgets import QRadioButton
-        button: QRadioButton = self._action_button_group.checkedButton()
-        if button is not None:
-            return button.text()
+        button = self._action_button_group.checkedButton()
+        assert button is not None
+        return button.text()
     
     def applyToAll(self) -> bool:
         return self._apply_to_all_checkbox.isChecked()
