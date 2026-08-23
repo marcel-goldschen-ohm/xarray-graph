@@ -2,8 +2,8 @@
 """
 from __future__ import annotations
 
-from qtpy.QtCore import Signal, Qt, QModelIndex, QAbstractItemModel, QMimeData
-# from qtpy.QtWidgets import QWidget, QApplication, QMessageBox
+from qtpy.QtCore import Signal  # type: ignore (pylance does not recognize some of qtpy's type aliases)
+from qtpy.QtCore import Qt, QModelIndex, QAbstractItemModel, QMimeData
 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
@@ -30,7 +30,7 @@ class AbstractTreeModel(QAbstractItemModel):
         self._column_labels: list[str] = []
 
         # drag-and-drop support for moving tree items within the tree or copying them to other tree models
-        self._supportedDropActions: Qt.DropActions = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
+        self._supportedDropActions: Qt.DropAction = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
 
         # setup item tree
         self._root_item = AbstractTreeItem()
@@ -75,6 +75,8 @@ class AbstractTreeModel(QAbstractItemModel):
         if not index.isValid():
             return QModelIndex()
         item: AbstractTreeItem = self.itemFromIndex(index)
+        # if the index is valid, item cannot be the root, so it must have a parent
+        assert item.parent is not None
         parent_item: AbstractTreeItem = item.parent
         if (parent_item is None) or (parent_item is self.rootItem()):
             return QModelIndex()
@@ -92,7 +94,7 @@ class AbstractTreeModel(QAbstractItemModel):
         except IndexError:
             return QModelIndex()
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         """ Default item flags.
         
         Supports drag-and-drop if it is enabled in supportedDropActions().
@@ -121,7 +123,7 @@ class AbstractTreeModel(QAbstractItemModel):
             if index.column() == 0:
                 return item.name()
 
-    def setData(self, index: QModelIndex, value, /, role: int = ...) -> bool:
+    def setData(self, index: QModelIndex, value, /, role: int) -> bool:
         raise NotImplementedError('setData() must be implemented in subclasses of AbstractTreeModel.')
     
     def headerData(self, section: int, orientation: Qt.Orientation, role: int):
@@ -130,7 +132,7 @@ class AbstractTreeModel(QAbstractItemModel):
         if role == Qt.ItemDataRole.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
                 labels = self.columnLabels()
-            elif orientation == Qt.Orientation.Vertical:
+            else: #elif orientation == Qt.Orientation.Vertical:
                 labels = self.rowLabels()
             if section < len(labels):
                 label = labels[section]
@@ -144,7 +146,7 @@ class AbstractTreeModel(QAbstractItemModel):
         if role == Qt.ItemDataRole.EditRole:
             if orientation == Qt.Orientation.Horizontal:
                 labels = self.columnLabels()
-            elif orientation == Qt.Orientation.Vertical:
+            else: #elif orientation == Qt.Orientation.Vertical:
                 labels = self.rowLabels()
             if section < len(labels):
                 labels[section] = value
@@ -174,10 +176,10 @@ class AbstractTreeModel(QAbstractItemModel):
         if first_change <= last_change: 
             self.headerDataChanged.emit(Qt.Orientation.Vertical, first_change, last_change)
     
-    def columnLabels(self) -> list | None:
+    def columnLabels(self) -> list:
         return self._column_labels
     
-    def setColumnLabels(self, labels: list | None) -> None:
+    def setColumnLabels(self, labels: list) -> None:
         old_labels = self._column_labels
         n_overlap = min(len(labels), len(old_labels))
         first_change = 0
@@ -196,6 +198,10 @@ class AbstractTreeModel(QAbstractItemModel):
         return self.rootItem().subtreeDepth()
     
     def removeRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
+        """ Remove rows.
+
+        Typically you will override AbstractTreeItem.orphan() for data-specific logic when removing items, in which case you likely won't need to override this method. However, if you need to use data-specific logic to determine whether rows can be removed, you may need to override this method in a subclass.
+        """
         if count <= 0:
             return False
         num_rows: int = self.rowCount(parent_index)
@@ -206,6 +212,7 @@ class AbstractTreeModel(QAbstractItemModel):
         items_to_remove: list[AbstractTreeItem] = parent_item.children[row: row + count]
         self.beginRemoveRows(parent_index, row, row + count - 1)
         for item in reversed(items_to_remove):
+            # each item handles its own removal
             item.orphan()
         self.endRemoveRows()
         return True
@@ -219,6 +226,9 @@ class AbstractTreeModel(QAbstractItemModel):
 
         if len(items) == 1:
             item: AbstractTreeItem = items[0]
+            if item.parent is None:
+                # cannot remove the root item
+                return False
             parent_index: QModelIndex = self.indexFromItem(item.parent)
             row: int = item.siblingIndex()
             return self.removeRows(row, 1, parent_index)
@@ -228,14 +238,21 @@ class AbstractTreeModel(QAbstractItemModel):
         
         # remove each item block
         # note: blocks are in depth-first order, so remove in reverse order to ensure row indices remain valid after removing each block
+        status: list[bool] = []
         for block in reversed(item_blocks):
-            row: int = block[0].siblingIndex()
+            first_item: AbstractTreeItem = block[0]
+            if first_item.parent is None:
+                # cannot remove the root item
+                status.append(False)
+                continue
+            row: int = first_item.siblingIndex()
             count: int = len(block)
-            parent_index: QModelIndex = self.indexFromItem(block[0].parent)
-            self.removeRows(row, count, parent_index)
+            parent_index: QModelIndex = self.indexFromItem(first_item.parent)
+            ok = self.removeRows(row, count, parent_index)
+            status.append(ok)
         
-        # !! does not check success of each removeRows() call
-        return True
+        # !! does not check success of each removeRows() call, will return True if any block was successfully removed
+        return any(status)
     
     def insertRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         raise NotImplementedError('See insertItems() instead.')
@@ -249,23 +266,25 @@ class AbstractTreeModel(QAbstractItemModel):
             return False
         
         # only allow inserting orphaned items
+        # abort entire insertion of all items if any item already has a parent
         for item in items:
             if item.parent is not None:
-                from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
-                parent_widget: QWidget = QApplication.focusWidget()
+                from qtpy.QtWidgets import QApplication, QMessageBox
+                focus_widget = QApplication.focusWidget()
                 title = 'Invalid Insert'
                 text = f'Cannot insert item "{item.path()}" because it already has a parent. Only orphaned items can be inserted. See moveItems() or transferItems() to move items that already have a parent.'
-                QMessageBox.warning(parent_widget, title, text)
+                QMessageBox.warning(focus_widget, title, text)
                 return False
 
         # cannot insert item into one of its own descendents
+        # abort entire insertion of all items if any such attempt is made
         for item in items:
             if parent_item.hasAncestor(item):
-                from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
-                parent_widget: QWidget = QApplication.focusWidget()
+                from qtpy.QtWidgets import QApplication, QMessageBox
+                focus_widget = QApplication.focusWidget()
                 title = 'Invalid Insert'
                 text = f'Cannot insert item "{item.path()}" into its own descendent "{parent_item.path()}".'
-                QMessageBox.warning(parent_widget, title, text)
+                QMessageBox.warning(focus_widget, title, text)
                 return False
 
         count: int = len(items)
@@ -298,12 +317,13 @@ class AbstractTreeModel(QAbstractItemModel):
         for item in items_to_move:
             ok, msg = self.isItemTransferValid(item, self, dst_parent_item, dst_row)
             if not ok:
-                from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
-                parent_widget: QWidget = QApplication.focusWidget()
+                from qtpy.QtWidgets import QApplication, QMessageBox
+                focus_widget = QApplication.focusWidget()
                 title = 'Invalid Move'
-                QMessageBox.warning(parent_widget, title, msg)
+                QMessageBox.warning(focus_widget, title, msg)
                 return False
-        
+
+        # move items
         self.beginMoveRows(src_parent_index, src_row, src_row + count - 1, dst_parent_index, dst_row)
         for item in reversed(items_to_move):
             # remove item from source
@@ -327,6 +347,9 @@ class AbstractTreeModel(QAbstractItemModel):
         
         if len(src_items) == 1:
             src_item: AbstractTreeItem = src_items[0]
+            if src_item.parent is None:
+                # cannot move the root item
+                return False
             src_parent_index: QModelIndex = self.indexFromItem(src_item.parent)
             src_row: int = src_item.siblingIndex()
             return self.moveRows(src_parent_index, src_row, 1, dst_parent_index, dst_row)
@@ -336,14 +359,21 @@ class AbstractTreeModel(QAbstractItemModel):
         
         # move each item block
         # note: blocks are in depth-first order, so move in reverse order to ensure row indices remain valid after moving each block
+        status: list[bool] = []
         for block in reversed(src_item_blocks):
-            src_parent_index: QModelIndex = self.indexFromItem(block[0].parent)
-            src_row: int = block[0].siblingIndex()
+            first_src_item: AbstractTreeItem = block[0]
+            if first_src_item.parent is None:
+                # cannot move the root item
+                status.append(False)
+                continue
+            src_parent_index: QModelIndex = self.indexFromItem(first_src_item.parent)
+            src_row: int = first_src_item.siblingIndex()
             count: int = len(block)
-            self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
+            ok = self.moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
+            status.append(ok)
         
-        # !! does not check success of each moveRows() call
-        return True
+        # !! does not check success of each moveRows() call, will return True if any block was successfully moved
+        return any(status)
     
     def transferItems(self, src_items: list[AbstractTreeItem], dst_model: AbstractTreeModel, dst_parent_item: AbstractTreeItem, dst_row: int) -> bool:
         if not src_items or not dst_model or not dst_parent_item:
@@ -352,10 +382,15 @@ class AbstractTreeModel(QAbstractItemModel):
         # only move branch root items (descendents are moved with their ancestors)
         src_items = self._branchRootItemsOnly(src_items)
 
+        # cannot transfer the root item
+        src_items = [item for item in src_items if item.parent is not None]
+        if not src_items:
+            return False
+
         if dst_model is self:
             return self.moveItems(src_items, dst_parent_item, dst_row)
         
-        src_parent_items: list[AbstractTreeItem] = [item.parent for item in src_items]
+        src_parent_items: list[AbstractTreeItem] = [item.parent for item in src_items]  # type: ignore
         src_rows: list[int] = [item.siblingIndex() for item in src_items]
         if self.removeItems(src_items):
             if dst_model.insertItems(src_items, dst_row, dst_parent_item):
@@ -366,7 +401,7 @@ class AbstractTreeModel(QAbstractItemModel):
         return False
     
     def isItemTransferValid(self, src_item: AbstractTreeItem, dst_model: AbstractTreeModel, dst_parent_item: AbstractTreeItem, dst_row: int) -> tuple[bool, str]:
-        """ Check if transferring src_item to dst_parent_item would be valid. Does not actually perform the transfer.
+        """ Check if transferring src_item to dst_parent_item is valid. Does not actually perform the transfer.
 
         Reimplement this in a subclass to check for specific constraints on valid item transfers.
         """
@@ -398,12 +433,8 @@ class AbstractTreeModel(QAbstractItemModel):
         Each block can be input to removeRows() or moveRows().
         Blocks are ordered depth-first. Typically you should remove/move blocks in reverse depth-first order to ensure insertion row indices remain valid after handling each block.
         """
-        # so we don't modify the input list
-        items = items.copy()
-
         # order items depth-first so that it is easier to group them into blocks
-        items.sort(key=lambda item: item.level())
-        items.sort(key=lambda item: item.siblingIndex())
+        items = AbstractTreeModel.orderedItems(items, order='depth-first')
 
         # group items into blocks by parent and contiguous rows
         blocks: list[list[AbstractTreeItem]] = [[items[0]]]
@@ -422,18 +453,31 @@ class AbstractTreeModel(QAbstractItemModel):
         return blocks
     
     @staticmethod
-    def orderedItems(items: list[AbstractTreeItem]) -> list[AbstractTreeItem]:
-        """ Return items in depth-first order.
+    def orderedItems(items: list[AbstractTreeItem], order: str = 'depth-first') -> list[AbstractTreeItem]:
+        """ Return items in the specified order.
         """
-        items = items.copy()
-        items.sort(key=lambda item: item.level())
-        items.sort(key=lambda item: item.siblingIndex())
-        return items
+        if not items:
+            return []
+
+        if order == 'depth-first':
+            # items = items.copy()
+            # items.sort(key=lambda item: item.level())
+            # items.sort(key=lambda item: item.siblingIndex())
+            # # it is still possible here that nodes of the same depth in different branches are not in depth-first order
+            # return items
+            root: AbstractTreeItem = items[0].root()
+            ordered_items: list[AbstractTreeItem] = []
+            for item in root.subtree_depth_first():
+                if item in items:
+                    ordered_items.append(item)
+            return ordered_items
+
+        raise ValueError(f'Invalid order "{order}". Must be "depth-first".')
     
-    def supportedDropActions(self) -> Qt.DropActions:
+    def supportedDropActions(self) -> Qt.DropAction:
         return self._supportedDropActions
     
-    def setSupportedDropActions(self, actions: Qt.DropActions) -> None:
+    def setSupportedDropActions(self, actions: Qt.DropAction) -> None:
         self._supportedDropActions = actions
 
     def mimeTypes(self) -> list[str]:
@@ -463,6 +507,9 @@ class AbstractTreeModel(QAbstractItemModel):
     def dropMimeData(self, data: TreeMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex) -> bool:
         if not isinstance(data, TreeMimeData):
             return False
+
+        if (data.dst_model is None) or (data.dst_parent_item is None) or (data.dst_row is None):
+            return False
         
         src_model: AbstractTreeModel = data.src_model
         src_items: list[AbstractTreeItem] = data.src_items
@@ -483,9 +530,9 @@ class AbstractTreeModel(QAbstractItemModel):
 
     @staticmethod
     def popupWarningDialog(text: str, system_warn: bool = True) -> None:
-        from qtpy.QtWidgets import QApplication, QMessageBox, QWidget
-        focused_widget: QWidget = QApplication.focusWidget()
-        QMessageBox.warning(focused_widget, 'Warning', text)
+        from qtpy.QtWidgets import QApplication, QMessageBox
+        focus_widget = QApplication.focusWidget()
+        QMessageBox.warning(focus_widget, 'Warning', text)
         if system_warn:
             from warnings import warn
             warn(text)
@@ -523,11 +570,51 @@ class TreeMimeData(QMimeData):
         self.src_items: list[AbstractTreeItem] = src_items
 
         # these define where they are being dragged to (set in drop event)
-        self.dst_model: AbstractTreeModel = None
-        self.dst_parent_item: AbstractTreeItem = None
-        self.dst_row: int = None
+        self.dst_model: AbstractTreeModel | None = None
+        self.dst_parent_item: AbstractTreeItem | None = None
+        self.dst_row: int | None = None
 
         # Ensure that the input MIME type is set.
         # The actual value of the data here is not important, as we won't use it.
         # Instead, we will use the above attributes to handle drag-and-drop.
         self.setData(mime_type, mime_type.encode('utf-8'))
+
+
+def test():
+    class MyTreeItem(AbstractTreeItem):
+
+        def __init__(self, data: str = '', parent: AbstractTreeItem = None, sibling_index: int = None):
+            super().__init__(parent, sibling_index)
+            self.data = data
+        
+        def name(self) -> str:
+            return self.data
+
+    root = MyTreeItem('r')
+    a = MyTreeItem('a', parent=root)
+    b = MyTreeItem('b')
+    c = MyTreeItem('c')
+    d = MyTreeItem('d')
+    dd = MyTreeItem('dd')
+    e = MyTreeItem('e', parent=b)
+    f = MyTreeItem('f', parent=e)
+    ff = MyTreeItem('ff', parent=e)
+    fff = MyTreeItem('fff', parent=e)
+    g = MyTreeItem('g', parent=d)
+    root.appendChild(b)
+    root.insertChild(1, c)
+    root.children[1].appendChild(d)
+    root.children[1].appendChild(dd)
+    
+    print('\nInitial tree...')
+    print(root)
+
+    blocks = AbstractTreeModel._itemBlocks(list(reversed([a, b, c, d, e, f, dd, ff, fff, g])))
+    print('\nItem blocks:')
+    for block in blocks:
+        print([item.name() for item in block])
+        print()
+
+
+if __name__ == '__main__':
+    test()

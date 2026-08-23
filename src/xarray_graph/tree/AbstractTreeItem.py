@@ -23,21 +23,24 @@ class AbstractTreeItem():
     # path separator
     _path_sep: str = '/'
 
-    def __init__(self, parent: AbstractTreeItem = None, sibling_index: int = None):
-        self.parent: AbstractTreeItem = parent
+    def __init__(self, parent: AbstractTreeItem | None = None, sibling_index: int | None = None):
+        self.parent: AbstractTreeItem | None = parent
         self.children: list[AbstractTreeItem] = []
         if parent:
             if sibling_index is None:
                 sibling_index = len(parent.children)
             # update item linkage only (no data management during init)
             parent.children.insert(sibling_index, self)
+
+        # store view state
+        self._view_state: dict = {}
     
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
         """
         return self._tree_repr(lambda item: item.name() or self._path_sep)
     
-    def __getitem__(self, path: str) -> AbstractTreeItem:
+    def __getitem__(self, path: str) -> AbstractTreeItem | None:
         """ Return subtree item at path starting from this item.
 
         !! For unique item access, all paths in the tree must be unique.
@@ -101,6 +104,12 @@ class AbstractTreeItem():
         # name new_item according to path (ignore's new_item's current name)
         new_item.setName(new_item_name)
     
+    def viewState(self) -> dict:
+        return self._view_state
+
+    def setViewState(self, view_state: dict) -> None:
+        self._view_state = view_state
+
     # Override in derived class with data-specific logic.
     
     def rebuildSubtree(self) -> None:
@@ -113,10 +122,9 @@ class AbstractTreeItem():
         
         This implementation is for testing/debugging. Override in a derived class to get name from data.
         """
-        try:
-            return self._name
-        except AttributeError:
-            return str(id(self))
+        raise NotImplementedError('Implement in derived class with data-specific logic.')
+        # use below for testing/debugging if not implementing setName in derived class
+        # return getattr(self, '_name', str(id(self)))
     
     def setName(self, name: str) -> None:
         """ Tree path key.
@@ -125,7 +133,7 @@ class AbstractTreeItem():
         """
         raise NotImplementedError('Implement in derived class with data-specific logic.')
         # use below for testing/debugging if not implementing setName in derived class
-        self._name = name
+        # self._name = name
     
     def orphan(self) -> None:
         """ Remove this item from its parent.
@@ -135,8 +143,7 @@ class AbstractTreeItem():
         if not self.parent:
             return
         
-        # Update tree data
-        # TODO: implement in derived class...
+        # !! WARNING: Update tree data in derived class...
         
         # Update item linkage
         self.parent.children.remove(self)
@@ -147,8 +154,7 @@ class AbstractTreeItem():
 
         Override in a derived class to update tree data.
         """
-        # Update tree data
-        # TODO: implement in derived class...
+        # !! WARNING: Update tree data in derived class...
 
         # Update item linkage
         self.children.insert(index, item)
@@ -160,20 +166,18 @@ class AbstractTreeItem():
         This implementation is for testing/debugging. Override in a derived class to copy tree data.
         """
         from copy import deepcopy
+
         item_copy = AbstractTreeItem()
-        item_copy.setName(self.name()) # testing/debugging just copies name
-        try:
-            item_copy._view_state = deepcopy(self._view_state)
-        except AttributeError:
-            pass
+        item_copy.setName(self.name())
+        view_state_copy = deepcopy(self.viewState())
+        item_copy.setViewState(view_state_copy)
+
+        # !! WARNING: Copy tree data in derived class...
+
         # recursively copy children
         for child in self.children:
             child_copy = child.copy()
             item_copy.appendChild(child_copy)
-            try:
-                child_copy._view_state = deepcopy(child._view_state)
-            except AttributeError:
-                pass
         return item_copy
     
     # Methods below should not need to be overridden.
@@ -240,22 +244,29 @@ class AbstractTreeItem():
         for i, item in enumerate(items):
             if item is self:
                 continue
+            # as we skipped self (the root of the subtree), all other items must have a parent
+            assert item.parent is not None
             if item is item.parent.lastChild():
                 lines[i] = '\u2514' + '\u2500'*2 + ' ' + lines[i]
             else:
                 lines[i] = '\u251C' + '\u2500'*2 + ' ' + lines[i]
-            parent = item.parent
+            parent: AbstractTreeItem = item.parent
             while parent is not self:
-                if i < items.index(parent.parent.lastChild()):
+                # if parent is not self (the root of the subtree), parent must itself have a valid parent, and that parent's last descendant must be valid as well
+                parent_of_parent = parent.parent
+                assert parent_of_parent is not None
+                last_descendant = parent_of_parent.lastChild()
+                assert last_descendant is not None
+                if i < items.index(last_descendant):
                     lines[i] = '\u2502' + ' '*3 + lines[i]
                 else:
                     lines[i] = ' '*4 + lines[i]
-                parent = parent.parent
+                parent = parent_of_parent
         return '\n'.join(lines)
     
-    def appendChild(self, item: AbstractTreeItem) -> bool:
+    def appendChild(self, item: AbstractTreeItem) -> None:
         index: int = len(self.children)
-        return self.insertChild(index, item)
+        self.insertChild(index, item)
     
     @staticmethod
     def orderedItems(items: list[AbstractTreeItem], order='depth-first') -> list[AbstractTreeItem]:
@@ -309,12 +320,12 @@ class AbstractTreeItem():
         """
         if self.children:
             return self.firstChild()
-        next_sibling: AbstractTreeItem = self.nextSibling()
+        next_sibling: AbstractTreeItem | None = self.nextSibling()
         if next_sibling:
             return next_sibling
-        item: AbstractTreeItem = self.parent
+        item: AbstractTreeItem | None = self.parent
         while item is not None:
-            next_sibling: AbstractTreeItem = item.nextSibling()
+            next_sibling: AbstractTreeItem | None = item.nextSibling()
             if next_sibling:
                 return next_sibling
             item = item.parent
@@ -323,7 +334,7 @@ class AbstractTreeItem():
     def prev(self) -> AbstractTreeItem | None:
         """ Returns the previous item in a depth-first traversal of the tree.
         """
-        prev_sibling: AbstractTreeItem = self.prevSibling()
+        prev_sibling: AbstractTreeItem | None = self.prevSibling()
         if prev_sibling:
             return prev_sibling.lastLeaf()
         if self.parent:
@@ -333,20 +344,19 @@ class AbstractTreeItem():
     def firstLeaf(self) -> AbstractTreeItem:
         item: AbstractTreeItem = self
         while item.children:
-            item = item.firstChild()
+            item = item.children[0]
         return item
     
     def lastLeaf(self) -> AbstractTreeItem:
         item: AbstractTreeItem = self
         while item.children:
-            item = item.lastChild()
+            item = item.children[-1]
         return item
     
     def nextLeaf(self) -> AbstractTreeItem | None:
-        try:
-            return self.next().firstLeaf()
-        except Exception:
-            return None
+        next: AbstractTreeItem | None = self.next()
+        if next is not None:
+            return next.firstLeaf()
 
     def prevLeaf(self) -> AbstractTreeItem | None:
         item: AbstractTreeItem | None = self.prev()
@@ -359,7 +369,7 @@ class AbstractTreeItem():
     def parents(self) -> Iterator[AbstractTreeItem]:
         """ Iterate ancestors of this item from closest to most distant.
         """
-        item: AbstractTreeItem = self.parent
+        item: AbstractTreeItem | None = self.parent
         while item is not None:
             yield item
             item = item.parent
@@ -369,18 +379,18 @@ class AbstractTreeItem():
     def subtree_depth_first(self) -> Iterator[AbstractTreeItem]:
         """ Depth-first iteration of this item's subtree (inclusive of this item).
         """
-        item: AbstractTreeItem = self
+        item: AbstractTreeItem | None = self
         end_item: AbstractTreeItem | None = self.lastLeaf().next()
-        while item is not end_item:
+        while (item is not None) and (item is not end_item):
             yield item
             item = item.next()
     
     def subtree_reverse_depth_first(self) -> Iterator[AbstractTreeItem]:
         """ Reverse depth-first iteration of this item's subtree (inclusive of this item).
         """
-        item: AbstractTreeItem = self.lastLeaf()
+        item: AbstractTreeItem | None = self.lastLeaf()
         end_item: AbstractTreeItem | None = self.prev()
-        while item is not end_item:
+        while (item is not None) and (item is not end_item):
             yield item
             item = item.prev()
     
@@ -402,18 +412,18 @@ class AbstractTreeItem():
     def subtree_leaves(self) -> Iterator[AbstractTreeItem]:
         """ Iterate leaves of this item's subtree (leaves ordered depth-first).
         """
-        item: AbstractTreeItem = self.firstLeaf()
+        item: AbstractTreeItem | None = self.firstLeaf()
         end_item: AbstractTreeItem | None = self.lastLeaf().nextLeaf()
-        while item is not end_item:
+        while (item is not None) and (item is not end_item):
             yield item
             item = item.nextLeaf()
     
     def subtree_reverse_leaves(self) -> Iterator[AbstractTreeItem]:
         """ Iterate leaves of this item's subtree in reverse (leaves ordered reverse depth-first).
         """
-        item: AbstractTreeItem = self.lastLeaf()
+        item: AbstractTreeItem | None = self.lastLeaf()
         end_item: AbstractTreeItem | None = self.firstLeaf().prevLeaf()
-        while item is not end_item:
+        while (item is not None) and (item is not end_item):
             yield item
             item = item.prevLeaf()
 

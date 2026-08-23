@@ -2,8 +2,9 @@
 """
 from __future__ import annotations
 
-from qtpy.QtCore import Signal, Slot, Qt, QModelIndex, QItemSelection, QObject, QEvent, QPoint
-from qtpy.QtGui import QKeySequence, QKeyEvent, QWheelEvent, QDragEnterEvent, QDropEvent
+from qtpy.QtCore import Signal, Slot  # type: ignore (pylance does not recognize some of qtpy's type aliases)
+from qtpy.QtCore import Qt, QModelIndex, QItemSelection, QObject, QEvent, QPoint
+from qtpy.QtGui import QKeyEvent, QWheelEvent, QDragEnterEvent, QDropEvent
 from qtpy.QtWidgets import QTreeView
 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
@@ -28,8 +29,6 @@ class TreeView(QTreeView):
 
     # global list of copied items
     _copied_items: list[AbstractTreeItem] = []
-
-    # _window_decoration_offset: QPoint = None
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -58,91 +57,92 @@ class TreeView(QTreeView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._onCustomContextMenuRequested)
 
-        # Each item's view state (e.g. whether item is expanded, selected) will be stored in the item itself in a dict attribute called '_view_state' when the item is dragged or when storeViewState() is called. This allows the view state to be preserved when items are moved within the tree or between different tree views via drag-n-drop, or when the view is refreshed. Item view states are additionally stored in a single dict keyed on the item paths. This allows view state to be preserved when the view is refreshed even if the items themselves are recreated (e.g., from data) such that the item view state attribute is lost.
+        # Each item's view state (e.g. whether item is expanded, selected) will be stored in the item itself in a dict attribute called '_view_state' when the item is dragged or when storeViewState() is called. This allows the view state to be preserved when items are moved within the tree or between different tree views via drag-n-drop, or when the view is refreshed. Item view states are additionally stored in a single dict keyed on the item paths (note, for trees with non-unique item paths this will not work for all items). This allows view state to be preserved when the view is refreshed even if the items themselves are recreated (e.g., from data) such that the item view state attribute is lost.
         self._view_state: dict[str, dict] = {}
 
         # actions
-        from qtpy.QtWidgets import QAction
+        from qtpy.QtGui import QAction  # type: ignore
+        from qtpy.QtGui import QKeySequence
         import qtawesome as qta
         self._refreshAction = QAction(
             text='Refresh',
             icon=qta.icon('msc.refresh'),
             iconVisibleInMenu=True,
             toolTip='Refresh UI',
-            shortcut=QKeySequence.StandardKey.Refresh,
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.refresh()
+            shortcut=QKeySequence(QKeySequence.StandardKey.Refresh),
+            shortcutVisibleInContextMenu=True
         )
+        self._refreshAction.triggered.connect(lambda checked: self.refresh())
 
         self._selectAllAction = QAction(
             text='Select All',
             toolTip='Select all',
-            shortcut=QKeySequence.StandardKey.SelectAll,
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.selectAll()
+            shortcut=QKeySequence(QKeySequence.StandardKey.SelectAll),
+            shortcutVisibleInContextMenu=True
         )
+        self._selectAllAction.triggered.connect(lambda checked: self.selectAll())
 
         self._clearSelectionAction = QAction(
             text='Clear Selection',
-            toolTip='Clear selection',
-            triggered=lambda checked: self.clearSelection()
+            toolTip='Clear selection'
         )
+        self._clearSelectionAction.triggered.connect(lambda checked: self.clearSelection())
 
         self._removeSelectedAction = QAction(
             text='Remove Selection',
             toolTip='Remove selected',
-            shortcut=QKeySequence.StandardKey.Delete,
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.removeSelectedItems()
+            shortcut=QKeySequence(QKeySequence.StandardKey.Delete),
+            shortcutVisibleInContextMenu=True
         )
+        self._removeSelectedAction.triggered.connect(lambda checked: self.removeSelectedItems())
 
         self._cutSelectionAction = QAction(
             text='Cut',
             icon=qta.icon('mdi.content-cut'),
             iconVisibleInMenu=True,
             toolTip='Cut selection',
-            shortcut=QKeySequence.StandardKey.Cut,
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.cutSelection()
+            shortcut=QKeySequence(QKeySequence.StandardKey.Cut),
+            shortcutVisibleInContextMenu=True
         )
+        self._cutSelectionAction.triggered.connect(lambda checked: self.cutSelection())
 
         self._copySelectionAction = QAction(
             text='Copy',
             icon=qta.icon('mdi.content-copy'),
             iconVisibleInMenu=True,
             toolTip='Copy selection',
-            shortcut=QKeySequence.StandardKey.Copy,
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.copySelection()
+            shortcut=QKeySequence(QKeySequence.StandardKey.Copy),
+            shortcutVisibleInContextMenu=True
         )
+        self._copySelectionAction.triggered.connect(lambda checked: self.copySelection())
 
         self._pasteAction = QAction(
             text='Paste',
             icon=qta.icon('mdi.content-paste'),
             iconVisibleInMenu=True,
             toolTip='Paste copy',
-            shortcut=QKeySequence.StandardKey.Paste,
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.pasteCopy()
+            shortcut=QKeySequence(QKeySequence.StandardKey.Paste),
+            shortcutVisibleInContextMenu=True
         )
+        self._pasteAction.triggered.connect(lambda checked: self.pasteCopy())
 
         self._expandAllAction = QAction(
             text='Expand All',
-            toolTip='Expand all',
-            triggered=lambda checked: self.expandAll()
+            toolTip='Expand all'
         )
+        self._expandAllAction.triggered.connect(lambda checked: self.expandAll())
 
         self._collapseAllAction = QAction(
             text='Collapse All',
-            toolTip='Collapse all',
-            triggered=lambda checked: self.collapseAll()
+            toolTip='Collapse all'
         )
+        self._collapseAllAction.triggered.connect(lambda checked: self.collapseAll())
 
         self._resizeAllColumnsToContentsAction = QAction(
             text='Resize Columns to Contents',
-            toolTip='Resize all columns to contents',
-            triggered=lambda checked: self.resizeAllColumnsToContents()
+            toolTip='Resize all columns to contents'
         )
+        self._resizeAllColumnsToContentsAction.triggered.connect(lambda checked: self.resizeAllColumnsToContents())
 
         self._viewAllAction = QAction(
             text='View All',
@@ -150,17 +150,17 @@ class TreeView(QTreeView):
             # iconVisibleInMenu=True,
             toolTip='Expand all and resize all columns to contents',
             shortcut=QKeySequence('Ctrl+F'),
-            shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.viewAll()
+            shortcutVisibleInContextMenu=True
         )
+        self._viewAllAction.triggered.connect(lambda checked: self.viewAll())
     
     def setModel(self, model: AbstractTreeModel) -> None:
         super().setModel(model)
         model.refreshRequested.connect(self.refresh)
     
     def refresh(self) -> None:
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         self.storeViewState()
         model.reset()
@@ -169,18 +169,15 @@ class TreeView(QTreeView):
     
     def forgetViewState(self) -> None:
         self._view_state = {}
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         for item in model.rootItem().subtree_depth_first():
-            try:
-                del item._view_state
-            except AttributeError:
-                pass
+            item.setViewState({})
     
     def storeViewState(self, items: list[AbstractTreeItem] = None) -> None:
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         if items is None:
             items = list(model.rootItem().subtree_depth_first())
@@ -191,16 +188,14 @@ class TreeView(QTreeView):
             index: QModelIndex = model.indexFromItem(item)
             if not index.isValid():
                 continue
-            view_state = {
-                'expanded': self.isExpanded(index),
-                'selected': index in selected_indexes
-            }
-            item._view_state = view_state
+            view_state = item.viewState()
+            view_state['expanded'] = self.isExpanded(index)
+            view_state['selected'] = index in selected_indexes
             self._view_state[item.path()] = view_state
 
     def restoreViewState(self, items: list[AbstractTreeItem] = None) -> None:
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         if items is None:
             items = list(model.rootItem().subtree_depth_first())
@@ -211,9 +206,8 @@ class TreeView(QTreeView):
         for item in items:
             if item.isRoot():
                 continue
-            try:
-                view_state: dict = item._view_state
-            except AttributeError:
+            view_state = item.viewState()
+            if not view_state:
                 try:
                     view_state: dict = self._view_state[item.path()]
                 except KeyError:
@@ -240,9 +234,9 @@ class TreeView(QTreeView):
         self.selectionWasChanged.emit()
 
     def selectedItems(self, ordered=False) -> list[AbstractTreeItem]:
-        model: AbstractTreeModel = self.model()
-        if not model:
-            return
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
+            return []
         indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
         # get unique items from indexes
         items: list[AbstractTreeItem] = []
@@ -260,8 +254,8 @@ class TreeView(QTreeView):
         return items
     
     def setSelectedItems(self, items: list[AbstractTreeItem]):
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         self.selectionModel().clearSelection()
         from qtpy.QtCore import QItemSelection, QItemSelectionModel
@@ -290,8 +284,8 @@ class TreeView(QTreeView):
     def removeItems(self, items: list[AbstractTreeItem], ask: bool = True, text: str = None) -> None:
         if not items:
             return
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         if ask:
             parent_widget = self
@@ -315,18 +309,22 @@ class TreeView(QTreeView):
         index: QModelIndex = self.indexAt(point)
         menu: QMenu = self.customContextMenu(index)
         if menu:
-            menu.exec(self.viewport().mapToGlobal(point))
+            pos = self.viewport().mapToGlobal(point)
+            menu.exec(pos)
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         """ Example context menu.
         
         Override in a derived class with the specific actions you want.
         """
-        model: AbstractTreeModel = self.model()
         menu = QMenu(self)
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
+            return menu
 
         # item that was clicked on
-        item: AbstractTreeItem = model.itemFromIndex(index)
+        # item: AbstractTreeItem = model.itemFromIndex(index)
+        # Add item-specific actions here if desired
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -382,8 +380,8 @@ class TreeView(QTreeView):
     def pasteCopy(self, parent_item: AbstractTreeItem = None, row: int = None) -> None:
         if not self.hasCopy():
             return
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         if parent_item is None:
             selected_items = self.selectedItems()
@@ -409,8 +407,8 @@ class TreeView(QTreeView):
     def expandAll(self) -> None:
         QTreeView.expandAll(self)
         # store current expanded depth
-        model: AbstractTreeModel = self.model()
-        if model:
+        model = self.model()
+        if isinstance(model, AbstractTreeModel):
             self._expanded_depth = model.depth()
     
     def collapseAll(self) -> None:
@@ -418,8 +416,8 @@ class TreeView(QTreeView):
         self._expanded_depth = 0
     
     def expandToDepth(self, depth: int) -> None:
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         depth = max(0, min(depth, model.depth()))
         if depth == 0:
@@ -429,8 +427,8 @@ class TreeView(QTreeView):
         self._expanded_depth = depth
     
     def resizeAllColumnsToContents(self) -> None:
-        model: AbstractTreeModel = self.model()
-        if not model:
+        model = self.model()
+        if not isinstance(model, AbstractTreeModel):
             return
         for col in range(model.columnCount()):
             self.resizeColumnToContents(col)
@@ -439,18 +437,23 @@ class TreeView(QTreeView):
         self.expandAll()
         self.resizeAllColumnsToContents()
     
-    def eventFilter(self, obj: QObject, event: QEvent) -> None:
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.Wheel:
             # mouse wheel with modifier key pressed --> expand/collapse tree
+            assert isinstance(event, QWheelEvent)
             modifiers: Qt.KeyboardModifier = event.modifiers()
             if Qt.KeyboardModifier.ControlModifier in modifiers \
             or Qt.KeyboardModifier.AltModifier in modifiers \
             or Qt.KeyboardModifier.MetaModifier in modifiers:
                 self.mouseWheelEvent(event)
                 return True
+        # process the event normally
         return QTreeView.eventFilter(self, obj, event)
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        from qtpy.QtCore import Qt
+        from qtpy.QtGui import QKeySequence
+
         if event.key() in [Qt.Key.Key_Delete, Qt.Key.Key_Backspace]:
             self.removeSelectedItems()
             event.accept()
@@ -471,14 +474,19 @@ class TreeView(QTreeView):
             self.refresh()
             event.accept()
             return
+
         modifiers = event.modifiers()
         if modifiers == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_F:
             self.viewAll()
             event.accept()
             return
+
+        # process the event normally
         return super().keyPressEvent(event)
     
     def mouseWheelEvent(self, event: QWheelEvent) -> None:
+        # expand/collapse tree based on mouse wheel direction
+        # !! this is handled in eventFilter() where a modifier key is also required to trigger this event
         delta: int = event.angleDelta().y()
         depth = getattr(self, '_expanded_depth', 0)
         if delta > 0:
@@ -499,38 +507,40 @@ class TreeView(QTreeView):
     
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         from xarray_graph.tree.AbstractTreeModel import TreeMimeData
-        mime_data: TreeMimeData = event.mimeData()
-        # print('dragEnterEvent', mime_data.formats())
 
-        if not hasattr(mime_data, '_dragged_items'):
-            # gather all items being dragged (includes descendents in subtrees)
-            # !!! Only do this at the start of the drag, do not repeat on subsequent dragEnterEvents such as when dragging between views.
-            dragged_items: list[AbstractTreeItem] = []
-            for src_item in mime_data.src_items:
-                for item in src_item.subtree_depth_first():
-                    if item not in dragged_items:
-                        dragged_items.append(item)
-            
-            # keep track of full list of dragged items (plus their descendents) in mime data
-            mime_data._dragged_items = dragged_items
+        mime_data = event.mimeData()
+        if isinstance(mime_data, TreeMimeData):
+            # handle drag enter event for tree items
+            if not hasattr(mime_data, '_dragged_items'):
+                # gather all items being dragged (includes descendents in subtrees)
+                # !!! Only do this at the start of the drag, do not repeat on subsequent dragEnterEvents such as when dragging between views.
+                dragged_items: list[AbstractTreeItem] = []
+                for src_item in mime_data.src_items:
+                    for item in src_item.subtree_depth_first():
+                        if item not in dragged_items:
+                            dragged_items.append(item)
+                
+                # keep track of full list of dragged items (plus their descendents) in mime data
+                setattr(mime_data, '_dragged_items', dragged_items)
 
-            # store view state of all dragged items in the items themselves
-            self.storeViewState(dragged_items)
+                # store view state of all dragged items in the items themselves
+                self.storeViewState(dragged_items)
 
+        # alsways call the base class implementation to ensure the drag works properly
         QTreeView.dragEnterEvent(self, event)
     
     def dropEvent(self, event: QDropEvent) -> None:
         from xarray_graph.tree.AbstractTreeModel import TreeMimeData
-        mime_data: TreeMimeData = event.mimeData()
-        # print('dropEvent', mime_data.formats())
+
+        mime_data = event.mimeData()
         if not isinstance(mime_data, TreeMimeData):
             event.ignore()
             return
 
         src_model: AbstractTreeModel = mime_data.src_model
         src_items: list[AbstractTreeItem] = mime_data.src_items
-        dst_model: AbstractTreeModel = self.model()
-        if not src_model or not src_items or not dst_model:
+        dst_model = self.model()
+        if not src_model or not src_items or not isinstance(dst_model, AbstractTreeModel):
             event.ignore()
             return
         
@@ -564,22 +574,11 @@ class TreeView(QTreeView):
         # only update wether items are expanded, selection should be handled already in drag-n-drop
         dragged_items: list[AbstractTreeItem] = getattr(mime_data, '_dragged_items', [])
         for item in dragged_items:
-            # # skip if this is a stale item reference (should NOT happen)
-            # current = item
-            # is_stale = False
-            # while current.parent is not None:
-            #     if current not in current.parent.children:
-            #         is_stale = True
-            #         break
-            #     current = current.parent
-            # if is_stale:
-            #     continue
-
             index: QModelIndex = dst_model.indexFromItem(item)
             if not index.isValid():
                 continue
             try:
-                view_state: dict = item._view_state
+                view_state: dict = item.viewState()
             except AttributeError:
                 continue
             is_expanded = view_state['expanded'] # should be defined
@@ -593,21 +592,9 @@ class TreeView(QTreeView):
     # def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: QModelIndex) -> bool:
     #     print('canDropMimeData...')
     #     return True
-    
-    # @staticmethod
-    # def _determineWindowDecorationOffset():
-    #     window = QWidget()
-    #     window.show()
-    #     frame: QRect = window.frameGeometry()
-    #     geo: QRect = window.geometry()
-    #     window.close()
-    #     TreeView._window_decoration_offset = QPoint(frame.x() - geo.x(), frame.y() - geo.y())
 
 
 def test_live():
-    import faulthandler
-    faulthandler.enable()
-
     from qtpy.QtWidgets import QApplication
     
     class MyTreeItem(AbstractTreeItem):
@@ -629,6 +616,9 @@ def test_live():
         d = MyTreeItem(f'd{i}')
         e = MyTreeItem(f'e{i}', parent=b)
         f = MyTreeItem(f'f{i}', parent=e)
+        ff = MyTreeItem(f'ff{i}', parent=e)
+        fff = MyTreeItem(f'fff{i}', parent=e)
+        g = MyTreeItem(f'g{i}', parent=d)
         root.appendChild(b)
         root.insertChild(1, c)
         root.children[1].appendChild(d)
@@ -643,14 +633,6 @@ def test_live():
         view.viewAll()
         view.move(50 + i * 850, 50)
         view.raise_()
-
-        if i == 0:
-            print('\ndepth-first items:')
-            for item in root.subtree_depth_first():
-                print(f'{item.path()}')
-            print('\nordered items:')
-            for item in model.orderedItems(list(root.subtree_depth_first())):
-                print(f'{item.path()}')
 
     app.exec()
 
