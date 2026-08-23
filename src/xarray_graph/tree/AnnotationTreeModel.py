@@ -7,7 +7,7 @@ The model accepts a flat list of annotations from which a nested group tree stru
 from __future__ import annotations
 
 from qtpy.QtCore import Qt, QModelIndex
-from qtpy.QtWidgets import QWidget
+# from qtpy.QtWidgets import QWidget
 from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
 from xarray_graph.tree.AnnotationTreeItem import AnnotationTreeItem
 
@@ -52,7 +52,8 @@ class AnnotationTreeModel(AbstractTreeModel):
         if index.column() != 0:
             return Qt.ItemFlag.NoItemFlags
         
-        item: AnnotationTreeItem = self.itemFromIndex(index)
+        item = self.itemFromIndex(index)
+        assert isinstance(item, AnnotationTreeItem)
         
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         # allow editing of annotations and annotation groups, but not annotation lists
@@ -74,21 +75,24 @@ class AnnotationTreeModel(AbstractTreeModel):
             return
         if role == Qt.ItemDataRole.DisplayRole or role == Qt.ItemDataRole.EditRole:
             if index.column() == 0:
-                item: AnnotationTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
                 return item.name()
         if role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
                 import qtawesome as qta
-                item: AnnotationTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
+                assert isinstance(item, AnnotationTreeItem)
                 if item.isGroup():
                     return qta.icon('mdi.group')
                 elif item.isAnnotation():
-                    atype = item._data.get('type', '').lower()
+                    annotation = item._data
+                    assert isinstance(annotation, dict)
+                    atype = annotation.get('type', '').lower()
                     if atype == 'region':
-                        ndims = len(item._data.get('position', {}))
+                        ndims = len(annotation.get('position', {}))
                         if ndims == 1:
                             try:
-                                npoints = len(next(iter(item._data.get('position', {}).values()), []))
+                                npoints = len(next(iter(annotation.get('position', {}).values()), []))
                             except TypeError:
                                 npoints = 1
                             if npoints == 1:
@@ -102,7 +106,7 @@ class AnnotationTreeModel(AbstractTreeModel):
     def setData(self, index: QModelIndex, value, role: int) -> bool:
         if role == Qt.ItemDataRole.EditRole:
             if index.column() == 0:
-                item: AnnotationTreeItem = self.itemFromIndex(index)
+                item = self.itemFromIndex(index)
                 if item.name() == value:
                     # no change
                     return False
@@ -120,15 +124,17 @@ class AnnotationTreeModel(AbstractTreeModel):
         if (dst_row < 0) or (dst_row > num_dst_rows):
             return False
         
-        src_parent_item: AnnotationTreeItem = self.itemFromIndex(src_parent_index)
-        dst_parent_item: AnnotationTreeItem = self.itemFromIndex(dst_parent_index)
+        src_parent_item = self.itemFromIndex(src_parent_index)
+        dst_parent_item = self.itemFromIndex(dst_parent_index)
+        if not isinstance(src_parent_item, AnnotationTreeItem) or not isinstance(dst_parent_item, AnnotationTreeItem):
+            return False
 
         if not dst_parent_item.isGroup():
             from qtpy.QtWidgets import QApplication, QMessageBox
-            parent_widget: QWidget = QApplication.focusWidget()
+            focus_widget = QApplication.focusWidget()
             title = 'Invalid Move'
             text = f'Cannot move items into non-group "{dst_parent_item.path()}".'
-            QMessageBox.warning(parent_widget, title, text)
+            QMessageBox.warning(focus_widget, title, text)
             return False
 
         if src_parent_item is dst_parent_item:
@@ -136,16 +142,17 @@ class AnnotationTreeModel(AbstractTreeModel):
                 # nothing moved
                 return False
 
-        src_items_to_move: list[AnnotationTreeItem] = src_parent_item.children[src_row:src_row+count]
+        src_items_to_move = src_parent_item.children[src_row:src_row+count]
         if dst_parent_item is not self.rootItem():
             # cannot move items into a group that is not the root
             for item in src_items_to_move:
+                assert isinstance(item, AnnotationTreeItem)
                 if item.isGroup():
                     from qtpy.QtWidgets import QApplication, QMessageBox
-                    parent_widget: QWidget = QApplication.focusWidget()
+                    focus_widget = QApplication.focusWidget()
                     title = 'Invalid Move'
                     text = f'Cannot nest group "{item.path()}" in non-root group "{dst_parent_item.path()}".'
-                    QMessageBox.warning(parent_widget, title, text)
+                    QMessageBox.warning(focus_widget, title, text)
                     return False
         
         return super().moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)
