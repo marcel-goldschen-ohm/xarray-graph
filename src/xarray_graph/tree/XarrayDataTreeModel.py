@@ -13,7 +13,7 @@ from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
 from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
 
 
-class XarrayDataTreeModel(AbstractTreeModel):
+class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
     """ PyQt tree model interface for a Xarray DataTree.
     """
 
@@ -56,8 +56,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
         },
     }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, root_item: XarrayDataTreeItem, *args, **kwargs):
+        super().__init__(root_item, *args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []
@@ -68,10 +68,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         self._is_coords_visible: bool = True
         self._is_inherited_coords_visible: bool = False
         self._is_info_columns_visible: bool = True
-
-        # setup item tree
-        datatree: xr.DataTree = xr.DataTree()
-        self._root_item = XarrayDataTreeItem(datatree)
 
         # theme
         from qtpy.QtWidgets import QApplication
@@ -143,7 +139,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         """ Get the datatree.
         """
         root_item = self.rootItem()
-        assert isinstance(root_item, XarrayDataTreeItem)
         datatree = root_item.data()
         assert isinstance(datatree, xr.DataTree)
         return datatree
@@ -235,7 +230,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
             return Qt.ItemFlag.NoItemFlags
         
         item = self.itemFromIndex(index)
-        assert isinstance(item, XarrayDataTreeItem)
         if item.isInheritedCoord():
             return Qt.ItemFlag.ItemIsEnabled
         
@@ -267,7 +261,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         if role in [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]:
             item = self.itemFromIndex(index)
-            assert isinstance(item, XarrayDataTreeItem)
             if index.column() == 0:
                 # main column
                 return item.name()
@@ -295,7 +288,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
                 item = self.itemFromIndex(index)
-                assert isinstance(item, XarrayDataTreeItem)
                 if item.isNode():
                     return self._node_icon
                 elif item.isDataVar():
@@ -314,7 +306,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         elif role == Qt.ItemDataRole.ForegroundRole:
             item = self.itemFromIndex(index)
-            assert isinstance(item, XarrayDataTreeItem)
             if item.isNode():
                 return self._node_color
             elif item.isDataVar():
@@ -343,7 +334,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     QMessageBox.warning(focus_widget, title, text)
                     return False
                 item = self.itemFromIndex(index)
-                assert isinstance(item, XarrayDataTreeItem)
                 if item.isInheritedCoord():
                     # cannot rename inherited coords
                     return False
@@ -379,7 +369,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     # update item name in branch
                     branch_root_item = item.root()[branch_root.path.strip('/')]
                     for branch_item in branch_root_item.subtree_depth_first():
-                        assert isinstance(branch_item, XarrayDataTreeItem)
                         if branch_item._varname == old_name:
                             branch_item._varname = new_name
                     # self._updateSubtreeItems(branch_root_item)
@@ -398,9 +387,8 @@ class XarrayDataTreeModel(AbstractTreeModel):
             elif index.column() == 2:
                 # units column - set units attribute for variable
                 item = self.itemFromIndex(index)
-                assert isinstance(item, XarrayDataTreeItem)
                 if item.isVariable():
-                    units: str = value.strip()
+                    units: str = str(value).strip()
                     item.data().attrs['units'] = units
                     return True
             # elif index.column() == 3:
@@ -412,7 +400,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
     def removeRows(self, row: int, count: int, parent_index: QModelIndex = QModelIndex()) -> bool:
         if self.isInheritedCoordsVisible():
             parent_item = self.itemFromIndex(parent_index)
-            assert isinstance(parent_item, XarrayDataTreeItem)
             items_to_remove = parent_item.children[row: row + count]
             is_coord_removed = any(item.isCoord() for item in items_to_remove if isinstance(item, XarrayDataTreeItem))
         success = super().removeRows(row, count, parent_index)
@@ -435,7 +422,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         # insert items one at a time (because actual insertion position may differ from requested position to maintain data type order)
         inserted_items: list[XarrayDataTreeItem] = []
-        parent_keys: list[str] = list(parent_item._node.keys())
+        parent_keys: list[str] = list(parent_item.node().keys())
         skip_all_conflicts = False
         name_conflict_default_action = None
         for item in items:
@@ -445,13 +432,13 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 conflict = f'Cannot insert non-orphan "{item.path()}".'
             elif parent_item.hasAncestor(item):
                 conflict = f'Cannot insert "{item.path()}" into its own subtree at "{parent_item.path()}".'
-            elif parent_item._node.has_data and item._node.has_data:
+            elif parent_item.node().has_data and item.node().has_data:
                 # check alignment conflict
                 try:
                     data = item.data()
                     if isinstance(data, xr.DataTree):
                         data = data.dataset
-                    xr.align(parent_item._node.dataset, data, join='exact')
+                    xr.align(parent_item.node().dataset, data, join='exact')
                 except:
                     conflict = f'"{item.path()}" is not aligned with "{parent_item.path()}".'
             if conflict:
@@ -473,8 +460,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
             name_conflict = None
             item_name = item.name()
             if item_name is None:
-                from xarray_graph.utils.utils import unique_name
-                item_name = unique_name('Node', parent_keys)
+                item_name = self.uniqueName('Node', parent_keys)
                 item.setName(item_name)
             if '/' in item_name:
                 name_conflict = f'"{item_name}" is not a valid DataTree name, which cannot contain "/".'
@@ -510,15 +496,14 @@ class XarrayDataTreeModel(AbstractTreeModel):
                     # TODO
                     pass
                 elif action == 'Keep Both':
-                    from xarray_graph.utils.utils import unique_name
-                    new_name = unique_name(item_name, parent_keys)
+                    new_name = self.uniqueName(item_name, parent_keys)
                     item.setName(new_name)
                 elif action == 'Skip':
                     continue
                 
             # test insertion in copy to make sure it is valid
             try:
-                parent_node_copy: xr.DataTree = parent_item._node.copy(deep=False)
+                parent_node_copy: xr.DataTree = parent_item.node().copy(deep=False)
                 parent_node_copy[item.name()] = item.data()
             except Exception as err:
                 conflict = f'Failed to insert "{item.path()}" in "{parent_item.path()}: {err}".'
@@ -568,8 +553,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
         
         src_parent_item = self.itemFromIndex(src_parent_index)
         dst_parent_item = self.itemFromIndex(dst_parent_index)
-        if not isinstance(src_parent_item, XarrayDataTreeItem) or not isinstance(dst_parent_item, XarrayDataTreeItem):
-            return False
 
         if src_parent_item is dst_parent_item:
             if src_row <= dst_row <= src_row + count:
@@ -580,24 +563,23 @@ class XarrayDataTreeModel(AbstractTreeModel):
 
         # move items one at a time (because actual insertion position may differ from requested position to maintain data type order)
         moved_items = []
-        src_parent_keys: list[str] = list(src_parent_item._node.keys())
-        dst_parent_keys: list[str] = list(dst_parent_item._node.keys())
+        src_parent_keys: list[str] = list(src_parent_item.node().keys())
+        dst_parent_keys: list[str] = list(dst_parent_item.node().keys())
         skip_all_conflicts = False
         name_conflict_default_action = None
         for src_item in src_items:
-            assert isinstance(src_item, XarrayDataTreeItem)
             conflict = None
             if src_parent_item is not dst_parent_item:
                 # check conflicts
                 if dst_parent_item.hasAncestor(src_item):
                     conflict = f'Cannot move "{src_item.path()}" to its own descendent "{dst_parent_item.path()}".'
-                elif dst_parent_item._node.has_data and src_item.node().has_data:
+                elif dst_parent_item.node().has_data and src_item.node().has_data:
                     # check alignment conflict
                     try:
                         src_data = src_item.data()
                         if isinstance(src_data, xr.DataTree):
                             src_data = src_data.dataset
-                        xr.align(dst_parent_item._node.dataset, src_data, join='exact')
+                        xr.align(dst_parent_item.node().dataset, src_data, join='exact')
                     except:
                         conflict = f'"{src_item.path()}" is not aligned with "{dst_parent_item.path()}".'
                 if conflict:
@@ -652,14 +634,14 @@ class XarrayDataTreeModel(AbstractTreeModel):
                         pass
                     elif action == 'Keep Both':
                         # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
-                        new_name = AbstractTreeModel.uniqueName(src_item_name, dst_parent_keys + src_parent_keys)
+                        new_name = self.uniqueName(src_item_name, dst_parent_keys + src_parent_keys)
                         src_item.setName(new_name)
                     elif action == 'Skip':
                         continue
                 
                 # test move in copy to make sure it is valid
                 try:
-                    dst_parent_node_copy: xr.DataTree = dst_parent_item._node.copy(deep=False)
+                    dst_parent_node_copy: xr.DataTree = dst_parent_item.node().copy(deep=False)
                     dst_parent_node_copy[src_item.name()] = src_item.data()
                 except Exception as err:
                     conflict = f'Failed to move "{src_item.path()}" to "{dst_parent_item.path()}: {err}".'
@@ -681,7 +663,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # move src_item
             # TODO: it's a bit wasteful to not use the tested move if it was successful, but would have to ensure item trees are updated to match
             dst_row_for_item = XarrayDataTreeItem._findInsertionIndex(dst_parent_item, src_item, dst_row)
-            # print(f'moving {src_item.path()} from {src_parent_item.path()} to {dst_parent_item.path()} at row {dst_row} -> {dst_row_for_item}')
             success = super().moveRows(src_parent_index, src_item.row(), 1, dst_parent_index, dst_row_for_item)
             if success:
                 moved_items.append(src_item)
@@ -712,8 +693,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
     
     def _updateSubtreeItems(self, parent_item: XarrayDataTreeItem) -> None:
         for item in parent_item.subtree_depth_first():
-            if not isinstance(item, XarrayDataTreeItem):
-                continue
             if not item.isNode():
                 continue
             
@@ -725,7 +704,6 @@ class XarrayDataTreeModel(AbstractTreeModel):
             # remove invalid coord items (no need to touch datatree)
             coord_items_to_remove: list[XarrayDataTreeItem] = []
             for child in item.children:
-                assert isinstance(child, XarrayDataTreeItem)
                 try:
                     child.dataType()  # will raise ValueError if invalid
                     if (child.isCoord() and child.name() not in node.coords) or (not self.isInheritedCoordsVisible() and child.isInheritedCoord()):
@@ -741,7 +719,7 @@ class XarrayDataTreeModel(AbstractTreeModel):
                 continue
             
             # add missing coord items (no need to touch datatree)
-            existing_coord_names: list[str] = [child.name() for child in item.children if isinstance(child, XarrayDataTreeItem) and child.isCoord()]
+            existing_coord_names: list[str] = [child.name() for child in item.children if child.isCoord()]
             missing_coord_names: list[str] = [name for name in coord_names if (name not in existing_coord_names) and (self.isInheritedCoordsVisible() or name not in inherited_coord_names)]
             if missing_coord_names:
                 row_names: list[str] = self._visibleRowNames(item)
@@ -842,7 +820,6 @@ class NameConflictDialog(QDialog):
     def selectedAction(self) -> str:
         """ Return the selected action button's text.
         """
-        from qtpy.QtWidgets import QRadioButton
         button = self._action_button_group.checkedButton()
         assert button is not None
         return button.text()
@@ -869,7 +846,8 @@ def test_model():
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     # print(dt)
 
-    model = XarrayDataTreeModel()
+    root = XarrayDataTreeItem()
+    model = XarrayDataTreeModel(root)
     model.setDataVarsVisible(True)
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)

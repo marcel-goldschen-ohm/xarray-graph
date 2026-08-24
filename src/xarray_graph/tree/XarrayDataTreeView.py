@@ -8,6 +8,7 @@ TODO:
 """
 from __future__ import annotations
 
+from typing import cast
 import numpy as np
 import xarray as xr
 from qtpy.QtCore import Qt, QModelIndex, QPoint, QSize
@@ -18,7 +19,7 @@ from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
 from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 
 
-class XarrayDataTreeView(TreeView):
+class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
 
     # finishedEditingAttrs = Signal(XarrayDataTreeItem)
 
@@ -87,8 +88,6 @@ class XarrayDataTreeView(TreeView):
 
     def _updateViewOptionsFromModel(self):
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
         
         self._showDataVarsAction.blockSignals(True)
         self._showDataVarsAction.setChecked(model.isDataVarsVisible())
@@ -108,9 +107,6 @@ class XarrayDataTreeView(TreeView):
 
     def _updateModelFromViewOptions(self):
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
-        
         self.storeViewState()
         model.setDataVarsVisible(self._showDataVarsAction.isChecked())
         model.setCoordsVisible(self._showCoordsAction.isChecked())
@@ -120,30 +116,22 @@ class XarrayDataTreeView(TreeView):
     
     def treeData(self) -> xr.DataTree:
         model = self.model()
-        assert isinstance(model, XarrayDataTreeModel)
         return model.treeData()
     
     def setTreeData(self, data: xr.DataTree) -> None:
         model = self.model()
         if model is None:
-            model = XarrayDataTreeModel()
-            model.setTreeData(data)
-            self.setModel(model)
-        elif isinstance(model, XarrayDataTreeModel):
-            self.storeViewState()
-            model.setTreeData(data)
-            self.restoreViewState()
+            raise RuntimeError('Model is not set.')
+        self.storeViewState()
+        model.setTreeData(data)
+        self.restoreViewState()
     
     def isDataVarsVisible(self) -> bool:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isDataVarsVisible()
     
     def setDataVarsVisible(self, visible: bool) -> None:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setDataVarsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showDataVarsAction):
@@ -151,14 +139,10 @@ class XarrayDataTreeView(TreeView):
     
     def isCoordsVisible(self) -> bool:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isCoordsVisible()
     
     def setCoordsVisible(self, visible: bool) -> None:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setCoordsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showCoordsAction):
@@ -166,14 +150,10 @@ class XarrayDataTreeView(TreeView):
     
     def isInheritedCoordsVisible(self) -> bool:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isInheritedCoordsVisible()
     
     def setInheritedCoordsVisible(self, visible: bool) -> None:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setInheritedCoordsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showInheritedCoordsAction):
@@ -181,14 +161,10 @@ class XarrayDataTreeView(TreeView):
     
     def isInfoColumnsVisible(self) -> bool:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         return model.isInfoColumnsVisible()
     
     def setInfoColumnsVisible(self, visible: bool) -> None:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
         model.setInfoColumnsVisible(visible)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._showInfoColumnsAction):
@@ -196,14 +172,11 @@ class XarrayDataTreeView(TreeView):
 
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            raise TypeError(f'Model is not a XarrayDataTreeModel: {type(model)}')
 
         menu = QMenu(self)
 
         # item that was clicked on
         item = model.itemFromIndex(index)
-        assert isinstance(item, XarrayDataTreeItem)
         if item.isNode():
             icon: QIcon = self._node_icon
         elif item.isDataVar():
@@ -363,13 +336,12 @@ class XarrayDataTreeView(TreeView):
             data = item.data()
             title = item.path()
         elif items is None:
-            items_ = self.selectedItems()
-            if not items_:
+            items = self.selectedItems()
+            if not items:
                 return
             # ensure items are in tree order
-            from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
-            items_ = AbstractTreeItem.orderedItems(items_)
-            data = [item.data() for item in items_ if isinstance(item, XarrayDataTreeItem)]
+            items = items[0].orderedItems(items)
+            data = [item.data() for item in items]
             title = 'Selected'
         elif len(items) == 1:
             item = items[0]
@@ -393,7 +365,7 @@ class XarrayDataTreeView(TreeView):
         if not item.isVariable():
             return
         values = item.data().values
-        assert isinstance(values, np.ndarray)
+        values = cast(np.ndarray, values)
         values = values.squeeze()
 
         from xarray_graph.table.ArrayTableModel import ArrayTableModel
@@ -426,8 +398,6 @@ class XarrayDataTreeView(TreeView):
         if not parent_item.isNode():
             return
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
         if row is None or row == -1:
             row = len(parent_item.children)
         new_node = xr.DataTree()
@@ -438,8 +408,6 @@ class XarrayDataTreeView(TreeView):
         if not parent_item.isNode():
             return
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
         if row is None or row == -1:
             row = len(parent_item.children)
         shape = tuple(parent_item._node.sizes.values())
@@ -457,8 +425,6 @@ class XarrayDataTreeView(TreeView):
         if not parent_item.isNode():
             return
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
         if row is None or row == -1:
             row = len(parent_item.children)
         if (dim is None) or (dim not in parent_item._node.dims):
@@ -480,8 +446,6 @@ class XarrayDataTreeView(TreeView):
 
     def insertNewRootNode(self) -> None:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
         dt: xr.DataTree = model.treeData()
         root_name = dt.name or 'old root'
         new_dt = xr.DataTree()
@@ -490,10 +454,8 @@ class XarrayDataTreeView(TreeView):
     
     def renameDimensions(self, item: XarrayDataTreeItem) -> None:
         if not item.isNode():
-            assert isinstance(item.parent, XarrayDataTreeItem)
-            item = item.parent
-        node = item.data()
-        assert isinstance(node, xr.DataTree)
+            item = cast(XarrayDataTreeItem, item.parent)
+        node = cast(xr.DataTree, item.data())
 
         from qtpy.QtWidgets import QDialog, QLineEdit, QVBoxLayout, QDialogButtonBox
         
@@ -534,9 +496,7 @@ class XarrayDataTreeView(TreeView):
     
     def concatenateSelectedNodes(self, dim: str = None) -> None:
         model = self.model()
-        if not isinstance(model, XarrayDataTreeModel):
-            return
-        items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if isinstance(item, XarrayDataTreeItem) and item.isNode()]
+        items: list[XarrayDataTreeItem] = [item for item in self.selectedItems() if item.isNode()]
         if not items or len(items) < 2:
             return
         if dim is None:
@@ -550,10 +510,9 @@ class XarrayDataTreeView(TreeView):
             if not dim:
                 return
         try:
-            datasets: list[xr.Dataset] = [item._node.to_dataset() for item in items]
+            datasets: list[xr.Dataset] = [item.node().to_dataset() for item in items]
             concatenated_dataset: xr.Dataset = xr.concat(datasets, dim)
-            parent_item = items[0].parent
-            assert isinstance(parent_item, XarrayDataTreeItem)
+            parent_item = cast(XarrayDataTreeItem, items[0].parent)
             parent_node: xr.DataTree = parent_item.node()
             from xarray_graph.utils.utils import unique_name
             name = unique_name('Concat', list(parent_node.keys()))
@@ -567,18 +526,16 @@ class XarrayDataTreeView(TreeView):
             items = self.selectedItems()
             if not items:
                 model = self.model()
-                if isinstance(model, XarrayDataTreeModel):
-                    items = [model.rootItem()]
+                items = [model.rootItem()]
             if len(items) == 1:
                 item = items[0]
-                assert isinstance(item, XarrayDataTreeItem)
                 data = item.data()
                 title = item.path()
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             else:
                 # ensure items are in tree order
                 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
-                items = AbstractTreeItem.orderedItems(items)
+                items = items[0].orderedItems(items)
                 data = [item.data() for item in items if isinstance(item, XarrayDataTreeItem)]
                 title = 'Selected'
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
@@ -713,7 +670,8 @@ def test_live():
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     print(dt)
 
-    model = XarrayDataTreeModel()
+    root = XarrayDataTreeItem(dt)
+    model = XarrayDataTreeModel(root)
     model.setDataVarsVisible(True)
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
@@ -730,7 +688,8 @@ def test_live():
 
     dt2 = dt.copy(deep=True)
 
-    model2 = XarrayDataTreeModel()
+    root2 = XarrayDataTreeItem(dt2)
+    model2 = XarrayDataTreeModel(root2)
     model2.setDataVarsVisible(True)
     model2.setCoordsVisible(True)
     model2.setInheritedCoordsVisible(True)

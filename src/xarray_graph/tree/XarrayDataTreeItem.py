@@ -5,6 +5,7 @@ TODO:
 """
 from __future__ import annotations
 
+from typing import Self, cast
 from enum import Enum
 import xarray as xr
 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
@@ -23,7 +24,9 @@ class XarrayDataTreeItem(AbstractTreeItem):
         DATA_VAR = 3
         NODE = 4
 
-    def __init__(self, node: xr.DataTree, varname: str = '', parent: XarrayDataTreeItem = None, sibling_index: int = None):
+    def __init__(self, node: xr.DataTree = None, varname: str = '', parent: Self | None = None, sibling_index: int = None):
+        if node is None:
+            node = xr.DataTree()
         self._node = node
         self._varname = varname
         super().__init__(parent, sibling_index)
@@ -148,7 +151,6 @@ class XarrayDataTreeItem(AbstractTreeItem):
             # update item name in branch
             branch_root_item = self.root()[branch_root.path.strip('/')]
             for branch_item in branch_root_item.subtree_depth_first():
-                assert isinstance(branch_item, XarrayDataTreeItem)
                 if branch_item._varname == old_name:
                     branch_item._varname = name
         elif self.isVariable():
@@ -188,11 +190,10 @@ class XarrayDataTreeItem(AbstractTreeItem):
         for item in self.subtree_depth_first():
             if item is self:
                 continue
-            assert isinstance(item, XarrayDataTreeItem)
             new_node_path = item.path().removesuffix(item._varname).strip('/')
             item._node = new_node[new_node_path]
     
-    def insertChild(self, index: int, child_item: XarrayDataTreeItem) -> None:
+    def insertChild(self, index: int, child_item: Self) -> None:
         if not self.isNode():
             raise TypeError('Cannot insert child into non-node item')
         child_name = child_item.name()
@@ -219,16 +220,15 @@ class XarrayDataTreeItem(AbstractTreeItem):
         for item in child_item.subtree_depth_first():
             if item is child_item:
                 continue
-            assert isinstance(item, XarrayDataTreeItem)
             new_node_path = item._node.path.replace(old_child_path, new_child_path, 1)
             item._node = dt[new_node_path]
     
-    @staticmethod
-    def _findInsertionIndex(parent_item: XarrayDataTreeItem, child_item: XarrayDataTreeItem, index: int) -> int:
+    @classmethod
+    def _findInsertionIndex(cls, parent_item: Self, child_item: Self, index: int) -> int:
         """ Find insertion index that preserves data type order.
         """
         data_type = child_item.dataType()
-        items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if isinstance(item, XarrayDataTreeItem) and item.dataType() == data_type]
+        items_of_type: list[Self] = [item for item in parent_item.children if item.dataType() == data_type]
 
         if not items_of_type:
             # insert after all items of other data types that come before data_type in the model
@@ -236,7 +236,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
             for dtype in tuple(XarrayDataTreeItem.DataType):
                 if dtype == data_type:
                     break
-                index += len([item for item in parent_item.children if isinstance(item, XarrayDataTreeItem) and item.dataType() == dtype])
+                index += len([item for item in parent_item.children if item.dataType() == dtype])
             return index
         elif index > items_of_type[-1].siblingIndex():
             # append after last item of data_type
@@ -248,19 +248,19 @@ class XarrayDataTreeItem(AbstractTreeItem):
             # insert at index which falls within items of data_type
             return index
     
-    def copy(self, deep: bool = True) -> XarrayDataTreeItem:
+    def copy(self, deep: bool = True) -> Self:
         """ Returns an orphaned copy of this item.
         """
         # copy data as new datatree
         from copy import deepcopy
+        cls = type(self)
         if self.isNode():
             node_copy: xr.DataTree = self._node.copy(inherit=True, deep=deep)
-            item_copy = XarrayDataTreeItem(node_copy)
+            item_copy = cls(node_copy)
             # copy subtree
             for item in self.subtree_depth_first():
                 if item is self:
                     continue
-                assert isinstance(item, XarrayDataTreeItem)
                 new_node_path_in_copy = item._node.relative_to(self._node)
                 if new_node_path_in_copy == '.':
                     # item must be a variable
@@ -275,9 +275,8 @@ class XarrayDataTreeItem(AbstractTreeItem):
                         new_parent_item = item_copy[new_node_path_in_copy.strip('/').rsplit('/', 1)[0]]
                     else:
                         new_parent_item = item_copy
-                assert isinstance(new_parent_item, (XarrayDataTreeItem, type(None)))
-                assert isinstance(new_node, xr.DataTree)
-                subitem_copy = XarrayDataTreeItem(new_node, item._varname, parent=new_parent_item)
+                new_node = cast(xr.DataTree, new_node)
+                subitem_copy = cls(new_node, item._varname, parent=new_parent_item)
                 view_state_copy = deepcopy(item.viewState())
                 subitem_copy.setViewState(view_state_copy)
         elif self.isDataVar():
@@ -288,7 +287,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
                     data_vars={varname: var_copy}
                 ),
             )
-            item_copy = XarrayDataTreeItem(node_copy, varname)
+            item_copy = cls(node_copy, varname)
         elif self.isCoord():
             varname = self._varname
             coord_copy = self._node[varname].copy(deep=deep)
@@ -297,11 +296,9 @@ class XarrayDataTreeItem(AbstractTreeItem):
                     coords={varname: coord_copy}
                 ),
             )
-            item_copy = XarrayDataTreeItem(node_copy, varname)
-        try:
-            item_copy._view_state = deepcopy(self._view_state)
-        except AttributeError:
-            pass
+            item_copy = cls(node_copy, varname)
+        item_copy.setViewState(deepcopy(self.viewState()))
+        item_copy = cast(Self, item_copy)
         return item_copy
 
 
@@ -340,7 +337,6 @@ def test_tree():
     print('orphan child/grandchild/rasm')
     print('-'*82)
     rasm = root['child/grandchild/rasm']
-    assert isinstance(rasm, XarrayDataTreeItem)
     rasm.orphan()
     print(root)
     print(rasm)
@@ -357,7 +353,6 @@ def test_tree():
     print('orphan air_temperature/twice air')
     print('-'*82)
     twice_air = root['air_temperature/twice air']
-    assert isinstance(twice_air, XarrayDataTreeItem)
     twice_air.orphan()
     print(root)
     print(twice_air)
@@ -378,14 +373,12 @@ def test_tree():
     print('orphan air_temperature/inherits')
     print('-'*82)
     inherits = root['air_temperature/inherits']
-    assert isinstance(inherits, XarrayDataTreeItem)
     print(inherits.data())
     inherits.orphan()
     print(root)
     print(inherits)
     print(inherits.data())
     again = inherits['again']
-    assert isinstance(again, XarrayDataTreeItem)
     print(again.data())
     print(dt)
     # return
@@ -396,13 +389,11 @@ def test_tree():
     root['air_temperature'].insertChild(0, inherits)
     print(root)
     print(inherits)
-    # again: XarrayDataTreeItem = inherits['again']
     print(inherits.data())
     print(dt['air_temperature'])
     print(dt['air_temperature/inherits'])
     print(dt['air_temperature/inherits/again'])
     again = inherits['again']
-    assert isinstance(again, XarrayDataTreeItem)
     print(again)
     print(again.data())
     print(dt)
@@ -413,7 +404,6 @@ def test_tree():
     print('-'*82)
     print(dt['air_temperature/inherits/air'])
     air = root['air_temperature/inherits/air']
-    assert isinstance(air, XarrayDataTreeItem)
     air.orphan()
     print(root)
     print(air)
@@ -436,7 +426,6 @@ def test_tree():
     print('orphan air_temperature/inherits/again')
     print('-'*82)
     again = root['air_temperature/inherits/again']
-    assert isinstance(again, XarrayDataTreeItem)
     print(again.data())
     again.orphan()
     print(root)
@@ -461,7 +450,6 @@ def test_tree():
     print('copy air_temperature/inherits')
     print('-'*82)
     inherits = root['air_temperature/inherits']
-    assert isinstance(inherits, XarrayDataTreeItem)
     inherits_copy = inherits.copy()
     print(inherits)
     print(inherits_copy)
