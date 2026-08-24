@@ -2,20 +2,20 @@
 """
 from __future__ import annotations
 
+from typing import cast
 from qtpy.QtCore import QPoint, QSize, QModelIndex
 from qtpy.QtWidgets import QAbstractItemView, QMenu
-from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
 from xarray_graph.tree.TreeView import TreeView
 from xarray_graph.tree.AnnotationTreeItem import AnnotationTreeItem
 from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeModel
 
 
-class AnnotationTreeView(TreeView):
+class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
 
     _copied_annotations: list[dict] = []
 
     def __init__(self, *args, **kwargs) -> None:
-        TreeView.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         from qtpy.QtGui import QKeySequence
         from qtpy.QtWidgets import QShortcut  # type: ignore
@@ -40,7 +40,6 @@ class AnnotationTreeView(TreeView):
     
     def annotations(self) -> list[dict]:
         model = self.model()
-        assert isinstance(model, AnnotationTreeModel)
         return model.annotations()
     
     def setAnnotations(self, annotations: list[dict]) -> None:
@@ -49,29 +48,23 @@ class AnnotationTreeView(TreeView):
             model = AnnotationTreeModel()
             model.setAnnotations(annotations)
             self.setModel(model)
-        elif isinstance(model, AnnotationTreeModel):
-            self.storeViewState()
-            model.setAnnotations(annotations)
-            self.restoreViewState()
+            return
+        self.storeViewState()
+        model.setAnnotations(annotations)
+        self.restoreViewState()
     
     def selectedAnnotations(self) -> list[dict]:
-        model = self.model()
-        if not isinstance(model, AnnotationTreeModel):
-            return []
-        annotations = []
+        annotations: list[dict] = []
         for item in self.selectedItems():
             for leaf in item.subtree_leaves():
-                assert isinstance(leaf, AnnotationTreeItem)
                 if leaf.isAnnotation():
-                    annotation = leaf._data
+                    annotation = cast(dict, leaf._data)
                     if annotation not in annotations:
                         annotations.append(annotation)
         return annotations
 
     def setSelectedAnnotations(self, annotations: list[dict]) -> None:
         model = self.model()
-        if not isinstance(model, AnnotationTreeModel):
-            return
         root = model.rootItem()
         self.selectionModel().clearSelection()
         from qtpy.QtCore import QItemSelection
@@ -79,9 +72,8 @@ class AnnotationTreeView(TreeView):
         for item in root.subtree_leaves():
             if item is root:
                 continue
-            assert isinstance(item, AnnotationTreeItem)
             if item.isAnnotation():
-                annotation = item._data
+                annotation = cast(dict, item._data)
                 if annotation in annotations:
                     index: QModelIndex = model.indexFromItem(item)
                     toSelect.select(index, index)
@@ -97,14 +89,11 @@ class AnnotationTreeView(TreeView):
         from qtpy.QtGui import QAction  # type: ignore
 
         model = self.model()
-        if not isinstance(model, AnnotationTreeModel):
-            raise RuntimeError('AnnotationTreeView must have an AnnotationTreeModel to show a context menu.')
 
         menu = QMenu(self)
 
         # item that was clicked on
         item = model.itemFromIndex(index)
-        assert isinstance(item, AnnotationTreeItem)
 
         if item.isAnnotation():
             action = QAction('Edit', parent=menu)
@@ -144,7 +133,7 @@ class AnnotationTreeView(TreeView):
         # insert new item
         if item.isRoot() or (item.parent and item.parent.isRoot()):
             parent_item = item if item.isRoot() else item.parent
-            assert isinstance(parent_item, AnnotationTreeItem)
+            parent_item = cast(AnnotationTreeItem, parent_item)
             menu.addSeparator()
 
             action = QAction('New Group', parent=menu)
@@ -177,12 +166,8 @@ class AnnotationTreeView(TreeView):
         
         return menu
     
-    def cutSelection(self) -> None:
-        self.copySelection()
-        self.removeSelectedItems(ask=False)
-    
     def copySelection(self) -> None:
-        items = []
+        items: list[AnnotationTreeItem] = []
         for item in self.selectedItems():
             for leaf_item in item.subtree_leaves():
                 if leaf_item not in items:
@@ -191,12 +176,10 @@ class AnnotationTreeView(TreeView):
             return
         # copy the annotation dicts
         from copy import deepcopy
-        AnnotationTreeView._copied_annotations = [deepcopy(item._data) for item in items if isinstance(item, AnnotationTreeItem) and item.isAnnotation() and isinstance(item._data, dict)]
+        AnnotationTreeView._copied_annotations = [deepcopy(cast(dict, item._data)) for item in items if item.isAnnotation()]
     
     def pasteCopy(self, parent_item: AnnotationTreeItem = None) -> None:
         model = self.model()
-        if not isinstance(model, AnnotationTreeModel):
-            return
         from copy import deepcopy
         annotations = [deepcopy(ann) for ann in AnnotationTreeView._copied_annotations]
         if not annotations:
@@ -206,11 +189,9 @@ class AnnotationTreeView(TreeView):
             if not items:
                 return
             first_item = items[0]
-            assert isinstance(first_item, AnnotationTreeItem)
             parent_item = first_item
             if parent_item.isAnnotation():
-                assert isinstance(parent_item.parent, AnnotationTreeItem)
-                parent_item = parent_item.parent
+                parent_item = cast(AnnotationTreeItem, parent_item.parent)
         # assign group to pasted annotations if pasting into a group or remove group if pasting into root
         group = parent_item.group()
         for annotation in annotations:
@@ -232,15 +213,12 @@ class AnnotationTreeView(TreeView):
             return
         
         from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
-        from xarray_graph.tree.KeyValueTreeModel import KeyValueTreeModel
         from xarray_graph.tree.KeyValueTreeView import KeyValueTreeView
 
-        annotation = item._data
-        model = KeyValueTreeModel()
-        model.setTreeData(annotation)
+        annotation = cast(dict, item._data)
         view = KeyValueTreeView()
+        view.setTreeData(annotation)
         view.setAlternatingRowColors(True)
-        view.setModel(model)
         view.viewAll()
         
         dialog = QDialog(parent=self)
@@ -262,22 +240,17 @@ class AnnotationTreeView(TreeView):
         if not parent_item.isRoot():
             return
         model = self.model()
-        if not isinstance(model, AnnotationTreeModel):
-            return
-        annotations = parent_item._data
-        if not isinstance(annotations, list):
-            return
+        annotations = cast(list[dict], parent_item._data)
         group_names = list(set([ann['group'] for ann in annotations if ann.get('group', None)]))
         # in case we have any empty group nodes
         for child_item in parent_item.children:
-            assert isinstance(child_item, AnnotationTreeItem)
             if child_item.isGroup():
                 group_name = child_item.group()
                 if group_name not in group_names:
                     group_names.append(group_name)
         # insert new empty group node with unique name
-        from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
-        group_name = AbstractTreeModel.uniqueName('Group', group_names)
+        from xarray_graph.tree.AbstractTreeUtils import uniqueName
+        group_name = uniqueName('Group', group_names)
         new_item = AnnotationTreeItem([], group_name)
         model.insertItems([new_item], row, parent_item)
     
@@ -293,10 +266,8 @@ class AnnotationTreeView(TreeView):
         if not ok or not group:
             return
         for item in items:
-            assert isinstance(item, AnnotationTreeItem)
             if item.isAnnotation():
-                annotation = item._data
-                assert isinstance(annotation, dict)
+                annotation = cast(dict, item._data)
                 annotation['group'] = group
         self.refresh()
     
@@ -305,10 +276,8 @@ class AnnotationTreeView(TreeView):
         if not items:
             return
         for item in items:
-            assert isinstance(item, AnnotationTreeItem)
             if item.isAnnotation():
-                annotation = item._data
-                assert isinstance(annotation, dict)
+                annotation = cast(dict, item._data)
                 annotation['group'] = ''
         self.refresh()
 
@@ -326,11 +295,8 @@ def test_live():
 
     app = QApplication()
 
-    model = AnnotationTreeModel()
-    model.setAnnotations(annotations)
-
     view = AnnotationTreeView()
-    view.setModel(model)
+    view.setAnnotations(annotations)
     view.show()
     view.resize(QSize(800, 800))
     view.move(QPoint(100, 100))
@@ -339,7 +305,7 @@ def test_live():
 
     app.exec()
 
-    print(model.rootItem())
+    print(view.model().rootItem())
     print(annotations)
 
 if __name__ == '__main__':

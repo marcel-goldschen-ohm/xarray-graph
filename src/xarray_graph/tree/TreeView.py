@@ -2,8 +2,7 @@
 """
 from __future__ import annotations
 
-from pyexpat import model
-from typing import Type, Self, cast
+from typing import cast
 from qtpy.QtCore import Signal, Slot  # type: ignore (pylance does not recognize some of qtpy's type aliases)
 from qtpy.QtCore import Qt, QModelIndex, QItemSelection, QObject, QEvent, QPoint
 from qtpy.QtGui import QKeyEvent, QWheelEvent, QDragEnterEvent, QDropEvent
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
     from qtpy.QtWidgets import QMenu
 
 
-class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeView):
+class TreeView[TreeItem: AbstractTreeItem, TreeModel: AbstractTreeModel](QTreeView):
     """ Qt tree view for `AbstractTreeModel` with context menu and mouse wheel expand/collapse.
 
     Works out-of-the-box with any `AbstractTreeModel` and `AbstractTreeItem` implementation. Override the following methods to customize behavior:
@@ -183,7 +182,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
         if items is None:
             root = cast(TreeItem, model.rootItem())
             items = list(root.subtree_depth_first())
-        selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
+        selected_indexes = self.selectionModel().selectedIndexes()
         for item in items:
             if item.isRoot():
                 continue
@@ -200,7 +199,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
         if items is None:
             root = cast(TreeItem, model.rootItem())
             items = list(root.subtree_depth_first())
-        selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
+        selected_indexes = self.selectionModel().selectedIndexes()
         from qtpy.QtCore import QItemSelection, QItemSelectionModel
         to_be_selected: QItemSelection = QItemSelection()
         to_be_deselected: QItemSelection = QItemSelection()
@@ -236,7 +235,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
 
     def selectedItems(self, ordered=False) -> list[TreeItem]:
         model = self.model()
-        indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
+        indexes = self.selectionModel().selectedIndexes()
         # get unique items from indexes
         items: list[TreeItem] = []
         for index in indexes:
@@ -244,13 +243,8 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
             if item not in items:
                 items.append(item)
         if ordered:
-            # return items in depth-first order
-            ordered_items: list[TreeItem] = []
-            root = cast(TreeItem, model.rootItem())
-            for item in root.subtree_depth_first():
-                if item in items:
-                    ordered_items.append(item)
-            items = ordered_items
+            from xarray_graph.tree.AbstractTreeUtils import orderedItems
+            items = orderedItems(items, order='depth-first')
         return items
     
     def setSelectedItems(self, items: list[TreeItem]):
@@ -270,7 +264,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
             self.selectionModel().select(selection, flags)
     
     def removeSelectedItems(self, ask: bool = True) -> None:
-        items: list[TreeItem] = self.selectedItems()
+        items = self.selectedItems()
         if not items:
             return
         if len(items) == 1:
@@ -320,7 +314,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
 
         # item that was clicked on
         # item: TreeItem = model.itemFromIndex(index)
-        # Add item-specific actions here if desired
+        # Add any item-specific actions...
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
@@ -369,13 +363,14 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
         if not items:
             return
         # only copy the branch roots (this includes the descendents)
-        model = self.model()
-        items = model._branchRootItemsOnly(items)
-        if not items:
-            return
-        all_items: list[TreeItem] = items[0].allItemsAndTheirDescendents(items)
+        from xarray_graph.tree.AbstractTreeUtils import branchRootItemsOnly
+        branch_root_items = branchRootItemsOnly(items)
+        # store view state of all subtrees
+        from xarray_graph.tree.AbstractTreeUtils import allItemsAndTheirDescendents
+        all_items: list[TreeItem] = allItemsAndTheirDescendents(branch_root_items)
         self.storeViewState(all_items)
-        TreeView._copied_items = [item.copy() for item in items]
+        # copy items (will recursively copy all descendents)
+        TreeView._copied_items = [item.copy() for item in branch_root_items]
     
     def pasteCopy(self, parent_item: TreeItem = None, row: int = None) -> None:
         if not self.hasCopy():
@@ -386,10 +381,12 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
             items: list[TreeItem] = [cast(TreeItem, item).copy() for item in TreeView._copied_items if isinstance(item, type(parent_item))]
             if not items:
                 # in case attempt to paste items of a different type than the parent item
+                # this is possible because the class attribute _copied_items is shared across all TreeView instances, so items of different types may be copied in one view and then attempted to be pasted in another view with a different item type
                 return
             model.insertItems(items, row, parent_item)
             # update view state of pasted items and all their descendents as specified in the copied items
-            all_items: list[TreeItem] = items[0].allItemsAndTheirDescendents(items)
+            from xarray_graph.tree.AbstractTreeUtils import allItemsAndTheirDescendents
+            all_items: list[TreeItem] = allItemsAndTheirDescendents(items)
             self.restoreViewState(all_items)
         except Exception as err:
             from qtpy.QtWidgets import QApplication, QMessageBox
@@ -546,7 +543,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
         src_model: TreeModel = mime_data.src_model
         src_items: list[TreeItem] = mime_data.src_items
         dst_model = self.model()
-        if not src_model or not src_items or not isinstance(dst_model, AbstractTreeModel):
+        if not src_model or not src_items or not dst_model:
             event.ignore()
             return
         
@@ -598,6 +595,7 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
 
 
 def test_live():
+    from typing import Self
     from qtpy.QtWidgets import QApplication
     
     class MyTreeItem(AbstractTreeItem):
@@ -629,8 +627,9 @@ def test_live():
         root.insertChild(1, c)
         root.children[1].appendChild(d)
 
-        model = AbstractTreeModel[MyTreeItem](root)
-        view = TreeView[AbstractTreeModel, MyTreeItem]()
+        model = AbstractTreeModel[MyTreeItem]()
+        view = TreeView[MyTreeItem, AbstractTreeModel]()
+        model.setRootItem(root)
         view.setModel(model)
         view.show()
         view.resize(800, 1000)

@@ -223,31 +223,6 @@ class XarrayDataTreeItem(AbstractTreeItem):
             new_node_path = item._node.path.replace(old_child_path, new_child_path, 1)
             item._node = dt[new_node_path]
     
-    @classmethod
-    def _findInsertionIndex(cls, parent_item: Self, child_item: Self, index: int) -> int:
-        """ Find insertion index that preserves data type order.
-        """
-        data_type = child_item.dataType()
-        items_of_type: list[Self] = [item for item in parent_item.children if item.dataType() == data_type]
-
-        if not items_of_type:
-            # insert after all items of other data types that come before data_type in the model
-            index = 0
-            for dtype in tuple(XarrayDataTreeItem.DataType):
-                if dtype == data_type:
-                    break
-                index += len([item for item in parent_item.children if item.dataType() == dtype])
-            return index
-        elif index > items_of_type[-1].siblingIndex():
-            # append after last item of data_type
-            return items_of_type[-1].siblingIndex() + 1
-        elif index <= items_of_type[0].siblingIndex():
-            # prepend before first item of data_type
-            return items_of_type[0].siblingIndex()
-        else:
-            # insert at index which falls within items of data_type
-            return index
-    
     def copy(self, deep: bool = True) -> Self:
         """ Returns an orphaned copy of this item.
         """
@@ -300,6 +275,31 @@ class XarrayDataTreeItem(AbstractTreeItem):
         item_copy.setViewState(deepcopy(self.viewState()))
         item_copy = cast(Self, item_copy)
         return item_copy
+    
+
+def findInsertionIndex(parent_item: XarrayDataTreeItem, child_item: XarrayDataTreeItem, index: int) -> int:
+    """ Find insertion index that preserves data type order.
+    """
+    data_type = child_item.dataType()
+    items_of_type: list[XarrayDataTreeItem] = [item for item in parent_item.children if item.dataType() == data_type]
+
+    if not items_of_type:
+        # insert after all items of other data types that come before data_type in the model
+        index = 0
+        for dtype in tuple(XarrayDataTreeItem.DataType):
+            if dtype == data_type:
+                break
+            index += len([item for item in parent_item.children if item.dataType() == dtype])
+        return index
+    elif index > items_of_type[-1].siblingIndex():
+        # append after last item of data_type
+        return items_of_type[-1].siblingIndex() + 1
+    elif index <= items_of_type[0].siblingIndex():
+        # prepend before first item of data_type
+        return items_of_type[0].siblingIndex()
+    else:
+        # insert at index which falls within items of data_type
+        return index
 
 
 def test_tree():

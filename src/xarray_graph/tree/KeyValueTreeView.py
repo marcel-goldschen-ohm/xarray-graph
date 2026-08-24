@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from qtpy.QtGui import QIcon
 
 
-class KeyValueTreeView(TreeView[KeyValueTreeModel, KeyValueTreeItem]):
+class KeyValueTreeView(TreeView[KeyValueTreeItem, KeyValueTreeModel]):
     """ Tree view for a `KeyValueTreeModel` with drag-and-drop, context menu, and mouse wheel expand/collapse.
     """
 
@@ -53,6 +53,11 @@ class KeyValueTreeView(TreeView[KeyValueTreeModel, KeyValueTreeItem]):
         """ Set the root key:value map.
         """
         model = self.model()
+        if not model:
+            model = KeyValueTreeModel()
+            model.setTreeData(data)
+            self.setModel(model)
+            return
         self.storeViewState()
         model.setTreeData(data)
         self.restoreViewState()
@@ -180,7 +185,8 @@ class KeyValueTreeView(TreeView[KeyValueTreeModel, KeyValueTreeItem]):
             model = self.model()
             parent_item, row = self._defaultPlacement(parent_item, row)
             names = [item.name() for item in parent_item.children]
-            name = model.uniqueName('New', names)
+            from xarray_graph.tree.AbstractTreeUtils import uniqueName
+            name = uniqueName('New', names)
             new_item = KeyValueTreeItem(name, None)
             model.insertItems([new_item], row, parent_item)
         except Exception as err:
@@ -211,11 +217,8 @@ def test_live():
 
     app = QApplication()
 
-    root = KeyValueTreeItem(None, data)
-    root.rebuildSubtree()
-    model = KeyValueTreeModel(root)
     view = KeyValueTreeView()
-    view.setModel(model)
+    view.setTreeData(data)
     view.show()
     view.resize(QSize(800, 800))
     view.move(QPoint(50, 50))
@@ -225,11 +228,8 @@ def test_live():
     from copy import deepcopy
     data2 = deepcopy(data)
 
-    root2 = KeyValueTreeItem(None, data2)
-    root2.rebuildSubtree()
-    model2 = KeyValueTreeModel(root2)
     view2 = KeyValueTreeView()
-    view2.setModel(model2)
+    view2.setTreeData(data2)
     view2.show()
     view2.resize(QSize(800, 800))
     view2.move(QPoint(900, 50))

@@ -6,13 +6,13 @@ The model accepts a flat list of annotations from which a nested group tree stru
 """
 from __future__ import annotations
 
+from typing import cast
 from qtpy.QtCore import Qt, QModelIndex
-# from qtpy.QtWidgets import QWidget
 from xarray_graph.tree.AbstractTreeModel import AbstractTreeModel
 from xarray_graph.tree.AnnotationTreeItem import AnnotationTreeItem
 
 
-class AnnotationTreeModel(AbstractTreeModel):
+class AnnotationTreeModel(AbstractTreeModel[AnnotationTreeItem]):
     
     MIME_TYPE = 'application/x-annotation-tree-model'
 
@@ -81,12 +81,10 @@ class AnnotationTreeModel(AbstractTreeModel):
             if index.column() == 0:
                 import qtawesome as qta
                 item = self.itemFromIndex(index)
-                assert isinstance(item, AnnotationTreeItem)
                 if item.isGroup():
                     return qta.icon('mdi.group')
                 elif item.isAnnotation():
-                    annotation = item._data
-                    assert isinstance(annotation, dict)
+                    annotation = cast(dict, item._data)
                     atype = annotation.get('type', '').lower()
                     if atype == 'region':
                         ndims = len(annotation.get('position', {}))
@@ -126,15 +124,13 @@ class AnnotationTreeModel(AbstractTreeModel):
         
         src_parent_item = self.itemFromIndex(src_parent_index)
         dst_parent_item = self.itemFromIndex(dst_parent_index)
-        if not isinstance(src_parent_item, AnnotationTreeItem) or not isinstance(dst_parent_item, AnnotationTreeItem):
-            return False
 
         if not dst_parent_item.isGroup():
-            from qtpy.QtWidgets import QApplication, QMessageBox
-            focus_widget = QApplication.focusWidget()
-            title = 'Invalid Move'
-            text = f'Cannot move items into non-group "{dst_parent_item.path()}".'
-            QMessageBox.warning(focus_widget, title, text)
+            from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+            popupWarningDialog(
+                'Invalid Move',
+                f'Cannot move items into non-group "{dst_parent_item.path()}".'
+            )
             return False
 
         if src_parent_item is dst_parent_item:
@@ -148,11 +144,11 @@ class AnnotationTreeModel(AbstractTreeModel):
             for item in src_items_to_move:
                 assert isinstance(item, AnnotationTreeItem)
                 if item.isGroup():
-                    from qtpy.QtWidgets import QApplication, QMessageBox
-                    focus_widget = QApplication.focusWidget()
-                    title = 'Invalid Move'
-                    text = f'Cannot nest group "{item.path()}" in non-root group "{dst_parent_item.path()}".'
-                    QMessageBox.warning(focus_widget, title, text)
+                    from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+                    popupWarningDialog(
+                        'Invalid Move',
+                        f'Cannot nest group "{item.path()}" in non-root group "{dst_parent_item.path()}".'
+                    )
                     return False
         
         return super().moveRows(src_parent_index, src_row, count, dst_parent_index, dst_row)

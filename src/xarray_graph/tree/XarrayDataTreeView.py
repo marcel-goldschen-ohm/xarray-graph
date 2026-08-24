@@ -19,7 +19,7 @@ from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
 from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
 
 
-class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
+class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
 
     # finishedEditingAttrs = Signal(XarrayDataTreeItem)
 
@@ -121,7 +121,10 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
     def setTreeData(self, data: xr.DataTree) -> None:
         model = self.model()
         if model is None:
-            raise RuntimeError('Model is not set.')
+            model = XarrayDataTreeModel()
+            model.setTreeData(data)
+            self.setModel(model, updateViewOptionsFromModel=False)
+            return
         self.storeViewState()
         model.setTreeData(data)
         self.restoreViewState()
@@ -286,13 +289,14 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
         is_multi_nodes_selected: bool = has_multi_selection and len([item for item in self.selectedItems() if isinstance(item, XarrayDataTreeItem) and item.isNode()]) > 1
         menu.addSeparator()
 
-        action = QAction(
-            text='Merge Selected Nodes (TODO)',
-            parent=menu,
-            enabled=False #is_multi_nodes_selected
-        )
-        action.triggered.connect(lambda checked: self.mergeSelectedNodes())
-        menu.addAction(action)
+        # TODO
+        # action = QAction(
+        #     text='Merge Selected Nodes',
+        #     parent=menu,
+        #     enabled=is_multi_nodes_selected
+        # )
+        # action.triggered.connect(lambda checked: self.mergeSelectedNodes())
+        # menu.addAction(action)
 
         action = QAction(
             text='Concatenate Selected Nodes',
@@ -340,7 +344,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
             if not items:
                 return
             # ensure items are in tree order
-            items = items[0].orderedItems(items)
+            from xarray_graph.tree.AbstractTreeUtils import orderedItems
+            items = orderedItems(items)
             data = [item.data() for item in items]
             title = 'Selected'
         elif len(items) == 1:
@@ -413,8 +418,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
         shape = tuple(parent_item._node.sizes.values())
         dims = tuple(parent_item._node.dims)
         data = np.zeros(shape)
-        from xarray_graph.utils.utils import unique_name
-        name = unique_name('variable', list(parent_item._node.keys()))
+        from xarray_graph.tree.AbstractTreeUtils import uniqueName
+        name = uniqueName('variable', list(parent_item._node.keys()))
         new_var = xr.DataArray(data, name=name, dims=dims)
         dt = model.treeData()
         path = parent_item._node.path.rstrip('/') + '/' + name
@@ -434,7 +439,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
             if not ok:
                 return
         if dim in parent_item._node.coords:
-            model.popupWarningDialog(f'Coordinate for dimension "{dim}" already exists.')
+            from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+            popupWarningDialog('Warning', f'Coordinate for dimension "{dim}" already exists.')
             return
         size = parent_item._node.sizes[dim]
         data = np.arange(size)
@@ -455,7 +461,7 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
     def renameDimensions(self, item: XarrayDataTreeItem) -> None:
         if not item.isNode():
             item = cast(XarrayDataTreeItem, item.parent)
-        node = cast(xr.DataTree, item.data())
+        node = item.node()
 
         from qtpy.QtWidgets import QDialog, QLineEdit, QVBoxLayout, QDialogButtonBox
         
@@ -519,7 +525,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
             parent_node[name] = concatenated_dataset
             self.refresh()
         except Exception as err:
-            model.popupWarningDialog(str(err))
+            from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+            popupWarningDialog('Concatenation Failed', str(err))
     
     def keyPressEvent(self, event: QKeyEvent):
         if (event.key() == Qt.Key.Key_I) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
@@ -534,8 +541,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeModel, XarrayDataTreeItem]):
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
             else:
                 # ensure items are in tree order
-                from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
-                items = items[0].orderedItems(items)
+                from xarray_graph.tree.AbstractTreeUtils import orderedItems
+                items = orderedItems(items, order='depth-first')
                 data = [item.data() for item in items if isinstance(item, XarrayDataTreeItem)]
                 title = 'Selected'
                 infoDialog(data, parent=self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=title)
@@ -670,8 +677,7 @@ def test_live():
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     print(dt)
 
-    root = XarrayDataTreeItem(dt)
-    model = XarrayDataTreeModel(root)
+    model = XarrayDataTreeModel()
     model.setDataVarsVisible(True)
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)
@@ -688,16 +694,8 @@ def test_live():
 
     dt2 = dt.copy(deep=True)
 
-    root2 = XarrayDataTreeItem(dt2)
-    model2 = XarrayDataTreeModel(root2)
-    model2.setDataVarsVisible(True)
-    model2.setCoordsVisible(True)
-    model2.setInheritedCoordsVisible(True)
-    model2.setInfoColumnsVisible(True)
-    model2.setTreeData(dt2)
-
     view2 = XarrayDataTreeView()
-    view2.setModel(model2)
+    view2.setTreeData(dt2)
     view2.show()
     view2.resize(800, 1000)
     view2.viewAll()

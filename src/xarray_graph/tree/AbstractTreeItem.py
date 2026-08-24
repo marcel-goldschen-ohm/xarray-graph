@@ -420,37 +420,6 @@ class AbstractTreeItem():
             yield item
             item = item.prevLeaf()
     
-    @classmethod
-    def orderedItems(cls, items: list[Self], order='depth-first') -> list[Self]:
-        """ Returns the input items ordered according to their position in the tree.
-        """
-        if not items:
-            return []
-        root = items[0].root()
-        ordered_items: list[Self] = []
-        if order == 'depth-first':
-            for item in root.subtree_depth_first():
-                if item in items:
-                    ordered_items.append(item)
-        elif order == 'breadth-first':
-            for item in root.subtree_breadth_first():
-                if item in items:
-                    ordered_items.append(item)
-        return ordered_items
-
-    @classmethod
-    def allItemsAndTheirDescendents(cls, items: list[Self]) -> list[Self]:
-        """ Returns the input items along with all of their descendents.
-        """
-        if not items:
-            return []
-        all_items: list[Self] = []
-        for item in items:
-            for descendant in item.subtree_depth_first():
-                if descendant not in all_items:
-                    all_items.append(descendant)
-        return all_items
-
 
 def test_tree():
     

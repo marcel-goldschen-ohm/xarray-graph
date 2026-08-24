@@ -5,6 +5,7 @@ TODO:
 """
 from __future__ import annotations
 
+from typing import cast
 import xarray as xr
 from qtpy.QtCore import Qt, QModelIndex
 from qtpy.QtGui import QIcon, QColor
@@ -56,8 +57,8 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         },
     }
 
-    def __init__(self, root_item: XarrayDataTreeItem, *args, **kwargs):
-        super().__init__(root_item, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []
@@ -71,8 +72,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
 
         # theme
         from qtpy.QtWidgets import QApplication
-        app = QApplication.instance()
-        assert isinstance(app, QApplication)
+        app = cast(QApplication, QApplication.instance())
         color_scheme = app.styleHints().colorScheme()
         if color_scheme == Qt.ColorScheme.Dark:
             self.setTheme('Dark')
@@ -139,8 +139,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         """ Get the datatree.
         """
         root_item = self.rootItem()
-        datatree = root_item.data()
-        assert isinstance(datatree, xr.DataTree)
+        datatree = cast(xr.DataTree, root_item.data())
         return datatree
     
     def setTreeData(self, data: xr.DataTree) -> None:
@@ -170,9 +169,13 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
     def setDataVarsVisible(self, visible: bool) -> None:
         if visible == self.isDataVarsVisible():
             return
+        try:
+            root_item = self.rootItem()
+        except AttributeError:
+            return
         self.beginResetModel()
         self._is_data_vars_visible = visible
-        self._rebuildItemSubtree(self._root_item)
+        self._rebuildItemSubtree(root_item)
         self.endResetModel()
     
     def isCoordsVisible(self) -> bool:
@@ -181,9 +184,13 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
     def setCoordsVisible(self, visible: bool) -> None:
         if visible == self.isCoordsVisible():
             return
+        try:
+            root_item = self.rootItem()
+        except AttributeError:
+            return
         self.beginResetModel()
         self._is_coords_visible = visible
-        self._rebuildItemSubtree(self._root_item)
+        self._rebuildItemSubtree(root_item)
         self.endResetModel()
     
     def isInheritedCoordsVisible(self) -> bool:
@@ -192,9 +199,13 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
     def setInheritedCoordsVisible(self, visible: bool) -> None:
         if visible == self.isInheritedCoordsVisible():
             return
+        try:
+            root_item = self.rootItem()
+        except AttributeError:
+            return
         self.beginResetModel()
         self._is_inherited_coords_visible = visible
-        self._rebuildItemSubtree(self._root_item)
+        self._rebuildItemSubtree(root_item)
         self.endResetModel()
     
     def isInfoColumnsVisible(self) -> bool:
@@ -270,7 +281,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
                     sizes_str = ', '.join([f'{dim}: {size}' for dim, size in item.node().sizes.items()])
                     return f'({sizes_str})'
                 elif item.isVariable():
-                    var = item.data()
+                    var = cast(xr.DataArray, item.data())
                     dims_str = ', '.join([f'{dim}' for dim in var.dims])
                     dtype = var.data.dtype
                     return f'({dims_str})  {dtype}'
@@ -322,16 +333,16 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         if role == Qt.ItemDataRole.EditRole:
             if index.column() == 0:
                 # main column - rename object
-                new_name: str = value.strip()
+                new_name: str = str(value).strip()
                 if not new_name:
                     # must have a valid name
                     return False
                 if '/' in new_name:
-                    from qtpy.QtWidgets import QApplication, QMessageBox
-                    focus_widget = QApplication.focusWidget()
-                    title='Invalid Name'
-                    text = f'Object names cannot contain path separators "/".'
-                    QMessageBox.warning(focus_widget, title, text)
+                    from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+                    popupWarningDialog(
+                        'Invalid Name',
+                        'Object names cannot contain path separators "/".'
+                    )
                     return False
                 item = self.itemFromIndex(index)
                 if item.isInheritedCoord():
@@ -345,11 +356,11 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
                 assert isinstance(parent_node, xr.DataTree)
                 # ensure no name conflict with existing objects
                 if new_name in parent_node:
-                    from qtpy.QtWidgets import QApplication, QMessageBox
-                    focus_widget = QApplication.focusWidget()
-                    title='Existing Name'
-                    text = f'"{new_name}" already exists in parent DataTree.'
-                    QMessageBox.warning(focus_widget, title, text)
+                    from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+                    popupWarningDialog(
+                        'Existing Name',
+                        f'"{new_name}" already exists in parent DataTree.'
+                    )
                     return False
                 if item.isIndexCoord():
                     # rename dimension in entire branch
@@ -401,7 +412,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         if self.isInheritedCoordsVisible():
             parent_item = self.itemFromIndex(parent_index)
             items_to_remove = parent_item.children[row: row + count]
-            is_coord_removed = any(item.isCoord() for item in items_to_remove if isinstance(item, XarrayDataTreeItem))
+            is_coord_removed = any(item.isCoord() for item in items_to_remove)
         success = super().removeRows(row, count, parent_index)
         if self.isInheritedCoordsVisible() and success and is_coord_removed:
             # clean up inherited coords in parent's subtree
@@ -413,14 +424,15 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
             return False
 
         if not parent_item.isNode():
-            from qtpy.QtWidgets import QApplication, QMessageBox
-            focus_widget = QApplication.focusWidget()
-            title = 'Invalid Insertion'
-            text = f'Cannot insert items in non-node "{parent_item.path()}".'
-            QMessageBox.warning(focus_widget, title, text)
+            from xarray_graph.tree.AbstractTreeUtils import popupWarningDialog
+            popupWarningDialog(
+                'Invalid Insertion',
+                f'Cannot insert items in non-node "{parent_item.path()}".'
+            )
             return False
 
         # insert items one at a time (because actual insertion position may differ from requested position to maintain data type order)
+        from xarray_graph.tree.XarrayDataTreeItem import findInsertionIndex
         inserted_items: list[XarrayDataTreeItem] = []
         parent_keys: list[str] = list(parent_item.node().keys())
         skip_all_conflicts = False
@@ -460,7 +472,8 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
             name_conflict = None
             item_name = item.name()
             if item_name is None:
-                item_name = self.uniqueName('Node', parent_keys)
+                from xarray_graph.tree.AbstractTreeUtils import uniqueName
+                item_name = uniqueName('Node', parent_keys)
                 item.setName(item_name)
             if '/' in item_name:
                 name_conflict = f'"{item_name}" is not a valid DataTree name, which cannot contain "/".'
@@ -496,7 +509,8 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
                     # TODO
                     pass
                 elif action == 'Keep Both':
-                    new_name = self.uniqueName(item_name, parent_keys)
+                    from xarray_graph.tree.AbstractTreeUtils import uniqueName
+                    new_name = uniqueName(item_name, parent_keys)
                     item.setName(new_name)
                 elif action == 'Skip':
                     continue
@@ -523,7 +537,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
 
             # insert item
             # TODO: it's a bit wasteful to not use the tested insertion if it was successful, but would have to ensure item tree is updated to match
-            row_for_item = XarrayDataTreeItem._findInsertionIndex(parent_item, item, row)
+            row_for_item = findInsertionIndex(parent_item, item, row)
             success = super().insertItems([item], row_for_item, parent_item)
             if success:
                 inserted_items.append(item)
@@ -562,6 +576,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         src_items = src_parent_item.children[src_row: src_row + count]
 
         # move items one at a time (because actual insertion position may differ from requested position to maintain data type order)
+        from xarray_graph.tree.XarrayDataTreeItem import findInsertionIndex
         moved_items = []
         src_parent_keys: list[str] = list(src_parent_item.node().keys())
         dst_parent_keys: list[str] = list(dst_parent_item.node().keys())
@@ -634,7 +649,8 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
                         pass
                     elif action == 'Keep Both':
                         # !! Since rename ocurs before move, it must consider both src and dst parent keys to avoid conflicts. Better would be to rename mid-move after orphaning from src parent but before inserting into dst parent.
-                        new_name = self.uniqueName(src_item_name, dst_parent_keys + src_parent_keys)
+                        from xarray_graph.tree.AbstractTreeUtils import uniqueName
+                        new_name = uniqueName(src_item_name, dst_parent_keys + src_parent_keys)
                         src_item.setName(new_name)
                     elif action == 'Skip':
                         continue
@@ -662,7 +678,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
 
             # move src_item
             # TODO: it's a bit wasteful to not use the tested move if it was successful, but would have to ensure item trees are updated to match
-            dst_row_for_item = XarrayDataTreeItem._findInsertionIndex(dst_parent_item, src_item, dst_row)
+            dst_row_for_item = findInsertionIndex(dst_parent_item, src_item, dst_row)
             success = super().moveRows(src_parent_index, src_item.row(), 1, dst_parent_index, dst_row_for_item)
             if success:
                 moved_items.append(src_item)
@@ -722,13 +738,14 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
             existing_coord_names: list[str] = [child.name() for child in item.children if child.isCoord()]
             missing_coord_names: list[str] = [name for name in coord_names if (name not in existing_coord_names) and (self.isInheritedCoordsVisible() or name not in inherited_coord_names)]
             if missing_coord_names:
+                from xarray_graph.tree.XarrayDataTreeItem import findInsertionIndex
                 row_names: list[str] = self._visibleRowNames(item)
                 for name in missing_coord_names:
                     inherited_coord_item = XarrayDataTreeItem(node, name)
                     row: int = row_names.index(name)
                     if row == -1:
                         row = len(item.children)
-                    row = XarrayDataTreeItem._findInsertionIndex(item, inherited_coord_item, row)
+                    row = findInsertionIndex(item, inherited_coord_item, row)
                     self.beginInsertRows(index, row, row)
                     item.insertChild(row, inherited_coord_item)
                     self.endInsertRows()

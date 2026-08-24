@@ -19,8 +19,8 @@ class KeyValueTreeModel(AbstractTreeModel[KeyValueTreeItem]):
 
     MIME_TYPE = 'application/x-key-value-tree-model'
 
-    def __init__(self, root_item: KeyValueTreeItem, *args, **kwargs):
-        super().__init__(root_item, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []
@@ -37,8 +37,7 @@ class KeyValueTreeModel(AbstractTreeModel[KeyValueTreeItem]):
     def treeData(self) -> dict | list:
         """ Get the root key:value map.
         """
-        root_item = self.rootItem()
-        return root_item.value()
+        return self.rootItem().value()
     
     def setTreeData(self, data: dict | list) -> None:
         """ Set the root key:value map.
