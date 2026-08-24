@@ -2,6 +2,7 @@
 """
 from __future__ import annotations
 
+from typing import Type, Self, cast
 from qtpy.QtCore import Signal, Slot  # type: ignore (pylance does not recognize some of qtpy's type aliases)
 from qtpy.QtCore import Qt, QModelIndex, QItemSelection, QObject, QEvent, QPoint
 from qtpy.QtGui import QKeyEvent, QWheelEvent, QDragEnterEvent, QDropEvent
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from qtpy.QtWidgets import QMenu
 
 
-class TreeView(QTreeView):
+class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeView):
     """ Qt tree view for `AbstractTreeModel` with context menu and mouse wheel expand/collapse.
 
     Works out-of-the-box with any `AbstractTreeModel` and `AbstractTreeItem` implementation. Override the following methods to customize behavior:
@@ -28,7 +29,8 @@ class TreeView(QTreeView):
     wasRefreshed = Signal()
 
     # global list of copied items
-    _copied_items: list[AbstractTreeItem] = []
+    # check item type when pasting to ensure only items of the same type are pasted into a parent item
+    _copied_items = []
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -61,7 +63,7 @@ class TreeView(QTreeView):
         self._view_state: dict[str, dict] = {}
 
         # actions
-        from qtpy.QtGui import QAction  # type: ignore
+        from qtpy.QtGui import QAction  # type: ignore (pylance does not recognize some of qtpy's type aliases)
         from qtpy.QtGui import QKeySequence
         import qtawesome as qta
         self._refreshAction = QAction(
@@ -154,14 +156,15 @@ class TreeView(QTreeView):
         )
         self._viewAllAction.triggered.connect(lambda checked: self.viewAll())
     
-    def setModel(self, model: AbstractTreeModel) -> None:
+    def model(self) -> TreeModel:
+        return cast(TreeModel, super().model())
+
+    def setModel(self, model: TreeModel) -> None:
         super().setModel(model)
         model.refreshRequested.connect(self.refresh)
     
     def refresh(self) -> None:
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         self.storeViewState()
         model.reset()
         self.restoreViewState()
@@ -170,17 +173,15 @@ class TreeView(QTreeView):
     def forgetViewState(self) -> None:
         self._view_state = {}
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
-        for item in model.rootItem().subtree_depth_first():
+        root = cast(TreeItem, model.rootItem())
+        for item in root.subtree_depth_first():
             item.setViewState({})
     
-    def storeViewState(self, items: list[AbstractTreeItem] = None) -> None:
+    def storeViewState(self, items: list[TreeItem] = None) -> None:
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         if items is None:
-            items = list(model.rootItem().subtree_depth_first())
+            root = cast(TreeItem, model.rootItem())
+            items = list(root.subtree_depth_first())
         selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
         for item in items:
             if item.isRoot():
@@ -193,12 +194,11 @@ class TreeView(QTreeView):
             view_state['selected'] = index in selected_indexes
             self._view_state[item.path()] = view_state
 
-    def restoreViewState(self, items: list[AbstractTreeItem] = None) -> None:
+    def restoreViewState(self, items: list[TreeItem] = None) -> None:
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         if items is None:
-            items = list(model.rootItem().subtree_depth_first())
+            root = cast(TreeItem, model.rootItem())
+            items = list(root.subtree_depth_first())
         selected_indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
         from qtpy.QtCore import QItemSelection, QItemSelectionModel
         to_be_selected: QItemSelection = QItemSelection()
@@ -233,30 +233,27 @@ class TreeView(QTreeView):
         QTreeView.selectionChanged(self, selected, deselected)
         self.selectionWasChanged.emit()
 
-    def selectedItems(self, ordered=False) -> list[AbstractTreeItem]:
+    def selectedItems(self, ordered=False) -> list[TreeItem]:
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return []
         indexes: list[QModelIndex] = self.selectionModel().selectedIndexes()
         # get unique items from indexes
-        items: list[AbstractTreeItem] = []
+        items: list[TreeItem] = []
         for index in indexes:
-            item: AbstractTreeItem = model.itemFromIndex(index)
+            item = model.itemFromIndex(index)
             if item not in items:
                 items.append(item)
         if ordered:
             # return items in depth-first order
-            ordered_items: list[AbstractTreeItem] = []
-            for item in model.rootItem().subtree_depth_first():
+            ordered_items: list[TreeItem] = []
+            root = cast(TreeItem, model.rootItem())
+            for item in root.subtree_depth_first():
                 if item in items:
                     ordered_items.append(item)
             items = ordered_items
         return items
     
-    def setSelectedItems(self, items: list[AbstractTreeItem]):
+    def setSelectedItems(self, items: list[TreeItem]):
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         self.selectionModel().clearSelection()
         from qtpy.QtCore import QItemSelection, QItemSelectionModel
         selection: QItemSelection = QItemSelection()
@@ -272,7 +269,7 @@ class TreeView(QTreeView):
             self.selectionModel().select(selection, flags)
     
     def removeSelectedItems(self, ask: bool = True) -> None:
-        items: list[AbstractTreeItem] = self.selectedItems()
+        items: list[TreeItem] = self.selectedItems()
         if not items:
             return
         if len(items) == 1:
@@ -281,12 +278,10 @@ class TreeView(QTreeView):
             text = 'Remove selected?'
         self.removeItems(items, ask, text)
     
-    def removeItems(self, items: list[AbstractTreeItem], ask: bool = True, text: str = None) -> None:
+    def removeItems(self, items: list[TreeItem], ask: bool = True, text: str = None) -> None:
         if not items:
             return
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         if ask:
             parent_widget = self
             title = 'Remove'
@@ -318,13 +313,12 @@ class TreeView(QTreeView):
         Override in a derived class with the specific actions you want.
         """
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            raise TypeError(f'Model is not an AbstractTreeModel: {type(model)}')
 
+        from qtpy.QtWidgets import QMenu
         menu = QMenu(self)
 
         # item that was clicked on
-        # item: AbstractTreeItem = model.itemFromIndex(index)
+        # item: TreeItem = model.itemFromIndex(index)
         # Add item-specific actions here if desired
         
         # selection
@@ -370,38 +364,45 @@ class TreeView(QTreeView):
         self.removeSelectedItems(ask=False)
     
     def copySelection(self) -> None:
-        items: list[AbstractTreeItem] = self.selectedItems()
+        items: list[TreeItem] = self.selectedItems()
         if not items:
             return
         # only copy the branch roots (this includes the descendents)
-        items = AbstractTreeModel._branchRootItemsOnly(items)
-        # copy items
+        model = self.model()
+        items = model._branchRootItemsOnly(items)
+        if not items:
+            return
+        all_items: list[TreeItem] = items[0].allItemsAndTheirDescendents(items)
+        self.storeViewState(all_items)
         TreeView._copied_items = [item.copy() for item in items]
+        for item in TreeView._copied_items:
+            print(f'Copied item: {item.name()} with view state: {item.viewState()}')
     
-    def pasteCopy(self, parent_item: AbstractTreeItem = None, row: int = None) -> None:
+    def pasteCopy(self, parent_item: TreeItem = None, row: int = None) -> None:
         if not self.hasCopy():
             return
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         try:
             if parent_item is None:
                 selected_items = self.selectedItems()
                 if selected_items:
                     parent_item = selected_items[0]
                 else:
-                    parent_item = model.rootItem()
+                    parent_item = cast(TreeItem, model.rootItem())
             if row is None or row == -1:
+                if parent_item is None:
+                    return
                 row = len(parent_item.children)
-            items_to_paste = [item.copy() for item in TreeView._copied_items]
-            model.insertItems(items_to_paste, row, parent_item)
+            items: list[TreeItem] = [cast(TreeItem, item).copy() for item in TreeView._copied_items if isinstance(item, type(parent_item))]
+            for item in items:
+                print(f'Pasting item: {item.name()} with view state: {item.viewState()}')
+            if not items:
+                # in case attempt to paste items of a different type than the parent item
+                return
+            model.insertItems(items, row, parent_item)
             # update view state of pasted items and all their descendents as specified in the copied items
-            all_pasted_items = []
-            for item in items_to_paste:
-                for subitem in item.subtree_depth_first():
-                    if subitem not in all_pasted_items:
-                        all_pasted_items.append(subitem)
-            self.restoreViewState(all_pasted_items)
+            all_items: list[TreeItem] = items[0].allItemsAndTheirDescendents(items)
+            self.restoreViewState(all_items)
         except Exception as err:
             from qtpy.QtWidgets import QApplication, QMessageBox
             focus_widget = QApplication.focusWidget()
@@ -414,8 +415,7 @@ class TreeView(QTreeView):
         QTreeView.expandAll(self)
         # store current expanded depth
         model = self.model()
-        if isinstance(model, AbstractTreeModel):
-            self._expanded_depth = model.depth()
+        self._expanded_depth = model.depth()
     
     def collapseAll(self) -> None:
         QTreeView.collapseAll(self)
@@ -423,8 +423,6 @@ class TreeView(QTreeView):
     
     def expandToDepth(self, depth: int) -> None:
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         depth = max(0, min(depth, model.depth()))
         if depth == 0:
             self.collapseAll()
@@ -434,8 +432,6 @@ class TreeView(QTreeView):
     
     def resizeAllColumnsToContents(self) -> None:
         model = self.model()
-        if not isinstance(model, AbstractTreeModel):
-            return
         for col in range(model.columnCount()):
             self.resizeColumnToContents(col)
     
@@ -446,7 +442,7 @@ class TreeView(QTreeView):
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.Wheel:
             # mouse wheel with modifier key pressed --> expand/collapse tree
-            assert isinstance(event, QWheelEvent)
+            event = cast(QWheelEvent, event)
             modifiers: Qt.KeyboardModifier = event.modifiers()
             if Qt.KeyboardModifier.ControlModifier in modifiers \
             or Qt.KeyboardModifier.AltModifier in modifiers \
@@ -516,11 +512,12 @@ class TreeView(QTreeView):
 
         mime_data = event.mimeData()
         if isinstance(mime_data, TreeMimeData):
+            mime_data = cast(TreeMimeData[TreeModel, TreeItem], mime_data)
             # handle drag enter event for tree items
             if not hasattr(mime_data, '_dragged_items'):
                 # gather all items being dragged (includes descendents in subtrees)
                 # !!! Only do this at the start of the drag, do not repeat on subsequent dragEnterEvents such as when dragging between views.
-                dragged_items: list[AbstractTreeItem] = []
+                dragged_items: list[TreeItem] = []
                 for src_item in mime_data.src_items:
                     for item in src_item.subtree_depth_first():
                         if item not in dragged_items:
@@ -543,8 +540,9 @@ class TreeView(QTreeView):
             event.ignore()
             return
 
-        src_model: AbstractTreeModel = mime_data.src_model
-        src_items: list[AbstractTreeItem] = mime_data.src_items
+        mime_data = cast(TreeMimeData[TreeModel, TreeItem], mime_data)
+        src_model: TreeModel = mime_data.src_model
+        src_items: list[TreeItem] = mime_data.src_items
         dst_model = self.model()
         if not src_model or not src_items or not isinstance(dst_model, AbstractTreeModel):
             event.ignore()
@@ -566,7 +564,7 @@ class TreeView(QTreeView):
         elif drop_pos == QAbstractItemView.DropIndicatorPosition.BelowItem:
             dst_parent_index: QModelIndex = dst_model.parent(dst_index)
             dst_row += 1
-        dst_parent_item: AbstractTreeItem = dst_model.itemFromIndex(dst_parent_index)
+        dst_parent_item: TreeItem = dst_model.itemFromIndex(dst_parent_index)
         
         # store drop location in mime data
         mime_data.dst_model = dst_model
@@ -578,15 +576,12 @@ class TreeView(QTreeView):
         
         # update view state of dragged items and all their descendents as specified in the mime data
         # only update wether items are expanded, selection should be handled already in drag-n-drop
-        dragged_items: list[AbstractTreeItem] = getattr(mime_data, '_dragged_items', [])
+        dragged_items: list[TreeItem] = getattr(mime_data, '_dragged_items', [])
         for item in dragged_items:
             index: QModelIndex = dst_model.indexFromItem(item)
             if not index.isValid():
                 continue
-            try:
-                view_state: dict = item.viewState()
-            except AttributeError:
-                continue
+            view_state: dict = item.viewState()
             is_expanded = view_state['expanded'] # should be defined
             self.setExpanded(index, is_expanded)
             # assume selection is already handled in drag-n-drop
@@ -605,12 +600,15 @@ def test_live():
     
     class MyTreeItem(AbstractTreeItem):
 
-        def __init__(self, data: str = '', parent: AbstractTreeItem = None, sibling_index: int = -1):
+        def __init__(self, data: str = '', parent: Self | None = None, sibling_index: int = -1):
             super().__init__(parent, sibling_index)
             self.data = data
         
         def name(self) -> str:
             return self.data
+
+        def setName(self, name: str) -> None:
+            self.data = name
     
     app = QApplication()
 
@@ -629,10 +627,8 @@ def test_live():
         root.insertChild(1, c)
         root.children[1].appendChild(d)
 
-        model = AbstractTreeModel()
-        model.setRootItem(root)
-
-        view = TreeView()
+        model = AbstractTreeModel[MyTreeItem](root)
+        view = TreeView[AbstractTreeModel, MyTreeItem]()
         view.setModel(model)
         view.show()
         view.resize(800, 1000)
