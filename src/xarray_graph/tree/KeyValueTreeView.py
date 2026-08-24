@@ -5,7 +5,7 @@ TODO:
 """
 from __future__ import annotations
 
-from typing import Callable
+from typing import cast
 from qtpy.QtCore import QPoint, QSize, QModelIndex
 from qtpy.QtWidgets import QAbstractItemView, QMenu
 from xarray_graph.tree.KeyValueTreeItem import KeyValueTreeItem
@@ -17,12 +17,12 @@ if TYPE_CHECKING:
     from qtpy.QtGui import QIcon
 
 
-class KeyValueTreeView(TreeView):
+class KeyValueTreeView(TreeView[KeyValueTreeModel, KeyValueTreeItem]):
     """ Tree view for a `KeyValueTreeModel` with drag-and-drop, context menu, and mouse wheel expand/collapse.
     """
 
     def __init__(self, *args, **kwargs) -> None:
-        TreeView.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.setAlternatingRowColors(True)
 
@@ -47,21 +47,15 @@ class KeyValueTreeView(TreeView):
         """ Get the root key:value map.
         """
         model = self.model()
-        assert isinstance(model, KeyValueTreeModel)
         return model.treeData()
     
     def setTreeData(self, data: dict | list) -> None:
         """ Set the root key:value map.
         """
         model = self.model()
-        if model is None:
-            model = KeyValueTreeModel()
-            model.setTreeData(data)
-            self.setModel(model)
-        elif isinstance(model, KeyValueTreeModel):
-            self.storeViewState()
-            model.setTreeData(data)
-            self.restoreViewState()
+        self.storeViewState()
+        model.setTreeData(data)
+        self.restoreViewState()
     
     def setModel(self, model: KeyValueTreeModel, updateViewOptionsFromModel: bool = True) -> None:
         super().setModel(model)
@@ -72,24 +66,18 @@ class KeyValueTreeView(TreeView):
 
     def _updateViewOptionsFromModel(self):
         model = self.model()
-        if not isinstance(model, KeyValueTreeModel):
-            return
         self._showTypeColumnAction.blockSignals(True)
         self._showTypeColumnAction.setChecked(model.isTypesColumnVisible())
         self._showTypeColumnAction.blockSignals(False)
 
     def _updateModelFromViewOptions(self):
         model = self.model()
-        if not isinstance(model, KeyValueTreeModel):
-            return
         self.storeViewState()
         model.setTypesColumnVisible(self._showTypeColumnAction.isChecked())
         self.restoreViewState()
     
     def customContextMenu(self, index: QModelIndex = QModelIndex()) -> QMenu:
         model = self.model()
-        if not isinstance(model, KeyValueTreeModel):
-            raise TypeError(f'Model is not a KeyValueTreeModel: {type(model)}')
 
         from qtpy.QtGui import QAction  # type: ignore
         
@@ -127,8 +115,7 @@ class KeyValueTreeView(TreeView):
                 text='Insert New',
                 parent=menu
             )
-            callback: Callable[[bool, KeyValueTreeItem, int], None] = lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row)
-            action.triggered.connect(callback)
+            action.triggered.connect(lambda checked, parent_item=item.parent, row=item.siblingIndex(): self.insertNew(parent_item, row))
             menu.addAction(action)
 
         if item.isContainer():
@@ -136,8 +123,7 @@ class KeyValueTreeView(TreeView):
                 text='Append New Child',
                 parent=menu
             )
-            callback: Callable[[bool, KeyValueTreeItem, int], None] = lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row)
-            action.triggered.connect(callback)
+            action.triggered.connect(lambda checked, parent_item=item, row=len(item.children): self.insertNew(parent_item, row))
             menu.addAction(action)
         
         # selection
@@ -181,58 +167,18 @@ class KeyValueTreeView(TreeView):
         
         return menu
     
-    def pasteCopy(self, parent_item: KeyValueTreeItem | None = None, row: int = None) -> None:
-        try:
-            if not self.hasCopy():
-                return
-            model = self.model()
-            if not isinstance(model, KeyValueTreeModel):
-                return
-            if parent_item is None:
-                selected_items = self.selectedItems()
-                if selected_items:
-                    first_selected_item = selected_items[0]
-                    assert isinstance(first_selected_item, KeyValueTreeItem)
-                    parent_item = first_selected_item
-                else:
-                    root_item = model.rootItem()
-                    assert isinstance(root_item, KeyValueTreeItem)
-                    parent_item = root_item
-            if row is None or row == -1:
-                row = len(parent_item.children)
-            if not parent_item.isContainer() and not parent_item.isRoot():
-                row = parent_item.siblingIndex()
-                assert isinstance(parent_item.parent, KeyValueTreeItem)
-                parent_item = parent_item.parent
-            items_to_paste = [item.copy() for item in TreeView._copied_items]
-            model.insertItems(items_to_paste, row, parent_item)
-        except Exception as err:
-            from qtpy.QtWidgets import QApplication, QMessageBox
-            focus_widget = QApplication.focusWidget()
-            QMessageBox.warning(focus_widget, 'Error', f'Error pasting items: {err}')
+    def _defaultPlacement(self, parent_item: KeyValueTreeItem = None, row: int = None) -> tuple[KeyValueTreeItem, int]:
+        parent_item, row = super()._defaultPlacement(parent_item, row)
+        if not parent_item.isContainer() and not parent_item.isRoot():
+            row = parent_item.siblingIndex()
+            parent_item = parent_item.parent
+        parent_item = cast(KeyValueTreeItem, parent_item)
+        return parent_item, row
     
     def insertNew(self, parent_item: KeyValueTreeItem | None = None, row: int = None) -> None:
         try:
             model = self.model()
-            if not isinstance(model, KeyValueTreeModel):
-                return
-            if parent_item is None:
-                selected_items = self.selectedItems()
-                if selected_items:
-                    first_selected_item = selected_items[0]
-                    assert isinstance(first_selected_item, KeyValueTreeItem)
-                    parent_item = first_selected_item
-                else:
-                    root_item = model.rootItem()
-                    assert isinstance(root_item, KeyValueTreeItem)
-                    parent_item = root_item
-            if row is None or row == -1:
-                row = len(parent_item.children)
-            if not parent_item.isContainer() and not parent_item.isRoot():
-                row = parent_item.siblingIndex()
-                assert isinstance(parent_item.parent, KeyValueTreeItem)
-                parent_item = parent_item.parent
-            
+            parent_item, row = self._defaultPlacement(parent_item, row)
             names = [item.name() for item in parent_item.children]
             name = model.uniqueName('New', names)
             new_item = KeyValueTreeItem(name, None)
@@ -267,11 +213,7 @@ def test_live():
 
     root = KeyValueTreeItem(None, data)
     root.rebuildSubtree()
-
-    model = KeyValueTreeModel()
-    model.setTypesColumnVisible(True)
-    model.setRootItem(root)
-
+    model = KeyValueTreeModel(root)
     view = KeyValueTreeView()
     view.setModel(model)
     view.show()
@@ -285,11 +227,7 @@ def test_live():
 
     root2 = KeyValueTreeItem(None, data2)
     root2.rebuildSubtree()
-
-    model2 = KeyValueTreeModel()
-    model2.setTypesColumnVisible(True)
-    model2.setRootItem(root2)
-
+    model2 = KeyValueTreeModel(root2)
     view2 = KeyValueTreeView()
     view2.setModel(model2)
     view2.show()

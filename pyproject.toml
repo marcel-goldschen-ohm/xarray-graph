@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Visualization",
     "Topic :: Software Development :: User Interfaces",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "xarray",
     "h5netcdf",

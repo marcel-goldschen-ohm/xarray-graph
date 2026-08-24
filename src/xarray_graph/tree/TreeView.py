@@ -2,6 +2,7 @@
 """
 from __future__ import annotations
 
+from pyexpat import model
 from typing import Type, Self, cast
 from qtpy.QtCore import Signal, Slot  # type: ignore (pylance does not recognize some of qtpy's type aliases)
 from qtpy.QtCore import Qt, QModelIndex, QItemSelection, QObject, QEvent, QPoint
@@ -375,27 +376,14 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
         all_items: list[TreeItem] = items[0].allItemsAndTheirDescendents(items)
         self.storeViewState(all_items)
         TreeView._copied_items = [item.copy() for item in items]
-        for item in TreeView._copied_items:
-            print(f'Copied item: {item.name()} with view state: {item.viewState()}')
     
     def pasteCopy(self, parent_item: TreeItem = None, row: int = None) -> None:
         if not self.hasCopy():
             return
         model = self.model()
         try:
-            if parent_item is None:
-                selected_items = self.selectedItems()
-                if selected_items:
-                    parent_item = selected_items[0]
-                else:
-                    parent_item = cast(TreeItem, model.rootItem())
-            if row is None or row == -1:
-                if parent_item is None:
-                    return
-                row = len(parent_item.children)
+            parent_item, row = self._defaultPlacement(parent_item, row)
             items: list[TreeItem] = [cast(TreeItem, item).copy() for item in TreeView._copied_items if isinstance(item, type(parent_item))]
-            for item in items:
-                print(f'Pasting item: {item.name()} with view state: {item.viewState()}')
             if not items:
                 # in case attempt to paste items of a different type than the parent item
                 return
@@ -407,7 +395,21 @@ class TreeView[TreeModel: AbstractTreeModel, TreeItem: AbstractTreeItem](QTreeVi
             from qtpy.QtWidgets import QApplication, QMessageBox
             focus_widget = QApplication.focusWidget()
             QMessageBox.warning(focus_widget, 'Error', f'Error pasting items: {err}')
-    
+
+    def _defaultPlacement(self, parent_item: TreeItem = None, row: int = None) -> tuple[TreeItem, int]:
+        if parent_item is None:
+            selected_items = self.selectedItems()
+            if selected_items:
+                parent_item = selected_items[0]
+            else:
+                model = self.model()
+                parent_item = cast(TreeItem, model.rootItem())
+
+        if row is None or row == -1:
+            row = len(parent_item.children)
+
+        return parent_item, row
+
     def hasCopy(self) -> bool:
         return len(TreeView._copied_items) > 0
     

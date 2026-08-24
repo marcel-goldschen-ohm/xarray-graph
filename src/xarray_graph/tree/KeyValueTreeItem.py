@@ -2,6 +2,7 @@
 """
 from __future__ import annotations
 
+from typing import Self
 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
@@ -9,7 +10,7 @@ class KeyValueTreeItem(AbstractTreeItem):
     """ Holds a key:value pair and parent-child linkage for nested structures.
     """
 
-    def __init__(self, key, value, parent: KeyValueTreeItem = None, sibling_index: int = None):
+    def __init__(self, key, value, parent: Self | None = None, sibling_index: int = None):
         self._key = key
         self._value = value
         super().__init__(parent, sibling_index)
@@ -27,7 +28,7 @@ class KeyValueTreeItem(AbstractTreeItem):
     def key(self):
         # if this item is in a list, return the item's sibling index
         parent = self.parent
-        if isinstance(parent, KeyValueTreeItem) and isinstance(parent.value(), list):
+        if parent and parent.isList():
             return self.siblingIndex()
         # otherwise, return the item's key
         return self._key
@@ -35,11 +36,9 @@ class KeyValueTreeItem(AbstractTreeItem):
     def setKey(self, key) -> None:
         # if this item is in a dict, update the key in the parent dict
         parent = self.parent
-        if isinstance(parent, KeyValueTreeItem):
-            parent_map: dict | list = parent.value()
-            if isinstance(parent_map, dict):
-                # we only need to update the underlying data for dicts, since lists are indexed by sibling order
-                parent_map[key] = parent_map.pop(self.key())
+        if parent and parent.isDict():
+            parent_dict: dict = parent.value()
+            parent_dict[key] = parent_dict.pop(self.key())
         # update this item's key
         self._key = key
     
@@ -48,7 +47,7 @@ class KeyValueTreeItem(AbstractTreeItem):
     
     def setValue(self, value) -> None:
         parent = self.parent
-        if isinstance(parent, KeyValueTreeItem):
+        if parent:
             parent_map: dict | list = parent.value()
             parent_map[self.key()] = value
         self._value = value
@@ -95,14 +94,14 @@ class KeyValueTreeItem(AbstractTreeItem):
         
         # Remove value from parent map
         parent = self.parent
-        assert isinstance(parent, KeyValueTreeItem)
-        parent.value().pop(self.key())
+        parent_map: dict | list = parent.value()
+        parent_map.pop(self.key())
         
         # Update item linkage
         self.parent.children.remove(self)
         self.parent = None
     
-    def insertChild(self, index: int, item: KeyValueTreeItem) -> None:
+    def insertChild(self, index: int, item: Self) -> None:
         # Insert child value into this map
         value = self.value()
         if isinstance(value, dict):
@@ -119,18 +118,18 @@ class KeyValueTreeItem(AbstractTreeItem):
         self.children.insert(index, item)
         item.parent = self
     
-    def copy(self) -> KeyValueTreeItem:
+    def copy(self) -> Self:
         """ Returns an orphaned copy of this item.
         """
         from copy import deepcopy
-        item_copy = KeyValueTreeItem(self.key(), deepcopy(self.value()))
+        cls = type(self)
+        item_copy = cls(self.key(), deepcopy(self.value()))
         item_copy.rebuildSubtree()
         return item_copy
     
 
 def test_tree():
     import numpy as np
-    import json
 
     tree = {
         'a': 1,
@@ -165,7 +164,6 @@ def test_tree():
     print('-'*82)
     print('move /c/d to /d')
     d = root['c/d']
-    assert isinstance(d, KeyValueTreeItem)
     d.orphan()
     root.appendChild(d)
     print(root)
@@ -190,17 +188,14 @@ def test_tree():
     print('-'*82)
     print('/c/me:hi -> /c/me:bye')
     me = root['c/me']
-    assert isinstance(me, KeyValueTreeItem)
     me.setValue('bye')
     print(root)
 
     print('-'*82)
     print('move /b/1 to first child of /c')
     b1 = root['b/1']
-    assert isinstance(b1, KeyValueTreeItem)
     b1.orphan()
     c = root['c']
-    assert isinstance(c, KeyValueTreeItem)
     c.insertChild(0, b1)
     print(root)
 

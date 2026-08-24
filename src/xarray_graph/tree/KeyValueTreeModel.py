@@ -13,14 +13,14 @@ if TYPE_CHECKING:
     from qtpy.QtGui import QIcon
 
 
-class KeyValueTreeModel(AbstractTreeModel):
+class KeyValueTreeModel(AbstractTreeModel[KeyValueTreeItem]):
     """ PyQt tree model interface for a key:value mapping.
     """
 
     MIME_TYPE = 'application/x-key-value-tree-model'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, root_item: KeyValueTreeItem, *args, **kwargs):
+        super().__init__(root_item, *args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []
@@ -33,15 +33,11 @@ class KeyValueTreeModel(AbstractTreeModel):
         import qtawesome as qta
         self._dict_icon: QIcon = qta.icon('ph.folder-thin')
         self._list_icon: QIcon = qta.icon('ph.list-numbers-thin')
-
-        # setup item tree
-        self.setRootItem(KeyValueTreeItem(None, {}))
     
     def treeData(self) -> dict | list:
         """ Get the root key:value map.
         """
         root_item = self.rootItem()
-        assert isinstance(root_item, KeyValueTreeItem)
         return root_item.value()
     
     def setTreeData(self, data: dict | list) -> None:
@@ -85,9 +81,7 @@ class KeyValueTreeModel(AbstractTreeModel):
             return Qt.ItemFlag.NoItemFlags
         
         item = self.itemFromIndex(index)
-        assert isinstance(item, KeyValueTreeItem)
         parent_item = item.parent
-        assert isinstance(parent_item, KeyValueTreeItem)
         if index.column() == 2:
             # types column is not editable
             flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
@@ -111,8 +105,6 @@ class KeyValueTreeModel(AbstractTreeModel):
         
         if role == Qt.ItemDataRole.DisplayRole or role == Qt.ItemDataRole.EditRole:
             item = self.itemFromIndex(index)
-            if not isinstance(item, KeyValueTreeItem):
-                return
             if index.column() == 0:
                 return item.key()
             elif index.column() == 1:
@@ -131,8 +123,6 @@ class KeyValueTreeModel(AbstractTreeModel):
         elif role == Qt.ItemDataRole.DecorationRole:
             if index.column() == 0:
                 item = self.itemFromIndex(index)
-                if not isinstance(item, KeyValueTreeItem):
-                    return
                 if isinstance(item.value(), dict):
                     return self._dict_icon
                 elif isinstance(item.value(), list):
@@ -154,8 +144,6 @@ class KeyValueTreeModel(AbstractTreeModel):
         
         if role == Qt.ItemDataRole.EditRole:
             item = self.itemFromIndex(index)
-            if not isinstance(item, KeyValueTreeItem):
-                return False
             if index.column() == 0:
                 # edit key
                 item.setKey(value)
@@ -215,9 +203,7 @@ def test_live():
     root = KeyValueTreeItem(None, data)
     root.rebuildSubtree()
     print(root)
-    model = KeyValueTreeModel()
-    model.setTypesColumnVisible(True)
-    model.setRootItem(root)
+    model = KeyValueTreeModel(root)
     view = QTreeView()
     view.setModel(model)
     view.show()
