@@ -1,7 +1,7 @@
 """ PySide/PyQt button for selecting and displaying a color.
 """
 
-from qtpy.QtCore import Signal
+from qtpy.QtCore import Signal  # type: ignore
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import QToolButton
 from xarray_graph.utils.color import ColorType
@@ -24,7 +24,7 @@ class ColorButton(QToolButton):
     def setColor(self, color: ColorType):
         from qtpy.QtGui import QIcon
         from xarray_graph.utils.color import toQColor
-        color: QColor = toQColor(color)
+        color = toQColor(color)
         self.setStyleSheet(f'background-color: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()}); border: 1px solid black;')
         if color == QColor():
             from qtawesome import icon as qta_icon
@@ -35,7 +35,7 @@ class ColorButton(QToolButton):
         self.colorChanged.emit(color)
     
     def pickColor(self):
-        color: QColor = self.color()
+        color = self.color()
         from qtpy.QtWidgets import QColorDialog
         color = QColorDialog.getColor(color, self, "Select Color", options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if color.isValid():
