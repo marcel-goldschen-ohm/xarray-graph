@@ -54,9 +54,8 @@ class KeyValueTreeView(TreeView[KeyValueTreeItem, KeyValueTreeModel]):
         """
         model = self.model()
         if not model:
-            root_item = KeyValueTreeItem(None, data)
-            root_item.rebuildSubtree()
-            model = KeyValueTreeModel(root_item)
+            model = KeyValueTreeModel()
+            model.setTreeData(data)
             self.setModel(model)
             return
         self.storeViewState()
@@ -218,8 +217,10 @@ def test_live():
 
     app = QApplication()
 
+    model = KeyValueTreeModel()
+    model.setTreeData(data)
     view = KeyValueTreeView()
-    view.setTreeData(data)
+    view.setModel(model)
     view.show()
     view.resize(QSize(800, 800))
     view.move(QPoint(50, 50))

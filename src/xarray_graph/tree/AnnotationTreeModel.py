@@ -17,14 +17,12 @@ class AnnotationTreeModel(AbstractTreeModel[AnnotationTreeItem]):
     MIME_TYPE = 'application/x-annotation-tree-model'
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        root_item = AnnotationTreeItem(data=[])
+        super().__init__(root_item, *args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []
         self._column_labels: list[str] = ['Annotation']
-
-        # annotation dicts
-        self.setAnnotations([])
     
     def reset(self) -> None:
         self.setAnnotations(self.annotations())

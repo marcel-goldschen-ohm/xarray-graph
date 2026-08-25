@@ -57,7 +57,8 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         },
     }
 
-    def __init__(self, root_item: XarrayDataTreeItem, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        root_item = XarrayDataTreeItem()
         super().__init__(root_item, *args, **kwargs)
 
         # headers
@@ -863,8 +864,7 @@ def test_model():
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     # print(dt)
 
-    root = XarrayDataTreeItem()
-    model = XarrayDataTreeModel(root)
+    model = XarrayDataTreeModel()
     model.setDataVarsVisible(True)
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)

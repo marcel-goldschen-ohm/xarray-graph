@@ -19,7 +19,8 @@ class KeyValueTreeModel(AbstractTreeModel[KeyValueTreeItem]):
 
     MIME_TYPE = 'application/x-key-value-tree-model'
 
-    def __init__(self, root_item: KeyValueTreeItem, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        root_item = KeyValueTreeItem(None, {})
         super().__init__(root_item, *args, **kwargs)
 
         # headers
@@ -202,7 +203,8 @@ def test_live():
     root = KeyValueTreeItem(None, data)
     root.rebuildSubtree()
     print(root)
-    model = KeyValueTreeModel(root)
+    model = KeyValueTreeModel()
+    model.setRootItem(root)
     view = QTreeView()
     view.setModel(model)
     view.show()
