@@ -5,13 +5,16 @@ TODO:
 """
 from __future__ import annotations
 
-from qtpy.QtCore import Qt, Signal, QRect
+from typing import cast
+from qtpy.QtCore import Signal  # type: ignore
+from qtpy.QtCore import Qt, QRect
+from qtpy.QtGui import QAction  # type: ignore
 from qtpy.QtWidgets import QSplitter, QSplitterHandle
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from qtpy.QtGui import QMouseEvent, QPaintEvent
-    from qtpy.QtWidgets import QWidget, QAction
+    from qtpy.QtWidgets import QWidget
 
 
 class CollapsibleSectionsSplitter(QSplitter):
@@ -49,15 +52,17 @@ class CollapsibleSectionsSplitter(QSplitter):
             'actions': None
         }]
 
-        from qtawesome import icon as qta_icon
+        from qtawesome import icon
         if self.orientation() == Qt.Orientation.Vertical:
-            self._collapsed_icon = qta_icon('msc.chevron-right')
-            self._expanded_icon = qta_icon('msc.chevron-down')
+            self._collapsed_icon = icon('msc.chevron-right')
+            self._expanded_icon = icon('msc.chevron-down')
         elif self.orientation() == Qt.Orientation.Horizontal:
-            self._collapsed_icon = qta_icon('msc.chevron-up')
-            self._expanded_icon = qta_icon('msc.chevron-right')
-        self._focus_icon = qta_icon('ri.fullscreen-line')
-        self._unfocus_icon = qta_icon('ri.fullscreen-exit-line')
+            self._collapsed_icon = icon('msc.chevron-up')
+            self._expanded_icon = icon('msc.chevron-right')
+        self._focus_icon = icon('ri.fullscreen-line')
+        self._unfocus_icon = icon('ri.fullscreen-exit-line')
+
+        self._focused_index: int | None = None
 
     def _validateIndex(self, index: int):
         if index < 1:
@@ -98,6 +103,8 @@ class CollapsibleSectionsSplitter(QSplitter):
 
         # remove the section widget (or spacer if section is collapsed) from the splitter
         current_widget = self.widget(index)
+        if current_widget is None:
+            raise RuntimeError(f'No widget found at index {index}.')
         current_widget.setParent(None)
 
         self._sections.pop(index)
@@ -108,7 +115,7 @@ class CollapsibleSectionsSplitter(QSplitter):
             for i in range(1, self.count()):
                 if self._sections[i]['title'] == title:
                     return i
-            return None
+            raise ValueError(f'No section with title "{title}" found.')
         from qtpy.QtWidgets import QWidget
         if isinstance(title_or_widget, QWidget):
             # do NOT use self.indexOf(widget) because it returns the index of the widget in the splitter, which may be a spacer if the section is collapsed
@@ -116,8 +123,9 @@ class CollapsibleSectionsSplitter(QSplitter):
             for i in range(1, self.count()):
                 if self._sections[i]['widget'] is widget:
                     return i
-            return None
-    
+            raise ValueError(f'No section with widget "{widget}" found.')
+        raise TypeError(f'Expected a string or QWidget, but got {type(title_or_widget)}.')
+
     def sectionTitle(self, index: int) -> QWidget:
         self._validateIndex(index)
         return self._sections[index]['title']
@@ -134,7 +142,9 @@ class CollapsibleSectionsSplitter(QSplitter):
     def setSectionWidget(self, index: int, widget: QWidget):
         self._validateIndex(index)
         section: dict = self._sections[index]
-        current_widget: QWidget = self.widget(index)
+        current_widget = self.widget(index)
+        if current_widget is None:
+            raise RuntimeError(f'No widget found at index {index}.')
         if current_widget is section['widget']:
             # section is expanded, so replace the widget in the splitter
             current_widget.setParent(None)
@@ -158,14 +168,16 @@ class CollapsibleSectionsSplitter(QSplitter):
     
     def isSectionExpanded(self, index: int) -> bool:
         self._validateIndex(index)
-        current_widget: QWidget = self.widget(index)
+        current_widget = self.widget(index)
         return current_widget is self._sections[index]['widget']
     
     def setSectionExpanded(self, index: int, expanded: bool):
         self._validateIndex(index)
         section: dict = self._sections[index]
         
-        current_widget: QWidget = self.widget(index)
+        current_widget = self.widget(index)
+        if current_widget is None:
+            raise RuntimeError(f'No widget found at index {index}.')
         if expanded:
             if current_widget is section['spacer']:
                 # expand by replacing spacer with widget
@@ -181,41 +193,55 @@ class CollapsibleSectionsSplitter(QSplitter):
     
     def isSectionVisible(self, index: int) -> bool:
         self._validateIndex(index)
-        widget: QWidget = self.widget(index)
+        widget = self.widget(index)
+        if widget is None:
+            raise RuntimeError(f'No widget found at index {index}.')
         return widget.isVisible()
     
     def setSectionVisible(self, index: int, visible: bool):
         self._validateIndex(index)
-        widget: QWidget = self.widget(index)
+        widget = self.widget(index)
+        if widget is None:
+            raise RuntimeError(f'No widget found at index {index}.')
         widget.setVisible(visible)
     
+    def focusedSectionIndex(self) -> int | None:
+        return self._focused_index
+
+    def setFocusedSectionIndex(self, index: int | None):
+        if index is None:
+            self.unfocusSection()
+        else:
+            self.focusSection(index)
+
     def focusSection(self, index: int):
         self._validateIndex(index)
 
-        # check if a section is focused
-        is_focused: bool = getattr(self, '_focused_index', None) is not None
+        # check if a section is already focused
+        focused_index: int | None = self.focusedSectionIndex()
+        is_focused: bool = focused_index is not None
 
         # store the expanded state of all sections before focusing, so that we can restore it when unfocusing
         if is_focused:
-            # expanded state array should alredy exist, so just update the focused section to expanded
+            # expanded state array should already exist, so just update the focused section to expanded
             self._expanded_state[index] = True
         else:
-            # first None is for the initial spacer, which is not a section and should not be expanded/collapsed
-            self._expanded_state = [None] + [self.isSectionExpanded(i) for i in range(1, self.count())]
+            # first False is for the initial spacer, which is not a section and should not be expanded/collapsed
+            self._expanded_state = [False] + [self.isSectionExpanded(i) for i in range(1, self.count())]
 
         # collapse all sections except the focused one
         for i in range(1, self.count()):
             self.setSectionExpanded(i, i == index)
 
         # store the focused index
-        self._focused_index: int = index
+        self._focused_index = index
 
         # force repaint of handles (primarily for first handle which otherwise may not repaint)
         self.update()
     
     def unfocusSection(self):
         # check if a section is focused
-        focused_index: int =  getattr(self, '_focused_index', None)
+        focused_index: int | None =  getattr(self, '_focused_index', None)
         if focused_index is None:
             return
 
@@ -254,7 +280,8 @@ class CollapsibleSectionsHandle(QSplitterHandle):
             focus_icon_rect: QRect = self._focus_icon_rect()
             if focus_icon_rect.contains(event.pos()):
                 # toggle fullscreen of section
-                splitter: CollapsibleSectionsSplitter = self.splitter()
+                splitter = self.splitter()
+                splitter = cast(CollapsibleSectionsSplitter, splitter)
                 index: int = splitter.indexOf(self)
                 is_focused: bool = getattr(splitter, '_focused_index', None) == index
                 if is_focused:
@@ -264,12 +291,13 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                     # focus this section
                     splitter.focusSection(index)
                 # clear last press info to avoid toggling expand/collapse as well
-                self._last_press_position = None
-                self._last_press_time_sec = None
+                self._last_press_position: QPoint | None = None
+                self._last_press_time_sec: float | None = None
                 return
 
             # custom actions icons
-            splitter: CollapsibleSectionsSplitter = self.splitter()
+            splitter = self.splitter()
+            splitter = cast(CollapsibleSectionsSplitter, splitter)
             index: int = splitter.indexOf(self)
             section: dict = splitter._sections[index]
             n_actions: int = len(section['actions']) if section['actions'] is not None else 0
@@ -280,15 +308,19 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                         action_index: int = (event.pos().x() - custom_icons_rect.left()) // self.height()
                     elif self.orientation() == Qt.Orientation.Horizontal:
                         action_index: int = (custom_icons_rect.bottom() - event.pos().y()) // self.width()
-                    action: QAction = section['actions'][action_index]
+                    actions = section['actions'] or []
+                    actions = cast(list[QAction], actions)
+                    if action_index < 0 or action_index >= len(actions):
+                        return
+                    action: QAction = actions[action_index]
                     action.trigger()
                     return
             
             # store press position and time
             import time
             from qtpy.QtCore import QPoint
-            self._last_press_position: QPoint = event.pos()
-            self._last_press_time_sec: float = time.time()
+            self._last_press_position: QPoint | None = event.pos()
+            self._last_press_time_sec: float | None = time.time()
 
         super().mousePressEvent(event)
     
@@ -310,7 +342,8 @@ class CollapsibleSectionsHandle(QSplitterHandle):
             return
         
         # custom actions icons
-        splitter: CollapsibleSectionsSplitter = self.splitter()
+        splitter = self.splitter()
+        splitter = cast(CollapsibleSectionsSplitter, splitter)
         index: int = splitter.indexOf(self)
         section: dict = splitter._sections[index]
         n_actions: int = len(section['actions']) if section['actions'] is not None else 0
@@ -328,31 +361,36 @@ class CollapsibleSectionsHandle(QSplitterHandle):
 
         if event.button() == Qt.MouseButton.LeftButton:
             # if release is close to press in both space and time, treat as click
-            has_last_press_time: bool = hasattr(self, '_last_press_time_sec') and self._last_press_time_sec is not None
-            if not has_last_press_time:
+            last_press_time_sec = getattr(self, '_last_press_time_sec', None)
+            if last_press_time_sec is None:
+                return
+            last_press_position = getattr(self, '_last_press_position', None)
+            if last_press_position is None:
                 return
             import time, math
             from qtpy.QtCore import QPoint
-            delta_time_sec: float = time.time() - self._last_press_time_sec
+            delta_time_sec: float = time.time() - last_press_time_sec
             if delta_time_sec <= self._click_time_sec:
-                delta_position: QPoint = event.pos() - self._last_press_position
+                delta_position: QPoint = event.pos() - last_press_position
                 distance: float = math.sqrt(delta_position.x()**2 + delta_position.y()**2)
                 if distance <= self._click_radius:
                     # treat as click => toggle section
-                    splitter: CollapsibleSectionsSplitter = self.splitter()
+                    splitter = self.splitter()
+                    splitter = cast(CollapsibleSectionsSplitter, splitter)
                     index: int = splitter.indexOf(self)
                     expanded: bool = not splitter.isSectionExpanded(index)
                     splitter.setSectionExpanded(index, expanded)
                     # if we collapsed the focused section, unfocus it
                     if splitter.isSectionExpanded(index) == False:
-                        focused_index: int =  getattr(splitter, '_focused_index', None)
+                        focused_index = splitter.focusedSectionIndex()
                         if index == focused_index:
                             splitter._expanded_state[index] = False
                             splitter.unfocusSection()
                     splitter.sectionIsExpandedChanged.emit(index, expanded)
     
     def paintEvent(self, event: QPaintEvent):
-        splitter: CollapsibleSectionsSplitter = self.splitter()
+        splitter = self.splitter()
+        splitter = cast(CollapsibleSectionsSplitter, splitter)
         index: int = splitter.indexOf(self)
         section: dict = splitter._sections[index]
         rect: QRect = self.rect()
@@ -368,7 +406,7 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         from qtpy.QtWidgets import QStylePainter, QStyle
         painter = QStylePainter(self)
         try:
-            painter.drawComplexControl(QStyle.CC_ToolButton, opt)
+            painter.drawComplexControl(QStyle.ComplexControl.CC_ToolButton, opt)
 
             from qtpy.QtGui import QIcon, QPixmap
 
@@ -413,7 +451,6 @@ class CollapsibleSectionsHandle(QSplitterHandle):
                 # painter.setBrush(Qt.GlobalColor.red)
                 # painter.drawRect(QRect(0, -rect.width(), rect.height(), rect.width()))
                 painter.drawText(QRect(0, -rect.width(), rect.height(), rect.width()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, section['title'])
-                # painter.drawText(0, 0, section['title'])
                 painter.restore()
         finally:
             if painter.isActive():
@@ -423,33 +460,34 @@ class CollapsibleSectionsHandle(QSplitterHandle):
         rect: QRect = self.rect()
         if self.orientation() == Qt.Orientation.Vertical:
             return QRect(rect.left(), rect.top(), rect.height(), rect.height())
-        elif self.orientation() == Qt.Orientation.Horizontal:
+        else: #elif self.orientation() == Qt.Orientation.Horizontal:
             return QRect(rect.left(), rect.bottom() - rect.width(), rect.width(), rect.width())
     
     def _focus_icon_rect(self) -> QRect:
         rect: QRect = self.rect()
         if self.orientation() == Qt.Orientation.Vertical:
             return QRect(rect.right() - rect.height(), rect.top(), rect.height(), rect.height())
-        elif self.orientation() == Qt.Orientation.Horizontal:
+        else: #elif self.orientation() == Qt.Orientation.Horizontal:
             return QRect(rect.left(), rect.top(), rect.width(), rect.width())
     
     def _custom_icons_rect(self, n_icons: int) -> QRect:
         rect: QRect = self.rect()
         if self.orientation() == Qt.Orientation.Vertical:
             return QRect(rect.right() - rect.height() * (n_icons + 1), rect.top(), rect.height() * n_icons, rect.height())
-        elif self.orientation() == Qt.Orientation.Horizontal:
+        else: #elif self.orientation() == Qt.Orientation.Horizontal:
             return QRect(rect.left(), rect.top() + rect.width(), rect.width(), rect.width() * n_icons)
     
     def _custom_icon_rect(self, index: int, n_icons: int) -> QRect:
         rect: QRect = self.rect()
         if self.orientation() == Qt.Orientation.Vertical:
             return QRect(rect.right() - rect.height() * (n_icons - index + 1), rect.top(), rect.height(), rect.height())
-        elif self.orientation() == Qt.Orientation.Horizontal:
+        else: #elif self.orientation() == Qt.Orientation.Horizontal:
             return QRect(rect.left(), rect.top() + rect.width() * (n_icons - index), rect.width(), rect.width())
 
 
 def test_live():
-    from qtpy.QtWidgets import QApplication, QTableView, QTreeView, QListView, QPushButton, QAction
+    from qtpy.QtGui import QAction  # type: ignore
+    from qtpy.QtWidgets import QApplication, QTableView, QTreeView, QListView, QPushButton
     app = QApplication()
 
     ui = CollapsibleSectionsSplitter()#(orientation=Qt.Orientation.Horizontal)
@@ -465,8 +503,12 @@ def test_live():
     ui.setFirstSectionHeaderVisible(False)
     print('index of "table":', ui.indexOf(table))
 
-    from qtawesome import icon as qta_icon
-    actions = [QAction(qta_icon('fa5s.plus'), 'Add', triggered=lambda: print('Add')), QAction(qta_icon('fa5s.minus'), 'Remove', triggered=lambda: print('Remove'))]
+    from qtawesome import icon
+    add_action = QAction(icon('fa5s.plus'), 'Add')
+    add_action.triggered.connect(lambda: print('Add'))
+    remove_action = QAction(icon('fa5s.minus'), 'Remove')
+    remove_action.triggered.connect(lambda: print('Remove'))
+    actions = [add_action, remove_action]
     index = ui.sectionIndex('list')
     ui.setSectionActions(index, actions)
     
