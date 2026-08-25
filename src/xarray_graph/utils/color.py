@@ -4,7 +4,7 @@
 from qtpy.QtGui import QColor
 
 
-ColorType = str | tuple[int | float] | list[int | float] | QColor | None
+ColorType = str | tuple[int | float, ...] | list[int | float] | QColor | None
 
 
 def toQColor(color: ColorType, name_map: dict[str, ColorType] = None) -> QColor:
@@ -24,16 +24,17 @@ def toQColor(color: ColorType, name_map: dict[str, ColorType] = None) -> QColor:
             return QColor()
         else:
             # (r,g,b) or (r,g,b,a)
-            color = color.lstrip('(').rstrip(')').split(',')
+            color_parts = color.lstrip('(').rstrip(')').split(',')
             try:
-                color = [int(part) for part in color]
+                color = [int(part) for part in color_parts]
             except:
-                color = [float(part) for part in color]
+                color = [float(part) for part in color_parts]
     # (r,g,b) or (r,g,b,a)
     if isinstance(color[0], int):
         return QColor(*color)
     elif isinstance(color[0], float):
         return QColor.fromRgbF(*color)
+    raise ValueError(f'Invalid color: {color}')
 
 
 def toColorStr(color: ColorType) -> str:
