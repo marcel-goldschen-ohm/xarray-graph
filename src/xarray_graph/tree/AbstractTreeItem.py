@@ -108,6 +108,8 @@ class AbstractTreeItem():
     def __setitem__(self, path: str, new_item: Self) -> None:
         """ Set subtree item at path starting from this item.
 
+        For nonexistent paths, new items will be created to ensure validity of the path.
+
         !! For unique item access, all paths in the tree must be unique.
            Unique paths are not a requirement, it is up to you to enforce this if you want it.
            If the path is not unique, the first item with path will be set to the new item.
@@ -236,11 +238,15 @@ class AbstractTreeItem():
         return item
     
     def path(self) -> str:
+        """ Absolute path from the root of the tree to this item.
+
+        The path does not include the name of the root item, just a leading path separator.
+        """
         if self.parent is None:
             return self._path_sep
         path_parts: list[str] = list(reversed([item.name() for item in self.parents()])) + [self.name()]
         path_parts[0] = ''
-        return self._path_sep.join(path_parts[1:])
+        return self._path_sep.join(path_parts)
     
     def row(self) -> int:
         return self.siblingIndex()

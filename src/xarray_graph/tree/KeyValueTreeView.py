@@ -54,8 +54,9 @@ class KeyValueTreeView(TreeView[KeyValueTreeItem, KeyValueTreeModel]):
         """
         model = self.model()
         if not model:
-            model = KeyValueTreeModel()
-            model.setTreeData(data)
+            root_item = KeyValueTreeItem(None, data)
+            root_item.rebuildSubtree()
+            model = KeyValueTreeModel(root_item)
             self.setModel(model)
             return
         self.storeViewState()

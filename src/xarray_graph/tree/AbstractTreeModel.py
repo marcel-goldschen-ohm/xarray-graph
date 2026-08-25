@@ -24,7 +24,7 @@ class AbstractTreeModel[TreeItem: AbstractTreeItem](QAbstractItemModel):
 
     refreshRequested = Signal()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, root_item: TreeItem, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # headers
@@ -33,6 +33,9 @@ class AbstractTreeModel[TreeItem: AbstractTreeItem](QAbstractItemModel):
 
         # drag-and-drop support for moving tree items within the tree or copying them to other tree models
         self._supportedDropActions: Qt.DropAction = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
+
+        # make sure there is always a valid root item
+        self._root_item: TreeItem = root_item
     
     def reset(self) -> None:
         """ Reset the model.

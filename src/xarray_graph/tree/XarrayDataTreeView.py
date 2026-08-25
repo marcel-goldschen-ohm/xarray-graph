@@ -121,7 +121,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
     def setTreeData(self, data: xr.DataTree) -> None:
         model = self.model()
         if model is None:
-            model = XarrayDataTreeModel()
+            empty_root_item = XarrayDataTreeItem()
+            model = XarrayDataTreeModel(empty_root_item)
             model.setTreeData(data)
             self.setModel(model, updateViewOptionsFromModel=False)
             return
@@ -456,7 +457,12 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
         root_name = dt.name or 'old root'
         new_dt = xr.DataTree()
         new_dt[root_name] = dt
+        self.storeViewState()
+        new_view_state = {f"/{root_name}{path}": state for path, state in self._view_state.items()}
+        new_view_state[f"/{root_name}"] = {'expanded': True, 'selected': False}
         model.setTreeData(new_dt)
+        self._view_state = new_view_state
+        self.restoreViewState()
     
     def renameDimensions(self, item: XarrayDataTreeItem) -> None:
         if not item.isNode():
@@ -677,7 +683,8 @@ def test_live():
     dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
     print(dt)
 
-    model = XarrayDataTreeModel()
+    root = XarrayDataTreeItem()
+    model = XarrayDataTreeModel(root)
     model.setDataVarsVisible(True)
     model.setCoordsVisible(True)
     model.setInheritedCoordsVisible(True)

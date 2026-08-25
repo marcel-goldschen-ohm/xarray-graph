@@ -126,11 +126,11 @@ def run_app(app_name: str):
     t0 = time.time()
     if app_name == 'xarray-tree':
         from xarray_graph.apps.XarrayDataTreeViewer import XarrayDataTreeViewer
-        ui = XarrayDataTreeViewer.new()
+        ui = XarrayDataTreeViewer.newWindow()
         ui.setWindowTitle('xarray-tree')
     elif app_name == 'xarray-graph':
         from xarray_graph.apps.XarrayGraph import XarrayGraph
-        ui = XarrayGraph.new()
+        ui = XarrayGraph.newWindow()
         ui.setWindowTitle('xarray-graph')
     print(f'[{time.time() - t0:.2f} sec] {app_name} init')
     

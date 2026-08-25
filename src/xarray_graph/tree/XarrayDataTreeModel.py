@@ -57,8 +57,8 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         },
     }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, root_item: XarrayDataTreeItem, *args, **kwargs):
+        super().__init__(root_item, *args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []

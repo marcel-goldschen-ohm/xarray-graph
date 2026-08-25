@@ -627,9 +627,8 @@ def test_live():
         root.insertChild(1, c)
         root.children[1].appendChild(d)
 
-        model = AbstractTreeModel[MyTreeItem]()
+        model = AbstractTreeModel[MyTreeItem](root)
         view = TreeView[MyTreeItem, AbstractTreeModel]()
-        model.setRootItem(root)
         view.setModel(model)
         view.show()
         view.resize(800, 1000)

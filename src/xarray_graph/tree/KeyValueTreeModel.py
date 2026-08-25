@@ -19,8 +19,8 @@ class KeyValueTreeModel(AbstractTreeModel[KeyValueTreeItem]):
 
     MIME_TYPE = 'application/x-key-value-tree-model'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, root_item: KeyValueTreeItem, *args, **kwargs):
+        super().__init__(root_item, *args, **kwargs)
 
         # headers
         self._row_labels: list[str] = []

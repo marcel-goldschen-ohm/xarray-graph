@@ -7,16 +7,15 @@ from __future__ import annotations
 
 # import time
 # t0 = time.time()
+from xarray import DataTree
 from qtpy.QtWidgets import QMainWindow
 from importlib.metadata import version
 # print(f'XarrayDataTreeViewer.py imports took {time.time() - t0:.3f} seconds')
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast, Self
 if TYPE_CHECKING:
     from os import PathLike
-    from xarray import DataTree
     from qtpy.QtCore import QSize
-    from qtpy.QtWidgets import QWidget
     from xarray_graph.utils.WindowManager import WindowManager
     from xarray_graph.widgets.IPythonConsole import IPythonConsole
     from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
@@ -33,25 +32,24 @@ class XarrayDataTreeViewer(QMainWindow):
     """
 
     # global window manager (will be initialized when the first window is created)
-    window_mgr: WindowManager = None
+    _window_mgr: WindowManager | None = None
 
     # global console (will be initialized when needed)
-    console: IPythonConsole = None
+    _console: IPythonConsole | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # add to window manager
-        if self.window_mgr is None:
-            from xarray_graph.utils.WindowManager import WindowManager
-            type(self).window_mgr = WindowManager()
-        self.window_mgr.addWindow(self)
+        self.windowManager().addWindow(self)
         
         # datatree
+        from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
         from xarray_graph.tree.XarrayDataTreeView import XarrayDataTreeView
         self._datatree_view = XarrayDataTreeView()
-        model = XarrayDataTreeModel()
+        root = XarrayDataTreeItem(DataTree())
+        model = XarrayDataTreeModel(root)
         self._datatree_view.setModel(model)
         self._datatree_view.selectionWasChanged.connect(self.onDataTreeSelectionChanged)
         self._datatree_view.wasRefreshed.connect(self.refresh)
@@ -61,134 +59,44 @@ class XarrayDataTreeViewer(QMainWindow):
         self._initMenubar()
         self._initUI()
 
-    def sizeHint(self) -> QSize:
-        from qtpy.QtCore import QSize
-        return super().sizeHint().expandedTo(QSize(1000, 800))
-
-    def datatree(self) -> DataTree:
-        return self._datatree_view.treeData()
-    
-    def setDatatree(self, datatree: DataTree) -> None:
-        self._datatree_view.setTreeData(datatree)
-        self.refresh()
-
-    def onDataTreeSelectionChanged(self) -> None:
-        self._updateInfoView()
-        self._updateAttrsView()
-    
-    def refresh(self) -> None:
-        from qtpy.QtCore import QSignalBlocker
-        with QSignalBlocker(self._datatree_view):
-            self._datatree_view.refresh()
-        self.onDataTreeSelectionChanged()
-    
-    @staticmethod
-    def refreshAllWindows():
-        window: XarrayDataTreeViewer
-        for window in XarrayDataTreeViewer.window_mgr.windows():
-            if isinstance(window, XarrayDataTreeViewer):
-                window.refresh()
-    
     @classmethod
-    def about(cls) -> None:
-        """ Popup about message dialog.
-        """
-        from qtpy.QtWidgets import QApplication, QMessageBox
-        import textwrap
+    def windowManager(cls) -> WindowManager:
+        if cls._window_mgr is None:
+            from xarray_graph.utils.WindowManager import WindowManager
+            cls._window_mgr = WindowManager()
 
-        focus_widget: QWidget = QApplication.instance().focusWidget()
-
-        text = f"""
-        {cls.__name__}
-
-        PyQt UIs for visualizing and manipulating Xarray DataTrees.
-
-        Author: Marcel Goldschen-Ohm
-
-        Repository: https://github.com/marcel-goldschen-ohm/xarray-graph
-        PyPI: https://pypi.org/project/xarray-graph
-
-        Version: {XARRAY_GRAPH_VERSION}
-
-        !! Currently in beta development. Please report any issues or feature requests on GitHub.
-        """
-        text = textwrap.dedent(text).strip()
-        
-        QMessageBox.about(focus_widget, f'About {cls.__name__}', text)
-
-    def settings(self) -> None:
-        raise NotImplementedError('Settings dialog not implemented.')
-    
-    def showConsole(self) -> None:
-        """ Show console.
-        """
-
-        # global console
-        if self.console is None:
-            from qtpy.QtCore import Qt, QSize
-            from qtpy.QtGui import QPixmap
-            from qtpy.QtWidgets import QApplication, QSplashScreen
-            from qtawesome import icon as qta_icon
-            splash_pix: QPixmap = qta_icon('msc.console').pixmap(QSize(256, 256))
-            splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
-            splash.show()
-            splash.raise_()
-            splash.repaint() # !? needed to ensure splash screen is painted before the main window is shown despite the call to app.processEvents() below
-            splash.showMessage(f"\tLoading IPython console...\t", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
-            QApplication.instance().processEvents() # force Qt to paint the splash screen immediately
-
-            from xarray_graph.widgets.IPythonConsole import IPythonConsole
-            console = IPythonConsole()
-            console.execute('import numpy as np', hidden=True)
-            console.execute('import xarray as xr', hidden=True)
-            console.addVariables({'wm': self.window_mgr})
-            msg = """
-            ----------------------------------------------------
-            Variables:
-            wm -> WindowManager
-            
-            e.g., window = wm['window title'] or wm[index]
-                  datatree = window.datatree()
-            
-            wm.dir() or wm.ls() -> List all windows as "index: title".
-            
-            Modules loaded at startup: numpy as np, xarray as xr
-            ----------------------------------------------------
-            """
-            console.printMessage(msg)
-            type(self).console = console
-
-            console._show_and_raise()
-            splash.finish(console)
-            return
-
-        self.console._show_and_raise()
+        return cls._window_mgr
 
     @classmethod
-    def new(cls) -> XarrayDataTreeViewer:
-        """ Create new XarrayDataTreeViewer top level window.
+    def newWindow(cls) -> Self:
+        """ Create new top level window.
         """
         window = cls()
         window.show()
         return window
     
     @classmethod
-    def open(cls, filepath: str | PathLike | list[str | PathLike] = None, filetype: str = None, is_dir: bool = False) -> XarrayDataTreeViewer:
+    def open(cls, filepath: str | PathLike | list[str | PathLike] = None, filetype: str = None, is_dir: bool = False) -> Self | None:
         """ Load datatree from file.
         """
         from qtpy.QtWidgets import QApplication
-        focus_widget: QWidget = QApplication.instance().focusWidget()
+        app = cast(QApplication, QApplication.instance())
+        focus_widget = app.focusWidget()
 
         if filepath is None:
             from qtpy.QtWidgets import QFileDialog
             if is_dir:
                 filepath = QFileDialog.getExistingDirectory(focus_widget, 'Open Zarr Directory')
+                if not filepath:
+                    return
             else:
-                filepath, filter = QFileDialog.getOpenFileNames(focus_widget, 'Open File(s)')
-            if not filepath:
-                return
-            if len(filepath) == 1:
-                filepath = filepath[0]
+                filepaths, filter = QFileDialog.getOpenFileNames(focus_widget, 'Open File(s)')
+                if not filepaths:
+                    return
+                if len(filepaths) == 1:
+                    filepath = filepaths[0]
+                else:
+                    filepath = [fp for fp in filepaths]
         
         try:
             from pathlib import Path
@@ -211,12 +119,12 @@ class XarrayDataTreeViewer(QMainWindow):
             return
         
         # new window
-        window = cls.new()
+        window = cls.newWindow()
         window.setDatatree(datatree)
         window.setWindowTitle(title)
         window.show()
-        if isinstance(filepath, Path):
-            window._filepath = filepath
+        if not isinstance(filepath, (list, tuple)):
+            window._filepath = Path(filepath)
         return window
     
     def save(self) -> None:
@@ -248,27 +156,27 @@ class XarrayDataTreeViewer(QMainWindow):
             QMessageBox.critical(self, 'Failed to save file', str(err))
     
     @classmethod
-    def combineWindows(cls, windows: list[XarrayDataTreeViewer] = None) -> XarrayDataTreeViewer:
+    def combineWindows(cls, windows: list[Self] = None) -> Self | None:
         """ Combine windows into one window as multiple top-level groups in a single datatree.
         """
+        window_mgr = cls.windowManager()
         if windows is None:
-            windows = XarrayDataTreeViewer.window_mgr.windows()
+            windows = [window for window in window_mgr.windows() if isinstance(window, cls)]
         if not windows or len(windows) == 1:
             return
         
         # combined datatree
         combined_datatree = DataTree()
-        window: XarrayDataTreeViewer
         for window in windows:
             title = window.windowTitle()
             datatree = window.datatree() #or DataTree()
             combined_datatree[title] = datatree
         
-        noncombined_windows: list[XarrayDataTreeViewer] = [window for window in XarrayDataTreeViewer.window_mgr.windows() if window not in windows]
+        noncombined_windows: list[QMainWindow] = [window for window in window_mgr.windows() if window not in windows]
         noncombined_window_titles: list[str] = [window.windowTitle() for window in noncombined_windows]
 
         # new combined window
-        combined_window = cls.new()
+        combined_window = cls.newWindow()
         from xarray_graph.utils.utils import unique_name
         combined_window_title: str = unique_name('Combined', noncombined_window_titles)
         combined_window.setWindowTitle(combined_window_title)
@@ -279,40 +187,161 @@ class XarrayDataTreeViewer(QMainWindow):
             if window is not combined_window:
                 window.close()
 
-        # this seems to be needed
-        XarrayDataTreeViewer.window_mgr.updateAllWindowMenus()
+        # this seems to be needed?
+        window_mgr.updateAllWindowMenus()
         
         return combined_window
     
     @classmethod
-    def separateFirstLevelGroups(cls, window: XarrayDataTreeViewer = None) -> None:
+    def splitFirstLevelNodesIntoSeparateWindows(cls, window: Self = None) -> None:
         """ Separate first level groups into multiple windows.
         """
+        window_mgr = cls.windowManager()
         if window is None:
-            window = XarrayDataTreeViewer.window_mgr.activeWindow()
+            active_window = window_mgr.activeWindow()
+            if isinstance(active_window, cls):
+                window = active_window
         if window is None:
             return
+
         dt: DataTree = window.datatree()
-        groups: tuple[DataTree] = tuple(dt.children.values())
-        if not groups:
+        nodes: tuple[DataTree, ...] = tuple(dt.children.values())
+        if not nodes:
             return
         
-        for group in groups:
-            new_window: XarrayDataTreeViewer = cls.new()
-            new_window.setWindowTitle(group.name)
-            group.orphan()
-            new_window.setDatatree(group)
+        for node in nodes:
+            new_window = cls.newWindow()
+            new_window.setWindowTitle(node.name or 'Untitled')
+            node.orphan()
+            new_window.setDatatree(node)
         
         # close old window
         window.close()
 
-        # this seems to be needed
-        XarrayDataTreeViewer.window_mgr.updateAllWindowMenus()
-   
+        # this seems to be needed?
+        window_mgr.updateAllWindowMenus()
+       
+    @classmethod
+    def refreshAllWindows(cls) -> None:
+        for window in cls.windowManager().windows():
+            if isinstance(window, cls):
+                window.refresh()
+    
+    @classmethod
+    def console(cls) -> IPythonConsole:
+        if cls._console is None:
+            from xarray_graph.widgets.IPythonConsole import IPythonConsole
+            console = IPythonConsole()
+            cls._console = console
+            cls._initConsole()
+
+        return cls._console
+
+    @classmethod
+    def _initConsole(cls) -> None:
+        console = cls.console()
+        console.execute('import numpy as np', hidden=True)
+        console.execute('import xarray as xr', hidden=True)
+        console.addVariables({'wm': cls.windowManager()})
+        msg = """
+        ----------------------------------------------------
+        Variables:
+        wm -> WindowManager
+        
+        e.g., window = wm['window title'] or wm[index]
+                datatree = window.datatree()
+        
+        wm.dir() or wm.ls() -> List all windows as "index: title".
+        
+        Modules loaded at startup: numpy as np, xarray as xr
+        ----------------------------------------------------
+        """
+        console.printMessage(msg)
+    
+    @classmethod
+    def showConsole(cls) -> None:
+        if cls._console is None:
+            # show a splash screen while the console is loading
+            from qtpy.QtCore import Qt, QSize
+            from qtpy.QtGui import QPixmap
+            from qtpy.QtWidgets import QApplication, QSplashScreen
+            from qtawesome import icon as qta_icon
+            splash_pix: QPixmap = qta_icon('msc.console').pixmap(QSize(256, 256))
+            splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
+            splash.show()
+            splash.raise_()
+            splash.repaint() # !? needed to ensure splash screen is painted before the main window is shown despite the call to app.processEvents() below
+            splash.showMessage(f"\tLoading IPython console...\t", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, Qt.GlobalColor.white)
+            app = cast(QApplication, QApplication.instance())
+            app.processEvents() # force Qt to paint the splash screen immediately
+
+            # this will load the console and block until it is ready, so the splash screen will be visible while the console is loading
+            console = cls.console()
+
+            console._show_and_raise()
+            splash.finish(console)  # type: ignore
+            return
+
+        console = cls.console()
+        console._show_and_raise()
+
+    @classmethod
+    def about(cls) -> None:
+        """ Popup about message dialog.
+        """
+        from qtpy.QtWidgets import QApplication, QMessageBox
+        import textwrap
+
+        app = cast(QApplication, QApplication.instance())
+        focus_widget = app.focusWidget()
+
+        text = f"""
+        {cls.__name__}
+
+        PyQt UIs for visualizing and manipulating Xarray DataTrees.
+
+        Author: Marcel Goldschen-Ohm
+
+        Repository: https://github.com/marcel-goldschen-ohm/xarray-graph
+        PyPI: https://pypi.org/project/xarray-graph
+
+        Version: {XARRAY_GRAPH_VERSION}
+
+        !! Currently in beta development. Please report any issues or feature requests on GitHub.
+        """
+        text = textwrap.dedent(text).strip()
+        
+        QMessageBox.about(focus_widget, f'About {cls.__name__}', text)
+
+    def settings(self) -> None:
+        raise NotImplementedError('Settings dialog not implemented.')
+
+    def sizeHint(self) -> QSize:
+        from qtpy.QtCore import QSize
+        return super().sizeHint().expandedTo(QSize(1000, 800))
+
+    def datatree(self) -> DataTree:
+        return self._datatree_view.treeData()
+    
+    def setDatatree(self, datatree: DataTree) -> None:
+        self._datatree_view.setTreeData(datatree)
+        self.refresh()
+
+    def onDataTreeSelectionChanged(self) -> None:
+        self._updateInfoView()
+        self._updateAttrsView()
+    
+    def refresh(self) -> None:
+        from qtpy.QtCore import QSignalBlocker
+        with QSignalBlocker(self._datatree_view):
+            self._datatree_view.refresh()
+        self.onDataTreeSelectionChanged()
+    
     def _initActions(self) -> None:
         from qtpy.QtCore import Qt
         from qtpy.QtGui import QKeySequence
-        from qtpy.QtWidgets import QAction, QActionGroup
+        from qtpy.QtGui import QAction  # type: ignore (pylance doesn't recognize some qtpy abstractions)
+        from qtpy.QtWidgets import QActionGroup  # type: ignore (pylance doesn't recognize some qtpy abstractions)
         from qtawesome import icon
 
         self._refresh_action = QAction(
@@ -320,22 +349,25 @@ class XarrayDataTreeViewer(QMainWindow):
             iconVisibleInMenu=True,
             text='Refresh',
             toolTip='Refresh UI',
-            shortcut = QKeySequence.StandardKey.Refresh,
-            triggered=lambda checked: self.refresh())
+            shortcut = QKeySequence(QKeySequence.StandardKey.Refresh)
+        )
+        self._refresh_action.triggered.connect(self.refresh)
 
         self._about_action = QAction(
             iconVisibleInMenu=False,
             text=f'About {self.__class__.__name__}',
-            toolTip=f'About {self.__class__.__name__}',
-            triggered=lambda checked: self.about())
+            toolTip=f'About {self.__class__.__name__}'
+        )
+        self._about_action.triggered.connect(self.about)
 
         self._settings_action = QAction(
             icon=icon('msc.gear'),
             iconVisibleInMenu=False,
             text='Settings',
             toolTip='Settings',
-            shortcut=QKeySequence.StandardKey.Preferences,
-            triggered=lambda checked: self.settings())
+            shortcut=QKeySequence(QKeySequence.StandardKey.Preferences)
+        )
+        self._settings_action.triggered.connect(self.settings)
         
         self._console_action = QAction(
             icon=icon('mdi.console'),
@@ -344,17 +376,18 @@ class XarrayDataTreeViewer(QMainWindow):
             toolTip='Show Console',
             checkable=False,
             shortcut=QKeySequence('`'),
-            shortcutContext=Qt.ShortcutContext.ApplicationShortcut,
-            triggered=lambda checked: self.showConsole()
+            shortcutContext=Qt.ShortcutContext.ApplicationShortcut
         )
+        self._console_action.triggered.connect(self.showConsole)
 
         self._new_action = QAction(
             iconVisibleInMenu=False,
             text='New',
             toolTip='New Window',
             checkable=False,
-            shortcut=QKeySequence.StandardKey.New,
-            triggered=lambda: self.new())
+            shortcut=QKeySequence(QKeySequence.StandardKey.New)
+        )
+        self._new_action.triggered.connect(self.newWindow)
 
         self._open_action = QAction(
             icon=icon('fa5.folder-open'),
@@ -362,8 +395,9 @@ class XarrayDataTreeViewer(QMainWindow):
             text='Open',
             toolTip='Open',
             checkable=False,
-            shortcut=QKeySequence.StandardKey.Open,
-            triggered=lambda: self.open())
+            shortcut=QKeySequence(QKeySequence.StandardKey.Open)
+        )
+        self._open_action.triggered.connect(lambda: self.open())
 
         self._open_zarr_dir_action = QAction(
             icon=icon('fa5.folder-open'),
@@ -371,7 +405,9 @@ class XarrayDataTreeViewer(QMainWindow):
             text='Open Zarr Directory',
             toolTip='Open Zarr Directory',
             checkable=False,
-            triggered=lambda: self.open(is_dir=True))
+            shortcut=QKeySequence(QKeySequence.StandardKey.Open)
+        )
+        self._open_zarr_dir_action.triggered.connect(lambda: self.open(is_dir=True))
 
         self._save_action = QAction(
             icon=icon('fa5.save'),
@@ -379,8 +415,9 @@ class XarrayDataTreeViewer(QMainWindow):
             text='Save',
             toolTip='Save',
             checkable=False,
-            shortcut=QKeySequence.StandardKey.Save,
-            triggered=lambda: self.save())
+            shortcut=QKeySequence(QKeySequence.StandardKey.Save)
+        )
+        self._save_action.triggered.connect(self.save)
 
         self._save_as_action = QAction(
             icon=icon('fa5.save'),
@@ -388,8 +425,9 @@ class XarrayDataTreeViewer(QMainWindow):
             text='Save As',
             toolTip='Save As',
             checkable=False,
-            shortcut=QKeySequence.StandardKey.SaveAs,
-            triggered=lambda: self.saveAs())
+            shortcut=QKeySequence(QKeySequence.StandardKey.SaveAs)
+        )
+        self._save_as_action.triggered.connect(lambda: self.saveAs())
         
         self._theme_action_group = QActionGroup(self)
         self._theme_action_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.Exclusive)
@@ -401,8 +439,9 @@ class XarrayDataTreeViewer(QMainWindow):
                 iconVisibleInMenu=False,
                 text=theme,
                 checkable=True,
-                checked=(theme == current_theme),
-                triggered=lambda checked, theme=theme: self._datatree_view.model().setTheme(theme))
+                checked=(theme == current_theme)
+            )
+            theme_action.triggered.connect(lambda checked, theme=theme: self._datatree_view.model().setTheme(theme))
             self._theme_action_group.addAction(theme_action)
     
     def _initMenubar(self) -> None:
@@ -411,6 +450,7 @@ class XarrayDataTreeViewer(QMainWindow):
         from qtpy.QtGui import QKeySequence
         from qtpy.QtWidgets import QApplication
 
+        app = cast(QApplication, QApplication.instance())
         menubar = self.menuBar()
 
         self._file_menu = menubar.addMenu('File')
@@ -426,7 +466,7 @@ class XarrayDataTreeViewer(QMainWindow):
         self._file_menu.addSeparator()
         self._file_menu.addAction('Close Window', QKeySequence.StandardKey.Close, self.close)
         self._file_menu.addSeparator()
-        self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, QApplication.instance().quit)
+        self._file_menu.addAction('Quit', QKeySequence.StandardKey.Quit, app.quit)
 
         for filetype in ['Zarr Directory', 'NetCDF/HDF5']:
             self._import_menu.addAction(filetype, lambda filetype=filetype: self.open(filetype=filetype))
@@ -447,12 +487,13 @@ class XarrayDataTreeViewer(QMainWindow):
         for theme_action in self._theme_action_group.actions():
             self._theme_menu.addAction(theme_action)
 
+        window_mgr = self.windowManager()
         self._window_menu = menubar.addMenu('Window')
         self._window_menu.addAction('Combine All', self.combineWindows)
-        self._window_menu.addAction('Separate First Level Groups', self.separateFirstLevelGroups)
+        self._window_menu.addAction('Separate First Level Groups', self.splitFirstLevelNodesIntoSeparateWindows)
         self._window_menu.addSeparator()
-        self._window_menu.addAction('Bring All to Front', self.window_mgr.bringAllVisibleWindowsToFront)
-        self.window_mgr.updateWindowMenu(self._window_menu)
+        self._window_menu.addAction('Bring All to Front', window_mgr.bringAllVisibleWindowsToFront)
+        window_mgr.updateWindowMenu(self._window_menu)
     
     def _initUI(self) -> None:
         """ Initialize UI elements and layout.

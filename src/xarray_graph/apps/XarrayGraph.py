@@ -1622,7 +1622,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             if new_selection:
                 self._datatree_view.setSelectedItems(selected_items)
         elif dst == 'new window':
-            window = self.new()
+            window = self.newWindow()
             window.setDatatree(dt)
             window.setWindowTitle(f'{self.windowTitle()} - {result_name}')
             window.show()
