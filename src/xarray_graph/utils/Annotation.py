@@ -39,6 +39,8 @@ Example annotations:
 }
 """
 
+from typing import cast
+
 
 def annotation_label(annotation: dict) -> str:
     """ Get a text label for an annotation.
@@ -47,25 +49,44 @@ def annotation_label(annotation: dict) -> str:
 
     # label is the first line of the 'text' field if it exists
     text = annotation.get('text', '')
-    label = text.strip().split('\n')[0].strip()
-    if label != '':
-        return label
+    text = cast(str, text)
+    lines = text.strip().split('\n')
+    first_line = lines[0].strip()
+    if first_line != '':
+        return first_line
     
     # label is a summary of the position data
     pos = annotation.get('position', None)
     if pos is None:
         return ''
-    dim_labels: list[str] = []
-    for dim, data in pos.items():
-        if not isinstance(data, (list, tuple)):
-            data = [data]
-        data_labels: list[str] = [f'{val: .3g}'.strip() for val in data]
-        if len(data_labels) > 3:
-            data_labels = data_labels[:1] + ['...'] + data_labels[-1:]
-        if len(data_labels) == 1:
-            dim_label = f'{dim}: {data_labels[0]}'
-        else:
-            dim_label = f"{dim}: ({', '.join(data_labels)})"
-        dim_labels.append(dim_label)
-    label = ', '.join(dim_labels)
-    return label
+    if isinstance(pos, (list, tuple)):
+        dim_labels: list[str] = []
+        for data in pos:
+            if not isinstance(data, (list, tuple)):
+                data = [data]
+            data_labels: list[str] = [f'{val: .3g}'.strip() for val in data]
+            if len(data_labels) > 3:
+                data_labels = data_labels[:1] + ['...'] + data_labels[-1:]
+            if len(data_labels) == 1:
+                dim_label = f'{data_labels[0]}'
+            else:
+                dim_label = f"({', '.join(data_labels)})"
+            dim_labels.append(dim_label)
+        label = ', '.join(dim_labels)
+        return label
+    elif isinstance(pos, dict):
+        dim_labels: list[str] = []
+        for dim, data in pos.items():
+            if not isinstance(data, (list, tuple)):
+                data = [data]
+            data_labels: list[str] = [f'{val: .3g}'.strip() for val in data]
+            if len(data_labels) > 3:
+                data_labels = data_labels[:1] + ['...'] + data_labels[-1:]
+            if len(data_labels) == 1:
+                dim_label = f'{dim}: {data_labels[0]}'
+            else:
+                dim_label = f"{dim}: ({', '.join(data_labels)})"
+            dim_labels.append(dim_label)
+        label = ', '.join(dim_labels)
+        return label
+    raise TypeError(f"Unsupported position type: {type(pos)}")
