@@ -29,7 +29,9 @@ class TableWidgetWithCopyPaste(QTableWidget):
         max_column = copied_cells[-1].column()
         max_row = copied_cells[-1].row()
         for c in copied_cells:
-            copy_text += self.item(c.row(), c.column()).text()
+            item = self.item(c.row(), c.column())
+            if item is not None:
+                copy_text += item.text()
             if c.column() == max_column:
                 if c.row() != max_row:
                     copy_text += '\n'
