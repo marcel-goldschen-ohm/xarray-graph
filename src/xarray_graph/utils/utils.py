@@ -2,6 +2,7 @@
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 
 def index_by_identity(objects: list | tuple, target_obj):
@@ -29,7 +30,7 @@ def unique_name(name: str, names: list[str], unique_counter_start: int = 1) -> s
     return name
 
 
-def str_to_value(text: str) -> bool | int | float | str | tuple | list | dict | set | np.ndarray:
+def str_to_value(text: str) -> bool | int | float | str | tuple | list | dict | set | NDArray:
     """ Convert a string representation of a value into the corresponding Python object.
     
     Handles basic values and containers and numpy arrays.
