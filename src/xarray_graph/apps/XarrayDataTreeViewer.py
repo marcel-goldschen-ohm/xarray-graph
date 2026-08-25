@@ -44,12 +44,10 @@ class XarrayDataTreeViewer(QMainWindow):
         self.windowManager().addWindow(self)
         
         # datatree
-        from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
         from xarray_graph.tree.XarrayDataTreeView import XarrayDataTreeView
         self._datatree_view = XarrayDataTreeView()
-        root = XarrayDataTreeItem(DataTree())
-        model = XarrayDataTreeModel(root)
+        model = XarrayDataTreeModel()
         self._datatree_view.setModel(model)
         self._datatree_view.selectionWasChanged.connect(self.onDataTreeSelectionChanged)
         self._datatree_view.wasRefreshed.connect(self.refresh)
@@ -249,7 +247,7 @@ class XarrayDataTreeViewer(QMainWindow):
         wm -> WindowManager
         
         e.g., window = wm['window title'] or wm[index]
-                datatree = window.datatree()
+              datatree = window.datatree()
         
         wm.dir() or wm.ls() -> List all windows as "index: title".
         
