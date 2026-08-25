@@ -2,9 +2,16 @@
 """
 from __future__ import annotations
 
+from typing import Literal
 import numpy as np
-from qtpy.QtCore import Signal, Slot
+from numpy.typing import NDArray
+from qtpy.QtCore import Signal, Slot  # type: ignore
+from qtpy.QtGui import QWheelEvent
 from qtpy.QtWidgets import QAbstractSpinBox
+
+
+IntArray = NDArray[np.integer]
+FloatArray = NDArray[np.floating]
 
 
 class MultiValueSpinBox(QAbstractSpinBox):
@@ -27,11 +34,11 @@ class MultiValueSpinBox(QAbstractSpinBox):
         self._suffix = ''
 
         # possible values to select from
-        self._indexed_values: np.ndarray = np.arange(100)
+        self._indexed_values: NDArray = np.arange(100)
 
         # indices of selected values in self._indexed_values
         # i.e., selected values are self._indexed_values[self._indices]
-        self._indices: np.ndarray[int] = np.array([0], dtype=int)
+        self._indices: IntArray = np.array([0], dtype=int)
 
         # initialize with default values
         self.setIndices(self._indices)
@@ -44,13 +51,16 @@ class MultiValueSpinBox(QAbstractSpinBox):
         self.setToolTip('index/slice (+Shift: page up/down)')
 
         self.lineEdit().setPlaceholderText(self.textFromValues(self._indexed_values))
+
+        # Track leftover trackpad/mouse scroll units
+        self.wheel_delta_remainder = 0
     
-    def indices(self) -> np.ndarray[int]:
+    def indices(self) -> IntArray:
         # mask = (self._indices >= 0) & (self._indices < len(self._indexed_values))
         # return self._indices[mask]
         return self._indices
     
-    def setIndices(self, indices: list[int] | np.ndarray[int]):
+    def setIndices(self, indices: list[int] | IntArray):
         # print('set_indices:', indices, 'into', self._indexed_values)
         if not isinstance(indices, np.ndarray):
             indices = np.array(indices, dtype=int)
@@ -62,10 +72,10 @@ class MultiValueSpinBox(QAbstractSpinBox):
         self.lineEdit().setText(text)
         self.indicesChanged.emit()
     
-    def indexedValues(self) -> np.ndarray:
+    def indexedValues(self) -> NDArray:
         return self._indexed_values
     
-    def setIndexedValues(self, values: list | np.ndarray):
+    def setIndexedValues(self, values: list | NDArray):
         if not isinstance(values, np.ndarray):
             dtype = type(values[0]) if len(values) > 0 else int
             values = np.array(values, dtype=dtype)
@@ -75,10 +85,10 @@ class MultiValueSpinBox(QAbstractSpinBox):
         self.setIndices(self.indices())
         self.lineEdit().setPlaceholderText(self.textFromValues(self._indexed_values))
     
-    def selectedValues(self) -> np.ndarray:
+    def selectedValues(self) -> NDArray:
         return self._indexed_values[self.indices()]
     
-    def setSelectedValues(self, values: list | np.ndarray):
+    def setSelectedValues(self, values: list | NDArray):
         indices = self.indicesFromValues(values)
         self.setIndices(indices)
     
@@ -98,7 +108,7 @@ class MultiValueSpinBox(QAbstractSpinBox):
         # update text by resetting indices
         self.setIndices(self.indices())
     
-    def indicesFromValues(self, values: list | np.ndarray, side='left', tol: float | None = None) -> np.ndarray[int]:
+    def indicesFromValues(self, values: list | NDArray, side: Literal['left', 'right'] = 'left', tol: float | None = None) -> IntArray:
         if not isinstance(values, np.ndarray):
             values = np.array(values, dtype=self._indexed_values.dtype)
         if np.issubdtype(self._indexed_values.dtype, np.floating):
@@ -132,7 +142,7 @@ class MultiValueSpinBox(QAbstractSpinBox):
                 indices = np.array(indices, dtype=int)
         return indices
     
-    def valuesFromText(self, text: str, validate: bool = False) -> list:
+    def valuesFromText(self, text: str, validate: bool = False) -> NDArray:
         if self.suffix():
             text = text.replace(self.suffix().strip(), '')
         text = text.strip()
@@ -186,9 +196,9 @@ class MultiValueSpinBox(QAbstractSpinBox):
         values = np.array(values, dtype=dtype)
         return values
     
-    def textFromValues(self, values: list | np.ndarray):
+    def textFromValues(self, values: list | NDArray) -> str:
         indices = self.indicesFromValues(values)
-        index_ranges = []
+        index_ranges: list[list[int]] = []
         for index in indices:
             if (not self._display_value_ranges_when_possible) or (len(index_ranges) == 0) or (index != index_ranges[-1][-1] + 1):
                 index_ranges.append([index])
@@ -278,6 +288,56 @@ class MultiValueSpinBox(QAbstractSpinBox):
         from qtpy.QtGui import QValidator
         return QValidator.State.Acceptable, text, pos
 
+    def wheelEvent(self, event: QWheelEvent):
+        # 1. Extract the vertical scroll delta
+        delta_y = event.angleDelta().y()
+
+        # 2. Ignore pure horizontal scroll gestures
+        if delta_y == 0:
+            event.ignore()
+            return
+
+        # 3. Force strict physical mapping:
+        # If the OS inverted the event (e.g., Natural Scrolling), flip it back
+        # to map positive deltas to 'rolling away' and negative to 'rolling toward'.
+        if event.inverted():
+            delta_y = -delta_y
+
+        # 4. Accumulate fractional movements (handles trackpads and high-res mice smoothly)
+        self.wheel_delta_remainder += delta_y
+        
+        # Standard mouse wheel steps are calculated in segments of 120 units
+        steps = self.wheel_delta_remainder // 120
+        self.wheel_delta_remainder -= steps * 120
+
+        if steps == 0:
+            event.accept()  # Consume the partial gesture event
+            return
+
+        # 5. Verify bounds safety using stepEnabled()
+        steps_allowed = self.stepEnabled()
+        
+        # Check if stepping UP is disabled when steps are positive
+        if steps > 0 and not (steps_allowed & self.StepEnabledFlag.StepUpEnabled):
+            self.wheel_delta_remainder = 0  # Reset accumulator at boundary
+            event.accept()
+            return
+            
+        # Check if stepping DOWN is disabled when steps are negative
+        if steps < 0 and not (steps_allowed & self.StepEnabledFlag.StepDownEnabled):
+            self.wheel_delta_remainder = 0  # Reset accumulator at boundary
+            event.accept()
+            return
+
+        # 6. Apply the default system acceleration key modifier (usually Ctrl)
+        from qtpy.QtCore import Qt
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            steps *= 10
+
+        # 7. Execute the step and accept the event
+        self.stepBy(steps)
+        event.accept()
+
     
 def test_live():
     from qtpy.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QCheckBox
@@ -300,7 +360,7 @@ def test_live():
     vbox.addWidget(cbox)
     vbox.addStretch()
 
-    spinboxes = []
+    spinboxes: list[MultiValueSpinBox] = []
 
     spinbox = MultiValueSpinBox()
     spinbox.setIndexedValues([0, 1, 2, 3, 4, 7, 8, 9])
