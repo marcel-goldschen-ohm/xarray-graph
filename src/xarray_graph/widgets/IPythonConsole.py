@@ -1,6 +1,7 @@
 """ Embedded IPython console widget.
-"""
 
+TODO: type hints (qtconsole seems like it lacks type information, so not sure how easy this will be to do)
+"""
 
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 
