@@ -19,11 +19,11 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     matdict = loadmat(str(filepath), simplify_cells=True)
     # print(matdict)
 
-    current = matdict['current']
-    current_units = matdict['current_units']
+    current: np.ndarray = matdict['current']
+    current_units: str = matdict['current_units']
 
-    voltage = matdict['voltage']
-    voltage_units = matdict['voltage_units']
+    voltage: np.ndarray = matdict['voltage']
+    voltage_units: str = matdict['voltage_units']
     
     time = np.arange(current.shape[-1]) * matdict['time_interval_sec']
     time_units = 's'
@@ -39,16 +39,17 @@ def read_adicht_mat(filepath: Path | str) -> xr.DataTree:
     )
 
     if 'events' in matdict and matdict['events']:
-        ds.attrs[ROI_KEY] = []
+        rois: list[dict] = []
         for event in matdict['events']:
             time = event['time_sec']
             text = event['text']
-            ds.attrs[ROI_KEY].append({
+            rois.append({
                 'type': 'region',
-                'position': {'time': [time, time]},
+                'position': {'time': time},
                 'movable': False,
                 'text': text,
             })
+        ds.attrs[ROI_KEY] = rois
     
     if 'notes' in matdict:
         ds.attrs[NOTES_KEY] = matdict['notes']

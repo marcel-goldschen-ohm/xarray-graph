@@ -30,6 +30,7 @@ def ordered_dims_iter(objects: list[DataTree | Dataset | DataArray]) -> Iterator
         for var in vars:
             for dim in var.dims:
                 if dim not in yielded_dims:
+                    dim = str(dim)
                     yield dim
                     yielded_dims.append(dim)
 
@@ -39,7 +40,7 @@ def ordered_coords_iter(node: DataTree, include_inherited: bool = True) -> Itera
     """
     if not include_inherited:
         inherited_coord_names: set[str] = node._inherited_coords_set()
-    ordered_dims: tuple[str] = tuple(ordered_dims_iter([node]))
+    ordered_dims: tuple[str, ...] = tuple(ordered_dims_iter([node]))
     # keep track of coords already yielded
     yielded_coord_names: list[str] = []
     # first yield index coords in dim order
@@ -69,19 +70,19 @@ def ordered_node_keys(node: DataTree, include_data_vars: bool = True, include_co
     return keys
 
 
-def move_item(src_parent_node: DataTree, src_key: str, dst_parent_node: DataTree, dst_key: str) -> bool:
-    try:
-        # test move in a copy
-        src_parent_node_copy = src_parent_node.copy(deep=False)
-        dst_parent_node_copy = dst_parent_node.copy(deep=False)
-        dst_parent_node_copy[dst_key] = src_parent_node_copy[src_key]
-        src_parent_node_copy = src_parent_node_copy.drop(src_key)
-        # if successful, perform move on original nodes
-        dst_parent_node[dst_key] = src_parent_node[src_key]
-        src_parent_node.drop(src_key, inplace=True)
-    except Exception:
-        return False
-    return True
+# def move_item(src_parent_node: DataTree, src_key: str, dst_parent_node: DataTree, dst_key: str) -> bool:
+#     try:
+#         # test move in a copy
+#         src_parent_node_copy = src_parent_node.copy(deep=False)
+#         dst_parent_node_copy = dst_parent_node.copy(deep=False)
+#         dst_parent_node_copy[dst_key] = src_parent_node_copy[src_key]
+#         src_parent_node_copy = src_parent_node_copy.drop(src_key)
+#         # if successful, perform move on original nodes
+#         dst_parent_node[dst_key] = src_parent_node[src_key]
+#         src_parent_node.drop(src_key, inplace=True)
+#     except Exception:
+#         return False
+#     return True
 
 
 def rename_dims(node: DataTree, dims_dict: dict[str, str]) -> None:
@@ -98,7 +99,7 @@ def rename_dims(node: DataTree, dims_dict: dict[str, str]) -> None:
         node.dataset = node.to_dataset().swap_dims(dims_dict)
     # rename index coords to match new dims
     for node in branch_root.subtree:
-        old_index_names = [name for name in node.xindexes if name in dims_dict and name not in node._inherited_coords_set()]
+        old_index_names = [str(name) for name in node.xindexes if name in dims_dict and name not in node._inherited_coords_set()]
         if not old_index_names:
             continue
         new_index_coords = {dims_dict[old_name]: node.coords[old_name].copy(deep=False) for old_name in old_index_names}
@@ -109,7 +110,7 @@ def rename_dims(node: DataTree, dims_dict: dict[str, str]) -> None:
                 child.dataset = child.to_dataset().reset_coords(old_names, drop=True)
 
 
-def to_base_units(data: DataArray | Dataset | DataTree, ureg: UnitRegistry) -> DataArray | Dataset | DataTree:
+def to_base_units[T: DataArray | Dataset | DataTree](data: T, ureg: UnitRegistry) -> T:
     """ Use pint to convert input data into base units.
     """
     from pint import Quantity
@@ -117,22 +118,24 @@ def to_base_units(data: DataArray | Dataset | DataTree, ureg: UnitRegistry) -> D
         if 'units' not in data.attrs:
             return data
         quantity: Quantity = data.data * ureg(data.attrs['units'])
-        quantity = quantity.to_base_units()
+        quantity = quantity.to_base_units()  # type: ignore (pint uses dynamic typing, but this is correct)
         da = data.copy(data=quantity.magnitude)
         da.attrs['units'] = str(quantity.units)
         return da
     elif isinstance(data, Dataset):
-        return Dataset(
-            data_vars={name: to_base_units(var) for name, var in data.data_vars.items()},
-            coords={name: to_base_units(coord) for name, coord in data.coords.items()},
+        ds = Dataset(
+            data_vars={name: to_base_units(var, ureg) for name, var in data.data_vars.items()},
+            coords={name: to_base_units(coord, ureg) for name, coord in data.coords.items()},
             attrs=data.attrs,
         )
+        from typing import cast
+        return cast(T, ds)
     elif isinstance(data, DataTree):
-        dt: DataTree = data.copy(deep=False)
-        node: DataTree
+        dt = data.copy(deep=False)
         for node in dt.subtree:
-            node.dataset = to_base_units(node.to_dataset())
-        return dt
+            node.dataset = to_base_units(node.to_dataset(), ureg)
+        from typing import cast
+        return cast(T, dt)
 
 
 def aligned_root(node: DataTree) -> DataTree:
@@ -178,9 +181,8 @@ def inherit_missing_data_vars(dt: DataTree) -> DataTree:
     Returns a new datatree with all inherited data_vars.
     """
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
-        parent: DataTree = node.parent
+        parent = node.parent
         if not parent:
             continue
         to_inherit = {}
@@ -199,9 +201,8 @@ def remove_inherited_data_vars(dt: DataTree) -> DataTree:
     """
     dt = dt.copy(deep=False)
     # iterate in reverse to ensure reference chains are properly removed
-    node: DataTree
     for node in reversed(list(dt.subtree)):
-        parent: DataTree = node.parent
+        parent = node.parent
         if not parent:
             continue
         to_remove = []
@@ -220,9 +221,8 @@ def store_inherited_data_vars(dt: DataTree) -> DataTree:
     Returns a new datatree with inherited data_vars defined in the node attrs.
     """
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
-        parent: DataTree = node.parent
+        parent = node.parent
         if not parent:
             continue
         inherited = []
@@ -242,9 +242,8 @@ def restore_inherited_data_vars(dt: DataTree) -> DataTree:
     Returns a new datatree with inherited data_vars.
     """
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
-        parent: DataTree = node.parent
+        parent = node.parent
         if not parent:
             continue
         inherited = node.attrs.get(INHERITED_DATA_VARS_KEY, None)
@@ -263,7 +262,6 @@ def store_ordered_data_vars(dt: DataTree) -> DataTree:
     Returns a new datatree with data_var order defined in the node attrs.
     """
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
         ordered_data_vars: tuple[str] = tuple(node.data_vars)
         if len(ordered_data_vars) > 1:
@@ -279,7 +277,6 @@ def restore_ordered_data_vars(dt: DataTree) -> DataTree:
     Returns a new datatree with data_var order set as defined in the node attrs.
     """
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
         ordered_data_vars = node.attrs.get(ORDERED_DATA_VARS_KEY, None)
         if ordered_data_vars is None:
@@ -306,7 +303,6 @@ def store_attrs_objects_as_strings(dt: DataTree) -> DataTree:
     """
     from xarray_graph.utils.utils import value_to_str
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
         for key, value in node.attrs.items():
             if isinstance(value, (list, tuple, dict)):
@@ -325,7 +321,6 @@ def restore_attrs_objects_from_strings(dt: DataTree) -> DataTree:
     """
     from xarray_graph.utils.utils import str_to_value
     dt = dt.copy(deep=False)
-    node: DataTree
     for node in dt.subtree:
         for key, value in node.attrs.items():
             if isinstance(value, str):

@@ -16,7 +16,7 @@ def read_winwcp(filepath: str | os.PathLike) -> xr.DataTree:
         filepath = Path(filepath)
 
     # read file contents as binary byte array
-    with filepath.open(mode='rb') as file:
+    with Path(filepath).open(mode='rb') as file:
         file_bytes = file.read()
 
     # search for the number of channels in the header

@@ -50,9 +50,10 @@ def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str
     # read datatree from filesystem
     if filepath.is_dir():
         # Zarr Directory
-        import zarr
-        with zarr.storage.LocalStore(filepath) as store:
-            datatree = xr.open_datatree(store, engine='zarr', chunks=chunks, consolidated=consolidated)
+        # import zarr
+        # with zarr.storage.LocalStore(filepath) as store:
+        #     datatree = xr.open_datatree(store, engine='zarr', chunks=chunks, consolidated=consolidated)
+        datatree = xr.open_datatree(filepath, engine='zarr', chunks=chunks, consolidated=consolidated)
     # elif (filetype == 'Zarr Zip') or (filepath.suffix in ['.zip', '.ZIP']):
     #     # Zarr Zip
     #     # !! This should work, but zarr v3 has issues with zip files, so a workaround is to zip/unzip Zarr directories using OS commands)
@@ -103,9 +104,10 @@ def save_datatree(datatree: xr.DataTree, filepath: str | os.PathLike, filetype: 
     # write datatree to filesystem
     if (filetype == 'Zarr Directory') or ((filetype is None) and (filepath.is_dir() or filepath.suffix in ['', '.zarr'])):
         # Zarr Directory
-        import zarr
-        with zarr.storage.LocalStore(filepath) as store:
-            datatree.to_zarr(store, mode='w', consolidated=consolidated)
+        # import zarr
+        # with zarr.storage.LocalStore(filepath) as store:
+        #     datatree.to_zarr(store, mode='w', consolidated=consolidated)
+        datatree.to_zarr(filepath, mode='w', consolidated=consolidated)
     # elif (filetype == 'Zarr Zip') or ((filetype is None) and (filepath.suffix in ['.zip', '.ZIP'])):
     #     # Zarr Zip
     #     # !! This should work, but zarr v3 has issues with zip files, so a workaround is to zip/unzip Zarr directories using OS commands)
@@ -126,25 +128,25 @@ def save_datatree(datatree: xr.DataTree, filepath: str | os.PathLike, filetype: 
         # nested attrs not allowed in netCDF/HDF5, so we need to convert them to strings before serialization
         from xarray_graph.utils.xarray_utils import store_attrs_objects_as_strings
         datatree = store_attrs_objects_as_strings(datatree)
-        datatree.to_netcdf(filepath, mode='w', engine=engine)
+        datatree.to_netcdf(filepath, mode='w', engine=engine)  # type: ignore (engine is a valid argument)
 
 
 def test():
     dt = open_datatree('examples/LabChartTEVC.mat', filetype='LabChart MATLAB (GOlab TEVC)')
     print(dt)
 
-    # save_datatree(dt, 'examples/LabChartTEVC.zarr', filetype='Zarr Directory')
-    # dt2 = open_datatree('examples/LabChartTEVC.zarr', filetype='Zarr Directory')
-    # print(dt2)
+    save_datatree(dt, 'examples/LabChartTEVC.zarr', filetype='Zarr Directory')
+    dt2 = open_datatree('examples/LabChartTEVC.zarr', filetype='Zarr Directory')
+    print(dt2)
 
     # save_datatree(dt, 'examples/LabChartTEVC.zarr.zip', filetype='Zarr Zip')
     # dt2 = open_datatree('examples/LabChartTEVC.zarr.zip', filetype='Zarr Zip')
     # print(dt2)
 
     # dt.attrs['_XG_ROI'] = 'ROIs'
-    save_datatree(dt, 'examples/LabChartTEVC.h5', filetype='HDF5')
-    dt2 = open_datatree('examples/LabChartTEVC.h5', filetype='HDF5')
-    print(dt2)
+    # save_datatree(dt, 'examples/LabChartTEVC.h5', filetype='HDF5')
+    # dt2 = open_datatree('examples/LabChartTEVC.h5', filetype='HDF5')
+    # print(dt2)
 
 
 if __name__ == '__main__':
