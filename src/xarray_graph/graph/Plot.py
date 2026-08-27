@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from qtpy.QtGui import QColor
-from pyqtgraph import PlotItem
+from pyqtgraph.graphicsItems.PlotItem import PlotItem
 from xarray_graph.graph.View import View
 
 

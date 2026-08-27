@@ -2,96 +2,38 @@
 """
 from __future__ import annotations
 
-from qtpy.QtCore import Qt, Signal, QTimer
-from qtpy.QtGui import QColor, QMouseEvent
-from qtpy.QtWidgets import QGraphicsObject
-from pyqtgraph import ViewBox, RectROI, EllipseROI, CircleROI, LineSegmentROI, PlotDataItem
+from typing import cast
+from qtpy.QtCore import Signal  # type: ignore
+from qtpy.QtCore import Qt, QPointF
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import QGraphicsObject, QGraphicsSceneMouseEvent
+from pyqtgraph.graphicsItems.ViewBox import ViewBox
+from pyqtgraph import RectROI, EllipseROI, CircleROI, LineSegmentROI, PlotDataItem
 from xarray_graph.graph.AxisRegion import XAxisRegion, YAxisRegion
 from xarray_graph.graph.InfLine import VLine, HLine
 
 
 class View(ViewBox):
-    """ ViewBox with context menu for drawing ROIs and events. """
+    """ ViewBox with context menu for drawing ROIs and events.
+    """
 
     sigStartedDrawingItems = Signal()
     sigItemAdded = Signal(QGraphicsObject)  # emits the newly added QGraphicsObject item
     sigFinishedDrawingItems = Signal()
 
     def __init__(self, *args, **kwargs):
-        ViewBox.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-        self._lastMousePressPosInAxesCoords = {}  # dict keys are mouse buttons
+        self._lastMousePressPosInAxesCoords: dict[Qt.MouseButton, QPointF] = {}  # dict keys are mouse buttons
         self._drawingItemsOfType = None
         self._itemBeingDrawn = None
 
         # MATLAB color scheme
         self.setBackgroundColor(QColor(255, 255, 255))
-
-        # # colormap (MATLAB lines)
-        # self._colorIndex = 0
-        # self._colormap = [
-        #     (  0, 114, 189),
-        #     (217,  83,  25),
-        #     (237, 177,  32),
-        #     (126,  47, 142),
-        #     (119, 172,  48),
-        #     ( 77, 190, 238),
-        #     (162,  20,  47),
-        # ]
     
-    # def colormap(self):
-    #     return self._colormap
-    
-    # def setColormap(self, colormap):
-    #     self._colormap = colormap
-    #     self._colorIndex = self._colorIndex % len(self._colormap)
-    
-    # def nextColor(self):
-    #     ncolors = len(self._colormap)
-    #     color = self._colormap[self._colorIndex % ncolors]
-    #     self._colorIndex = (self._colorIndex + 1) % ncolors
-    #     return QColor(*color)
-    
-    # def colorIndex(self):
-    #     return self._colorIndex
-    
-    # def setColorIndex(self, colorIndex):
-    #     ncolors = len(self._colormap)
-    #     self._colorIndex = colorIndex % ncolors
-    
-    # def colorAtIndex(self, colorIndex):
-    #     ncolors = len(self._colormap)
-    #     color = self._colormap[colorIndex % ncolors]
-    #     return QColor(*color)
-    
-    # def addItem(self, item):
-    #     if isinstance(item, Graph):
-    #         item.setColor(self.nextColor())
-    #     pg.ViewBox.addItem(self, item)
-    
-    # def initContextMenu(self):
-    #     self._ROIsMenu = QMenu("ROIs")
-    #     self._ROIsMenu.addAction('Draw X-Axis ROIs (right-click to stop)', lambda: self.startDrawingItemsOfType(XAxisRegion))
-    #     # self._ROIsMenu.addAction('Draw Y-Axis ROIs (right-click to stop)', lambda: self.startDrawingItemsOfType(YAxisRegionItem))
-    #     self._ROIsMenu.addSeparator()
-    #     self._ROIsMenu.addAction("Show All", lambda: self.setVisibilityForItemsOfType(AxisRegion, True))
-    #     self._ROIsMenu.addAction("Hide All", lambda: self.setVisibilityForItemsOfType(AxisRegion, False))
-    #     self._ROIsMenu.addSeparator()
-    #     self._ROIsMenu.addAction("Delete All", lambda: self.deleteItemsOfType(AxisRegion))
-
-    #     # append to default context menu
-    #     self.menu.addSection('ROIs')
-    #     self.menu.addMenu(self._ROIsMenu)
-        
-    #     self.menu.addSection('Events')
-    #     self.menu.addMenu(self._eventsMenu)
-
-    #     # for appended menus from other objects
-    #     self.menu.addSeparator()
-    
-    def mousePressEvent(self, event: QMouseEvent):
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
         # store mouse press position in axes coords
-        posInAxesCoords = self.mapSceneToView(self.mapToScene(event.pos()))
+        posInAxesCoords = cast(QPointF, self.mapSceneToView(self.mapToScene(event.pos())))
         self._lastMousePressPosInAxesCoords[event.button()] = posInAxesCoords
 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -115,24 +57,27 @@ class View(ViewBox):
                         # add point to existing Graph
                         import numpy as np
                         x, y = self._itemBeingDrawn.getOriginalDataset()
-                        x = np.append(x, posInAxesCoords.x())
-                        y = np.append(y, posInAxesCoords.y())
-                        self._itemBeingDrawn.setData(x, y)
+                        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+                            x = np.append(x, posInAxesCoords.x())
+                            y = np.append(y, posInAxesCoords.y())
+                            self._itemBeingDrawn.setData(x, y)
                         event.accept()
                         return
                     else:
-                        newItem = self._drawingItemsOfType()
+                        newItem = cast(PlotDataItem, self._drawingItemsOfType())
                         newItem.setData([posInAxesCoords.x()], [posInAxesCoords.y()])
                 if newItem is not None:
                     self._itemBeingDrawn = newItem
                     self.addItem(self._itemBeingDrawn)
+                    # if isinstance(self._itemBeingDrawn, AxisRegion):
+                    #     self.sigResized.connect(self._itemBeingDrawn.updateLabelPosition)
                     event.accept()
                     return
         
         # default if event was not handled above
-        ViewBox.mousePressEvent(self, event)
+        super().mousePressEvent(event)
     
-    def mouseReleaseEvent(self, event: QMouseEvent):
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             # finished drawing region/event?
             if  self._itemBeingDrawn is not None:
@@ -142,9 +87,9 @@ class View(ViewBox):
                 return
         
         # default if event was not handled above
-        ViewBox.mouseReleaseEvent(self, event)
-    
-    def mouseMoveEvent(self, event: QMouseEvent):
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
         if event.buttons() & Qt.MouseButton.LeftButton:
             # drawing region?
             if self._itemBeingDrawn is not None:
@@ -170,22 +115,7 @@ class View(ViewBox):
                 return
         
         # default if event was not handled above
-        ViewBox.mouseMoveEvent(self, event)
-    
-    # def listItemsOfType(self, itemType):
-    #     return [item for item in self.allChildren() if isinstance(item, itemType)]
-    
-    # def setVisibilityForItemsOfType(self, itemType, isVisible: bool):
-    #     for item in self.listItemsOfType(itemType):
-    #         item.setVisible(isVisible)
-    
-    # def deleteItemsOfType(self, itemType):
-    #     for item in self.listItemsOfType(itemType):
-    #         self.deleteItem(item)
-    
-    # def deleteItem(self, item: QGraphicsObject):
-    #     self.removeItem(item)
-    #     item.deleteLater()
+        super().mouseMoveEvent(event)
     
     def startDrawingItemsOfType(self, itemType):
         self._itemBeingDrawn = None
@@ -204,24 +134,34 @@ def test_live():
 
     from xarray_graph.graph.Figure import Figure
     fig = Figure()
-    print(fig)
+
     from xarray_graph.graph.Plot import Plot
-    plot: Plot = fig.getPlotItem()
-    print(plot)
-    view: View = plot.getViewBox()
-    print(view)
+    plot = fig.getPlotItem()
+    assert isinstance(plot, Plot)
+
+    view = plot.getViewBox()
+    assert isinstance(view, View)
+
     import numpy as np
     item = PlotDataItem(y=np.random.randn(1000))
-    print(item)
     plot.addItem(item)
     plot.setWindowTitle('pyqtgraph-tools')
     fig.show()
 
     view.startDrawingItemsOfType(XAxisRegion)
+    from qtpy.QtCore import QTimer
     QTimer.singleShot(3000, lambda: view.stopDrawingItems())
+
+    def set_text():
+        region_items = [item for item in view.allChildren() if isinstance(item, XAxisRegion)]
+        for region in region_items:
+            region.setText("Test")
+
+    QTimer.singleShot(3100, set_text)
 
     app.exec()
 
 
 if __name__ == '__main__':
+    from xarray_graph.graph.View import test_live
     test_live()
