@@ -353,6 +353,31 @@ def recover_post_deserialization(dt: DataTree, unflatten_attrs: bool = False) ->
     return dt
 
 
+def detach_datatree_backend(datatree: DataTree, materialize: bool = False) -> None:
+    """ Close datatree backend resources, optionally materializing data first.
+    
+    For example, if the datatree was loaded from a Zarr or netCDF file, this function will close the file handles and free memory.
+
+    Args:
+        datatree: Target DataTree whose backend resources should be detached.
+        materialize: If True, call ``load()`` before ``close()`` so data remains
+            accessible after closing backend handles.
+    """
+    if datatree is None:
+        return
+    if materialize:
+        try:
+            datatree.load()
+        except Exception:
+            pass
+    close = getattr(datatree, 'close', None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
 def test():
     from xarray.tutorial import load_dataset
     dt = DataTree()

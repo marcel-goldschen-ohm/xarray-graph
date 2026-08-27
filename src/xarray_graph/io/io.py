@@ -18,29 +18,6 @@ supported_filetypes = [
 ]
 
 
-def detach_datatree_backend(datatree: xr.DataTree, materialize: bool = False) -> None:
-    """Close datatree backend resources, optionally materializing data first.
-
-    Args:
-        datatree: Target DataTree whose backend resources should be detached.
-        materialize: If True, call ``load()`` before ``close()`` so data remains
-            accessible after closing backend handles.
-    """
-    if datatree is None:
-        return
-    if materialize:
-        try:
-            datatree.load()
-        except Exception:
-            pass
-    close = getattr(datatree, 'close', None)
-    if callable(close):
-        try:
-            close()
-        except Exception:
-            pass
-
-
 def open_datatree(filepath: str | os.PathLike, filetype: str = None, engine: str = None, chunks = None, consolidated: bool = False) -> xr.DataTree:
     filepath = Path(filepath)
 

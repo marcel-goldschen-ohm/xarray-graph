@@ -58,10 +58,10 @@ class XarrayDataTreeViewer(QMainWindow):
         self._initUI()
 
     @classmethod
-    def windowManager(cls) -> WindowManager:
+    def windowManager(cls) -> WindowManager[Self]:
         if cls._window_mgr is None:
             from xarray_graph.utils.WindowManager import WindowManager
-            cls._window_mgr = WindowManager()
+            cls._window_mgr = WindowManager[Self]()
 
         return cls._window_mgr
 
@@ -324,6 +324,7 @@ class XarrayDataTreeViewer(QMainWindow):
     def setDatatree(self, datatree: DataTree) -> None:
         self._datatree_view.setTreeData(datatree)
         self.refresh()
+        self._filepath = None  # datatree is not associated with a file
 
     def onDataTreeSelectionChanged(self) -> None:
         self._updateInfoView()
