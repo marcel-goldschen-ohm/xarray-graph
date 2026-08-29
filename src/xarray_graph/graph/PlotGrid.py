@@ -5,7 +5,9 @@ from __future__ import annotations
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor, QResizeEvent
 from qtpy.QtWidgets import QGraphicsGridLayout
-from pyqtgraph import GraphicsLayoutWidget, PlotItem
+from pyqtgraph import GraphicsLayoutWidget
+from pyqtgraph.graphicsItems.PlotItem import PlotItem
+from pyqtgraph.graphicsItems.AxisItem import AxisItem
 from xarray_graph.graph.Plot import Plot
 
 
@@ -13,12 +15,12 @@ class PlotGrid(GraphicsLayoutWidget):
     """ Grid of PlotItems. """
 
     def __init__(self, rows=0, cols=0, *args, **kwargs):
-        GraphicsLayoutWidget.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         from pyqtgraph import GraphicsLayout
         self._graphics_layout: GraphicsLayout = self.ci
 
-        self._grid_layout: QGraphicsGridLayout = self.ci.layout
+        self._grid_layout: QGraphicsGridLayout = self.ci.layout  # type: ignore
         self._grid_layout.setContentsMargins(0, 10, 10, 0)
         self._grid_layout.setSpacing(0)
 
@@ -49,27 +51,27 @@ class PlotGrid(GraphicsLayoutWidget):
     def setGrid(self, rows: int, cols: int, plotType = Plot) -> None:
         for row in range(rows):
             for col in range(cols):
-                item = self.getItem(row, col)
-                if not issubclass(type(item), PlotItem):
+                item = self._graphics_layout.getItem(row, col)
+                if not isinstance(item, PlotItem):
                     if item:
                         self.removeItem(item)
                     plot = plotType()
                     self.addItem(plot, row, col)
         for row in reversed(range(rows, self.rowCount())):
             for col in range(self.columnCount()):
-                item = self.getItem(row, col)
+                item = self._graphics_layout.getItem(row, col)
                 if item:
                     self.removeItem(item)
         for col in reversed(range(cols, self.columnCount())):
             for row in range(self.rowCount()):
-                item = self.getItem(row, col)
+                item = self._graphics_layout.getItem(row, col)
                 if item:
                     self.removeItem(item)
         if self.hasRegularLayout():
             self.applyRegularLayout()
     
     def plots(self) -> list[PlotItem]:
-        return [item for item in self.items() if issubclass(type(item), PlotItem)]
+        return [item for item in self.items() if isinstance(item, PlotItem)]
     
     def hasRegularLayout(self) -> bool:
         return getattr(self, '_hasRegularLayout', False)
@@ -85,9 +87,11 @@ class PlotGrid(GraphicsLayoutWidget):
         viewWidth = 0
         n = 0
         for col in range(self.columnCount()):
-            item = self.getItem(0, col)
-            if issubclass(type(item), PlotItem):
-                viewWidth += item.getViewBox().width()
+            item = self._graphics_layout.getItem(0, col)
+            if isinstance(item, PlotItem):
+                view = item.getViewBox()
+                if view:
+                    viewWidth += view.width()
                 n += 1
         viewWidth /= n
         viewWidth = int(viewWidth)
@@ -95,19 +99,21 @@ class PlotGrid(GraphicsLayoutWidget):
         viewHeight = 0
         n = 0
         for row in range(self.rowCount()):
-            item = self.getItem(row, 0)
-            if issubclass(type(item), PlotItem):
-                viewHeight += item.getViewBox().height()
+            item = self._graphics_layout.getItem(row, 0)
+            if isinstance(item, PlotItem):
+                view = item.getViewBox()
+                if view:
+                    viewHeight += view.height()
                 n += 1
         viewHeight /= n
         viewHeight = int(viewHeight)
 
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
-                plot = self.getItem(row, col)
-                if issubclass(type(plot), PlotItem):
-                    xaxis = plot.getAxis('bottom')
-                    yaxis = plot.getAxis('left')
+                plot = self._graphics_layout.getItem(row, col)
+                if isinstance(plot, PlotItem):
+                    xaxis: AxisItem = plot.getAxis('bottom')
+                    yaxis: AxisItem = plot.getAxis('left')
                     plot.setPreferredWidth(viewWidth + yaxis.width() if yaxis.isVisible() else viewWidth)
                     plot.setPreferredHeight(viewHeight + xaxis.height() if xaxis.isVisible() else viewHeight)
     
@@ -127,19 +133,13 @@ class PlotGrid(GraphicsLayoutWidget):
         # update axes
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
-                plot = self.getItem(row, col)
-                if not issubclass(type(plot), PlotItem):
+                plot = self._graphics_layout.getItem(row, col)
+                if not isinstance(plot, PlotItem):
                     continue
-                xaxis = plot.getAxis('bottom')
-                yaxis = plot.getAxis('left')
-                if row in xlabel_rows:
-                    xaxis.label.show()
-                else:
-                    xaxis.label.hide()
-                if col in ylabel_columns:
-                    yaxis.label.show()
-                else:
-                    yaxis.label.hide()
+                xaxis: AxisItem = plot.getAxis('bottom')
+                yaxis: AxisItem = plot.getAxis('left')
+                xaxis.showLabel(row in xlabel_rows)
+                yaxis.showLabel(col in ylabel_columns)
                 xaxis.setStyle(showValues=(row in xtick_rows))
                 yaxis.setStyle(showValues=(col in ytick_columns))
     
@@ -153,6 +153,11 @@ def test_live():
     from qtpy.QtWidgets import QApplication
     app = QApplication()
     grid = PlotGrid(3, 4)
+    for plot in grid.plots():
+        xaxis: AxisItem = plot.getAxis('bottom')
+        yaxis: AxisItem = plot.getAxis('left')
+        xaxis.setLabel('X Axis')
+        yaxis.setLabel('Y Axis')
     grid.setAxisLabelAndTickVisibility(xlabel_rows=[-1], xtick_rows=[-1], ylabel_columns=[0], ytick_columns=[0])
     grid.setHasRegularLayout(True)
     grid.setWindowTitle('pyqtgraph-tools.PlotGrid')
