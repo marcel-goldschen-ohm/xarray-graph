@@ -1688,10 +1688,10 @@ class XarrayGraph(XarrayDataTreeViewer):
         from xarray_graph.graph.InfLine import VLine
         if isinstance(item, XAxisRegion):
             item.sigRegionChanged.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            item.sigRegionDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            item.sigDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
             item.sigEditingFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
             # item.sigDeletionRequested.connect(lambda item=item: self.deleteROIs(item._ROI))
-            item.sigRegionDragFinished.connect(lambda: self.updateROIsView())
+            item.sigDragFinished.connect(lambda: self.updateROIsView())
             item.sigEditingFinished.connect(lambda: self.updateROIsView())
             item.setZValue(0)
         elif isinstance(item, VLine):

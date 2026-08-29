@@ -2,25 +2,21 @@
 """
 
 from __future__ import annotations
-from typing import Any
-from qtpy.QtCore import Signal  # type: ignore
+from typing import Any, cast
 from qtpy.QtCore import Qt, QPoint
 from qtpy.QtGui import QColor, QPen, QFont, QMouseEvent
 from qtpy.QtWidgets import QMenu, QWidget
 from pyqtgraph import LinearRegionItem, InfLineLabel, mkPen, mkBrush
-from pyqtgraph.GraphicsScene.mouseEvents import MouseDragEvent
-# from xarray_graph.widgets.ColorButton import ColorButton
+# from pyqtgraph.GraphicsScene.mouseEvents import MouseDragEvent
 
 
 class AxisRegion(LinearRegionItem):
     """ LinearRegionItem with context menu, optional text label, and style dialog.
-    
-    self.sigRegionChangeFinished is emitted when the item is moved or resized.
-    """
 
-    sigRegionDragFinished = Signal(object)
-    sigEditingFinished = Signal(object)
-    sigRequestDeletion = Signal(object)
+    sigRegionChangeFinished(self) emitted when the user has finished dragging the region (or one of its lines) and when the region is changed programatically.
+    
+    sigRegionChanged(self) emitted while the user is dragging the region (or one of its lines) and when the region is changed programatically.
+    """
 
     def __init__(self, *args, **kwargs):
         if 'orientation' not in kwargs:
@@ -43,49 +39,28 @@ class AxisRegion(LinearRegionItem):
 
         self.lines[0].sigClicked.connect(self.onEdgeClicked)
         self.lines[1].sigClicked.connect(self.onEdgeClicked)
-
-        self._state = {
-            'region': self.getRegion(),
-            'text': self.text(),
-            'movable': self.movable,
-            'group': ''
-        }
-
-        # self._group = ''
-
-        # self.sigRegionChangeFinished.connect(lambda self=self: self.storeState())
-
-        # self.setZValue(11)
     
-    def state(self, dim: str = None, include_format: bool = True) -> dict[str, Any]:
+    def state(self) -> dict[str, Any]:
         """ Return hashable dict for saving and restoring state.
         """
-        state = {
-            'region': self.getRegion() if dim is None else {dim: self.getRegion()},
+        return {
+            'position': self.position(),
             'text': self.text(),
             'movable': self.movable,
-            'group': self.group()
+            'format': self.format()
         }
-        if include_format:
-            state['format'] = self.format()
-        return state
 
-    def setState(self, state: dict[str, Any], dim: str = None):
+    def setState(self, state: dict[str, Any]):
         """ Restore state from hashable dict.
         """
         for key, value in state.items():
             key = key.lower()
-            if key == 'region':
-                if isinstance(value, dict):
-                    # should be {dim: region}
-                    dim, value = next(iter(value.items()))
-                self.setRegion(value)
+            if key == 'position':
+                self.setPosition(value)
             elif key == 'text':
                 self.setText(value)
             elif key == 'movable':
                 self.setMovable(value)
-            elif key == 'group':
-                self.setGroup(value)
             elif key == 'format':
                 self.setFormat(value)
     
@@ -131,66 +106,15 @@ class AxisRegion(LinearRegionItem):
                 self.setFontSize(value)
             elif key == 'fontcolor':
                 self.setFontColor(toQColor(value))
-    
-    # def storeState(self):
-    #     dim = getattr(self, '_dim', None)
-    #     self._state = self.state(dim=dim)
-    
-    # def restoreState(self):
-    #     if not hasattr(self, '_state'):
-    #         raise AttributeError('State has not been stored')
-    #     dim = getattr(self, '_dim', None)
-    #     self.setState(self._state, dim=dim)
-    
-    # def setRegion(self, rgn):
-    #     """ Override default method to avoid emitting sigRegionChangeFinished
-    #     which we only want to emit after a drag event.
-    #     """
-    #     if self.lines[0].value() == rgn[0] and self.lines[1].value() == rgn[1]:
-    #         return
-    #     self.blockLineSignal = True
-    #     self.lines[0].setValue(rgn[0])
-    #     # self.blockLineSignal = False
-    #     self.lines[1].setValue(rgn[1])
-    #     self.blockLineSignal = False
-    #     self.lineMoved(0)
-    #     self.lineMoved(1)
-    #     self.lineMoveFinished()
 
-    def mouseDragEvent(self, event: MouseDragEvent):
-        """ Add new signal for when drag is finished.
-        """
-        if not self.movable or event.button() != Qt.MouseButton.LeftButton:
-            return
-        event.accept()
-        
-        if event.isStart():
-            bdp = event.buttonDownPos()
-            self.cursorOffsets = [l.pos() - bdp for l in self.lines]
-            self.startPositions = [l.pos() for l in self.lines]
-            self.moving = True
-            
-        if not self.moving:
-            return
-            
-        self.blockLineSignal = True  # only want to update once
-        for i, l in enumerate(self.lines):
-            l.setPos(self.cursorOffsets[i] + event.pos())
-        self.prepareGeometryChange()
-        self.blockLineSignal = False
-        
-        if event.isFinish():
-            self.moving = False
-            self.sigRegionChangeFinished.emit(self)
-            self.sigRegionDragFinished.emit(self)
-        else:
-            self.sigRegionChanged.emit(self)
-    
-    # def group(self):
-    #     return self._group
-    
-    # def setGroup(self, group):
-    #     self._group = group
+    def position(self):
+        return self.getRegion()
+
+    def setPosition(self, position):
+        self.setRegion(position)
+
+    # movable: bool is an existing attribute
+    # setMovable(bool) is an existing method
     
     def faceColor(self) -> QColor:
         return self.brush.color()
@@ -246,7 +170,7 @@ class AxisRegion(LinearRegionItem):
         self.lines[0].hoverPen.setWidth(width)
         self.lines[1].hoverPen.setWidth(width)
 
-    def text(self):
+    def text(self) -> str:
         try:
             return self._textLabelItem.format
         except:
@@ -276,9 +200,6 @@ class AxisRegion(LinearRegionItem):
     def setFontColor(self, color: QColor):
         self._textLabelItem.setColor(color)
     
-    # def copyFormat(self, other: AxisRegion):
-    #     self.setFormat(other.getFormat())
-    
     def onEdgeClicked(self, line, event: QMouseEvent):
         if event.button() == Qt.MouseButton.RightButton:
             if self.raiseContextMenu(event):
@@ -290,9 +211,37 @@ class AxisRegion(LinearRegionItem):
                 if self.raiseContextMenu(event):
                     event.accept()
     
-    # def mouseReleaseEvent(self, event):
-    #     print('mouseReleaseEvent')
-    
+    # def mouseDragEvent(self, event: MouseDragEvent):
+    #     """ Handle mouse drags.
+        
+    #     Emits new signal for when drag is finished.
+    #     """
+    #     if not self.movable or event.button() != Qt.MouseButton.LeftButton:
+    #         return
+    #     event.accept()
+        
+    #     if event.isStart():
+    #         bdp = event.buttonDownPos()
+    #         self.cursorOffsets = [l.pos() - bdp for l in self.lines]
+    #         self.startPositions = [l.pos() for l in self.lines]
+    #         self.moving = True
+            
+    #     if not self.moving:
+    #         return
+            
+    #     self.blockLineSignal = True  # only want to update once
+    #     for i, l in enumerate(self.lines):
+    #         l.setPos(self.cursorOffsets[i] + event.pos())
+    #     self.prepareGeometryChange()
+    #     self.blockLineSignal = False
+        
+    #     if event.isFinish():
+    #         self.moving = False
+    #         self.sigRegionChangeFinished.emit(self)
+    #         self.sigDragFinished.emit(self)
+    #     else:
+    #         self.sigRegionChanged.emit(self)
+        
     def raiseContextMenu(self, event: QMouseEvent) -> bool:
         menu: QMenu = self.getContextMenus(event)
         pos = event.screenPos()
@@ -302,22 +251,18 @@ class AxisRegion(LinearRegionItem):
     def getContextMenus(self, event=None):
         self.menu = QMenu()
 
-        # self._thisItemMenu = QMenu(self.__class__.__name__)
-        # self._thisItemMenu.addAction('Edit', lambda: self.editDialog())
-        # # self._thisItemMenu.addSeparator()
-        # # self._thisItemMenu.addAction('Hide', lambda: self.setVisible(False))
-        # self._thisItemMenu.addSeparator()
-        # self._thisItemMenu.addAction('Delete', lambda: self.sigRequestDeletion.emit(self))
-        # self.menu.addMenu(self._thisItemMenu)
+        self.menu.addAction('Edit', lambda: self.editDialog())
 
-        # # Let the scene add on to the end of our context menu (this is optional)
-        # self.menu.addSection('View')
-        # self.menu = self.scene().addParentContextMenus(self, self.menu, event)
+        # Let the scene add on to the end of our context menu (this is optional)
+        self.menu.addSection('View')
+        from pyqtgraph.GraphicsScene import GraphicsScene
+        scene = cast(GraphicsScene, self.scene())
+        self.menu = scene.addParentContextMenus(self, self.menu, event)
         return self.menu
     
-    # def editDialog(self, parent: QWidget = None):
-    #     editAxisRegion(self, parent=parent)
-    #     self.sigEditingFinished.emit(self)
+    def editDialog(self, parent: QWidget = None):
+        editAxisRegion(self, parent=parent)
+        self.sigRegionChangeFinished.emit(self)
 
 
 class AxisRegionLabel(InfLineLabel):
@@ -350,272 +295,249 @@ class YAxisRegion(AxisRegion):
 
 
 class AxisRegionPanel(QWidget):
+    """ Widget for editing AxisRegion properties.
+    """
 
     def __init__(self, *args, **kwargs):
+        include_format: bool = kwargs.pop('include_format', True)
         super().__init__(*args, **kwargs)
 
-        from qtpy.QtWidgets import QFormLayout, QLineEdit, QCheckBox, QTextEdit, QVBoxLayout, QHBoxLayout
+        from qtpy.QtWidgets import QFormLayout, QLineEdit, QCheckBox, QTextEdit, QVBoxLayout, QFrame
 
-        form = QFormLayout(self)
+        form = QFormLayout()
         form.setContentsMargins(5, 5, 5, 5)
         form.setSpacing(5)
+        form.setHorizontalSpacing(10)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        self._minEdit = QLineEdit()
-        self._maxEdit = QLineEdit()
-        form.addRow('Min', self._minEdit)
-        form.addRow('Max', self._maxEdit)
+        self._positionEdit = QLineEdit()
+        form.addRow('Position', self._positionEdit)
 
         self._movableCheckBox = QCheckBox()
         form.addRow('Movable', self._movableCheckBox)
 
-        self._groupEdit = QLineEdit()
-        form.addRow('Group', self._groupEdit)
-
         self._textEdit = QTextEdit()
         form.addRow('Text', self._textEdit)
 
-        # self._formatPanel = AxisRegionFormatPanel()
-        # # self._formatPanelWrapperLayout = QVBoxLayout()
-        # # self._formatPanelWrapperLayout.setContentsMargins(0, 0, 0, 0)
-        # # self._formatPanelWrapperLayout.addWidget(self._formatPanel)
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+        vbox.addLayout(form)
 
-        # # self._formatSection = CollapsibleSection(title='Format')
-        # # self._formatSection.setContentLayout(self._formatPanelWrapperLayout)
-        # # form.addRow(self._formatSection)
-        # form.addRow(self._formatPanel)
+        if include_format:
+            hline = QFrame()
+            hline.setFrameShape(QFrame.Shape.HLine)
+            hline.setFrameShadow(QFrame.Shadow.Sunken)
+
+            self._format_panel = AxisRegionFormatPanel()
+
+            vbox.addWidget(hline)
+            vbox.addWidget(self._format_panel)
+
+        vbox.addStretch()
 
         # default settings
-        self.setState(AxisRegion().state(include_format=True))
+        self.setState(AxisRegion().state())
     
     def state(self) -> dict[str, Any]:
         state: dict[str, Any] = {}
 
-        if self._minEdit.text() != '' and self._maxEdit.text() != '':
-            state['region'] = tuple(sorted([float(self._minEdit.text()), float(self._maxEdit.text())]))
+        if self._positionEdit.text() != '':
+            try:
+                min_val, max_val = map(float, self._positionEdit.text().split(','))
+                state['position'] = (min_val, max_val)
+            except:
+                pass
 
         if self._movableCheckBox.checkState() != Qt.CheckState.PartiallyChecked:
             state['movable'] = self._movableCheckBox.isChecked()
         
-        state['group'] = self._groupEdit.text()
-        
         state['text'] = self._textEdit.toPlainText()
 
-        # state['format'] = self._formatPanel.getFormat()
+        if hasattr(self, '_format_panel'):
+            state['format'] = self._format_panel.format()
 
         return state
 
     def setState(self, state: dict[str, Any]):
         for key, value in state.items():
             key = key.lower()
-            if key == 'region':
-                self._minEdit.setText(f'{value[0]:.6f}')
-                self._maxEdit.setText(f'{value[1]:.6f}')
+            if key == 'position':
+                self._positionEdit.setText(f'{value[0]:.6f}, {value[1]:.6f}')
             elif key == 'movable':
                 self._movableCheckBox.setChecked(value)
-            elif key == 'group':
-                if value is None:
-                    value = ''
-                self._groupEdit.setText(str(value))
             elif key == 'text':
                 self._textEdit.setPlainText(value)
-            # elif key == 'format':
-            #     self._formatPanel.setFormat(value)
+            elif key == 'format' and hasattr(self, '_format_panel'):
+                self._format_panel.setFormat(value)
+        self._state = state
+
+    def editedState(self) -> dict[str, Any]:
+        """ Return the state of the widget, but only include values that have changed from the original state.
+        """
+        current_state = self.state()
+        edited_state = {}
+        for key, value in current_state.items():
+            if key == 'format' and hasattr(self, '_format_panel'):
+                edited_format = self._format_panel.editedFormat()
+                if edited_format:
+                    edited_state[key] = edited_format
+            elif key not in self._state or self._state[key] != value:
+                edited_state[key] = value
+        return edited_state
 
 
-# class AxisRegionFormatPanel(QWidget):
+class AxisRegionFormatPanel(QWidget):
+    """ Widget for editing AxisRegion format properties.
+    """
 
-#     def __init__(self, *args, **kwargs):
-#         QWidget.__init__(self, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        QWidget.__init__(self, *args, **kwargs)
 
-#         self._faceColorButton = ColorButton()
-#         self._edgeColorButton = ColorButton()
-#         self._edgeWidthSpinBox = QDoubleSpinBox()
+        from qtpy.QtWidgets import QFormLayout, QVBoxLayout, QHBoxLayout, QSpinBox, QSpacerItem
+        from xarray_graph.widgets.ColorButton import ColorButton
 
-#         self._faceHoverColorButton = ColorButton()
-#         self._edgeHoverColorButton = ColorButton()
-#         self._edgeHoverWidthSpinBox = QDoubleSpinBox()
+        self._faceColorButton = ColorButton()
+        self._edgeColorButton = ColorButton()
+        self._edgeWidthSpinBox = QSpinBox()
 
-#         self._fontColorButton = ColorButton()
-#         self._fontSizeSpinBox = QDoubleSpinBox()
+        self._faceHoverColorButton = ColorButton()
+        self._edgeHoverColorButton = ColorButton()
+        self._edgeHoverWidthSpinBox = QSpinBox()
 
-#         self._formatLayout = QFormLayout()
-#         self._formatLayout.setContentsMargins(5, 5, 5, 5)
-#         self._formatLayout.setSpacing(5)
-#         self._formatLayout.addRow('Face Color', self._faceColorButton)
-#         self._formatLayout.addRow('Edge Color', self._edgeColorButton)
-#         self._formatLayout.addRow('Edge Width', self._edgeWidthSpinBox)
-#         self._formatLayout.addRow('Font Color', self._fontColorButton)
-#         self._formatLayout.addRow('Font Size', self._fontSizeSpinBox)
+        self._fontColorButton = ColorButton()
+        self._fontSizeSpinBox = QSpinBox()
 
-#         self._hoverLayout = QFormLayout()
-#         self._hoverLayout.setContentsMargins(5, 5, 5, 5)
-#         self._hoverLayout.setSpacing(5)
-#         self._hoverLayout.addRow('Face Hover Color', self._faceHoverColorButton)
-#         self._hoverLayout.addRow('Edge Hover Color', self._edgeHoverColorButton)
-#         self._hoverLayout.addRow('Edge Hover Width', self._edgeHoverWidthSpinBox)
+        self._leftColumn = QFormLayout()
+        self._leftColumn.setContentsMargins(5, 5, 5, 5)
+        self._leftColumn.setSpacing(5)
+        self._leftColumn.addRow('Face Color', self._faceColorButton)
+        self._leftColumn.addRow('Edge Color', self._edgeColorButton)
+        self._leftColumn.addRow('Edge Width', self._edgeWidthSpinBox)
+        self._leftColumn.addItem(QSpacerItem(20, 10))
+        self._leftColumn.addRow('Font Color', self._fontColorButton)
+        self._leftColumn.addRow('Font Size', self._fontSizeSpinBox)
 
-#         self._hoverLayoutWrapper = QVBoxLayout()
-#         self._hoverLayoutWrapper.addLayout(self._hoverLayout)
-#         self._hoverLayoutWrapper.addStretch()
+        self._rightColumn = QFormLayout()
+        self._rightColumn.setContentsMargins(5, 5, 5, 5)
+        self._rightColumn.setSpacing(5)
+        self._rightColumn.addRow('Face Hover Color', self._faceHoverColorButton)
+        self._rightColumn.addRow('Edge Hover Color', self._edgeHoverColorButton)
+        self._rightColumn.addRow('Edge Hover Width', self._edgeHoverWidthSpinBox)
 
-#         self._formatLayoutWrapper = QHBoxLayout()
-#         self._formatLayoutWrapper.addLayout(self._formatLayout)
-#         self._formatLayoutWrapper.addLayout(self._hoverLayoutWrapper)
+        self._hoverLayoutWrapper = QVBoxLayout()
+        self._hoverLayoutWrapper.addLayout(self._rightColumn)
+        self._hoverLayoutWrapper.addStretch()
 
-#         self.setLayout(self._formatLayoutWrapper)
+        self._formatLayoutWrapper = QHBoxLayout()
+        self._formatLayoutWrapper.addLayout(self._leftColumn)
+        self._formatLayoutWrapper.addLayout(self._hoverLayoutWrapper)
 
-#         # default settings
-#         self.setFormat(AxisRegion().getFormat())
+        self.setLayout(self._formatLayoutWrapper)
+
+        # default settings
+        self.setFormat(AxisRegion().format())
     
-#     def getFormat(self):
-#         fmt = {}
+    def format(self) -> dict[str, Any]:
+        from xarray_graph.utils.color import toColorStr
 
-#         faceColor = self._faceColorButton.color()
-#         edgeColor = self._edgeColorButton.color()
-#         edgeWidth = self._edgeWidthSpinBox.value()
-#         fontSize = self._fontSizeSpinBox.value()
-#         fontColor = self._fontColorButton.color()
-#         faceHoverColor = self._faceHoverColorButton.color()
-#         edgeHoverColor = self._edgeHoverColorButton.color()
-#         edgeHoverWidth = self._edgeHoverWidthSpinBox.value()
+        fmt = {}
 
-#         if faceColor is not None:
-#             fmt['facecolor'] = toColorStr(faceColor)
-#         if edgeColor is not None:
-#             fmt['edgecolor'] = toColorStr(edgeColor)
-#         if edgeWidth > 0:
-#             fmt['edgewidth'] = edgeWidth
-#         if fontSize > 0:
-#             fmt['fontsize'] = fontSize
-#         if fontColor is not None:
-#             fmt['fontcolor'] = toColorStr(fontColor)
-#         if faceHoverColor is not None:
-#             fmt['facehovercolor'] = toColorStr(faceHoverColor)
-#         if edgeHoverColor is not None:
-#             fmt['edgehovercolor'] = toColorStr(edgeHoverColor)
-#         if edgeHoverWidth > 0:
-#             fmt['edgehoverwidth'] = edgeHoverWidth
+        faceColor = self._faceColorButton.color()
+        edgeColor = self._edgeColorButton.color()
+        edgeWidth = self._edgeWidthSpinBox.value()
+        fontSize = self._fontSizeSpinBox.value()
+        fontColor = self._fontColorButton.color()
+        faceHoverColor = self._faceHoverColorButton.color()
+        edgeHoverColor = self._edgeHoverColorButton.color()
+        edgeHoverWidth = self._edgeHoverWidthSpinBox.value()
 
-#         return fmt
+        if faceColor is not None:
+            fmt['facecolor'] = toColorStr(faceColor)
+        if edgeColor is not None:
+            fmt['edgecolor'] = toColorStr(edgeColor)
+        if edgeWidth > 0:
+            fmt['edgewidth'] = edgeWidth
+        if fontSize > 0:
+            fmt['fontsize'] = fontSize
+        if fontColor is not None:
+            fmt['fontcolor'] = toColorStr(fontColor)
+        if faceHoverColor is not None:
+            fmt['facehovercolor'] = toColorStr(faceHoverColor)
+        if edgeHoverColor is not None:
+            fmt['edgehovercolor'] = toColorStr(edgeHoverColor)
+        if edgeHoverWidth > 0:
+            fmt['edgehoverwidth'] = edgeHoverWidth
 
-#     def setFormat(self, fmt: dict):
-#         for key, value in fmt.items():
-#             key = key.lower()
-#             if key == 'facecolor':
-#                 self._faceColorButton.setColor(toQColor(value))
-#             elif key == 'edgecolor':
-#                 self._edgeColorButton.setColor(toQColor(value))
-#             elif key == 'edgewidth':
-#                 self._edgeWidthSpinBox.setValue(value)
-#             elif key == 'facehovercolor':
-#                 self._faceHoverColorButton.setColor(toQColor(value))
-#             elif key == 'edgehovercolor':
-#                 self._edgeHoverColorButton.setColor(toQColor(value))
-#             elif key == 'edgehoverwidth':
-#                 self._edgeHoverWidthSpinBox.setValue(value)
-#             elif key == 'fontsize':
-#                 self._fontSizeSpinBox.setValue(value)
-#             elif key == 'fontcolor':
-#                 self._fontColorButton.setColor(toQColor(value))
+        return fmt
+
+    def setFormat(self, format: dict[str, Any]):
+        from xarray_graph.utils.color import toQColor
+
+        for key, value in format.items():
+            key = key.lower()
+            if key == 'facecolor':
+                self._faceColorButton.setColor(toQColor(value))
+            elif key == 'edgecolor':
+                self._edgeColorButton.setColor(toQColor(value))
+            elif key == 'edgewidth':
+                self._edgeWidthSpinBox.setValue(value)
+            elif key == 'facehovercolor':
+                self._faceHoverColorButton.setColor(toQColor(value))
+            elif key == 'edgehovercolor':
+                self._edgeHoverColorButton.setColor(toQColor(value))
+            elif key == 'edgehoverwidth':
+                self._edgeHoverWidthSpinBox.setValue(value)
+            elif key == 'fontsize':
+                self._fontSizeSpinBox.setValue(value)
+            elif key == 'fontcolor':
+                self._fontColorButton.setColor(toQColor(value))
+        self._format = format
+
+    def editedFormat(self) -> dict[str, Any]:
+        """ Return the format of the widget, but only include values that have changed from the original format.
+        """
+        current_format = self.format()
+        edited_format = {}
+        for key, value in current_format.items():
+            if key not in self._format or self._format[key] != value:
+                edited_format[key] = value
+        return edited_format
 
 
-# def editAxisRegion(region: AxisRegion = None, parent: QWidget = None, title: str = None) -> dict | None:
-#     if region is None:
-#         region = AxisRegion()
+def editAxisRegion(region: AxisRegion = None, *args, **kwargs) -> dict[str, Any] | None:
+    include_format: bool = kwargs.pop('include_format', True)
+    title: str = kwargs.pop('title', None)
+
+    if region is None:
+        region = AxisRegion()
+
+    from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
     
-#     panel = AxisRegionPanel()
-#     panel.layout().setContentsMargins(0, 0, 0, 0)
-#     panel.setState(region.getState())
+    panel = AxisRegionPanel(include_format=include_format)
+    panel.setState(region.state())
 
-#     dlg = QDialog(parent)
-#     vbox = QVBoxLayout(dlg)
-#     vbox.addWidget(panel)
+    dlg = QDialog(*args, **kwargs)
+    vbox = QVBoxLayout(dlg)
+    vbox.addWidget(panel)
 
-#     btns = QDialogButtonBox()
-#     btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-#     btns.accepted.connect(dlg.accept)
-#     btns.rejected.connect(dlg.reject)
-#     vbox.addWidget(btns)
-#     vbox.addStretch()
+    btns = QDialogButtonBox()
+    btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+    btns.accepted.connect(dlg.accept)
+    btns.rejected.connect(dlg.reject)
+    vbox.addWidget(btns)
+    vbox.addStretch()
 
-#     if title is not None:
-#         dlg.setWindowTitle(title)
-#     dlg.setWindowModality(Qt.ApplicationModal)
+    if title:
+        dlg.setWindowTitle(title)
+    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
     
-#     if dlg.exec() != QDialog.Accepted:
-#         return
-    
-#     region.setState(panel.getState())
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return
 
-#     return region.getState()
-
-
-# def formatAxisRegion(region: AxisRegion = None, parent: QWidget = None, title: str = None) -> dict | None:
-#     if region is None:
-#         region = AxisRegion()
-    
-#     panel = AxisRegionFormatPanel()
-#     panel.layout().setContentsMargins(0, 0, 0, 0)
-#     panel.setFormat(region.getFormat())
-
-#     dlg = QDialog(parent)
-#     vbox = QVBoxLayout(dlg)
-#     vbox.addWidget(panel)
-
-#     btns = QDialogButtonBox()
-#     btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-#     btns.accepted.connect(dlg.accept)
-#     btns.rejected.connect(dlg.reject)
-#     vbox.addWidget(btns)
-#     vbox.addStretch()
-
-#     if title is not None:
-#         dlg.setWindowTitle(title)
-#     dlg.setWindowModality(Qt.ApplicationModal)
-    
-#     if dlg.exec() != QDialog.Accepted:
-#         return
-    
-#     region.setFormat(panel.getFormat())
-
-#     return region.getFormat()
-
-
-# def editMultipleAxisRegions(regions: list[AxisRegion], parent: QWidget = None, title: str = None):
-#     panel = AxisRegionPanel()
-#     panel.layout().setContentsMargins(0, 0, 0, 0)
-#     states = [region.getState() for region in regions]
-#     panel.setState(states[0])
-#     for state in states[1:]:
-#         if state['region'] != states[0]['region']:
-#             self._minEdit.setText('')
-#             self._maxEdit.setText('')
-#         if state['movable'] != states[0]['movable']:
-#             self._movableCheckBox.setCheckState(Qt.PartiallyChecked)
-#         if state['text'] != states[0]['text']:
-#             self._textEdit.setPlainText('')
-#         for key in state['format']:
-#             if key not in states[0]['format'] or state['format'][key] != states[0]['format'][key]:
-#                 pass
-#     panel.setState(shared_state)
-
-#     dlg = QDialog(parent)
-#     vbox = QVBoxLayout(dlg)
-#     vbox.addWidget(panel)
-
-#     btns = QDialogButtonBox()
-#     btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-#     btns.accepted.connect(dlg.accept)
-#     btns.rejected.connect(dlg.reject)
-#     vbox.addWidget(btns)
-#     vbox.addStretch()
-
-#     if title is not None:
-#         dlg.setWindowTitle(title)
-#     dlg.setWindowModality(Qt.ApplicationModal)
-    
-#     if dlg.exec() != QDialog.Accepted:
-#         return
+    edited_state = panel.editedState()
+    region.setState(edited_state)
+    return edited_state
 
 
 def test_live():
@@ -623,9 +545,15 @@ def test_live():
     app = QApplication()
 
     ui = AxisRegionPanel()
+    from pyqtgraph import PlotWidget
+    ui = PlotWidget()
+    region = XAxisRegion()
+    region.setRegion((0.2, 0.8))
+    ui.addItem(region)
     ui.show()
 
     app.exec()
+
 
 if __name__ == '__main__':
     test_live()

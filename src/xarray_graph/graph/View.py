@@ -8,7 +8,7 @@ from qtpy.QtCore import Qt, QPointF
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import QGraphicsObject, QGraphicsSceneMouseEvent
 from pyqtgraph.graphicsItems.ViewBox import ViewBox
-from pyqtgraph import RectROI, EllipseROI, CircleROI, LineSegmentROI, PlotDataItem
+# from pyqtgraph import RectROI, EllipseROI, CircleROI, LineSegmentROI, PlotDataItem, Point
 from xarray_graph.graph.AxisRegion import XAxisRegion, YAxisRegion
 from xarray_graph.graph.InfLine import VLine, HLine
 
@@ -50,27 +50,25 @@ class View(ViewBox):
                     newItem = VLine(pos=posInAxesCoords.x())
                 elif self._drawingItemsOfType == HLine:
                     newItem = HLine(pos=posInAxesCoords.y())
-                elif self._drawingItemsOfType in [RectROI, EllipseROI, CircleROI, LineSegmentROI]:
-                    newItem = self._drawingItemsOfType(pos=posInAxesCoords, size=[0, 0], invertible=True)
-                elif issubclass(self._drawingItemsOfType, PlotDataItem):
-                    if isinstance(self._itemBeingDrawn, PlotDataItem):
-                        # add point to existing Graph
-                        import numpy as np
-                        x, y = self._itemBeingDrawn.getOriginalDataset()
-                        if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-                            x = np.append(x, posInAxesCoords.x())
-                            y = np.append(y, posInAxesCoords.y())
-                            self._itemBeingDrawn.setData(x, y)
-                        event.accept()
-                        return
-                    else:
-                        newItem = cast(PlotDataItem, self._drawingItemsOfType())
-                        newItem.setData([posInAxesCoords.x()], [posInAxesCoords.y()])
+                # elif self._drawingItemsOfType in [RectROI, EllipseROI, CircleROI, LineSegmentROI]:
+                #     newItem = self._drawingItemsOfType(pos=posInAxesCoords, size=[0, 0], invertible=True)
+                # elif issubclass(self._drawingItemsOfType, PlotDataItem):
+                #     if isinstance(self._itemBeingDrawn, PlotDataItem):
+                #         # add point to existing Graph
+                #         import numpy as np
+                #         x, y = self._itemBeingDrawn.getOriginalDataset()
+                #         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
+                #             x = np.append(x, posInAxesCoords.x())
+                #             y = np.append(y, posInAxesCoords.y())
+                #             self._itemBeingDrawn.setData(x, y)
+                #         event.accept()
+                #         return
+                #     else:
+                #         newItem = cast(PlotDataItem, self._drawingItemsOfType())
+                #         newItem.setData([posInAxesCoords.x()], [posInAxesCoords.y()])
                 if newItem is not None:
                     self._itemBeingDrawn = newItem
                     self.addItem(self._itemBeingDrawn)
-                    # if isinstance(self._itemBeingDrawn, AxisRegion):
-                    #     self.sigResized.connect(self._itemBeingDrawn.updateLabelPosition)
                     event.accept()
                     return
         
@@ -105,11 +103,11 @@ class View(ViewBox):
                     self._itemBeingDrawn.setPos(posInAxesCoords.x())
                 elif isinstance(self._itemBeingDrawn, HLine):
                     self._itemBeingDrawn.setPos(posInAxesCoords.y())
-                # elif type(self._itemBeingDrawn) in [pg.RectROI, pg.EllipseROI, pg.CircleROI]:
+                # elif isinstance(self._itemBeingDrawn, (RectROI, EllipseROI, CircleROI)):
                 #     self._itemBeingDrawn.setSize(posInAxesCoords - self._itemBeingDrawn.pos())
-                # elif isinstance(self._itemBeingDrawn, pg.LineSegmentROI):
+                # elif isinstance(self._itemBeingDrawn, LineSegmentROI):
                 #     state = self._itemBeingDrawn.getState()
-                #     state['points'] = [pg.Point(startPosInAxesCoords), pg.Point(posInAxesCoords)]
+                #     state['points'] = [Point(startPosInAxesCoords), Point(posInAxesCoords)]
                 #     self._itemBeingDrawn.setState(state)
                 event.accept()
                 return
@@ -143,12 +141,20 @@ def test_live():
     assert isinstance(view, View)
 
     import numpy as np
+    from pyqtgraph import PlotDataItem
     item = PlotDataItem(y=np.random.randn(1000))
     plot.addItem(item)
     plot.setWindowTitle('pyqtgraph-tools')
     fig.show()
 
     view.startDrawingItemsOfType(XAxisRegion)
+    # view.startDrawingItemsOfType(YAxisRegion)
+    # view.startDrawingItemsOfType(VLine)
+    # view.startDrawingItemsOfType(HLine)
+    # view.startDrawingItemsOfType(RectROI)
+    # view.startDrawingItemsOfType(EllipseROI)
+    # view.startDrawingItemsOfType(CircleROI)
+    # view.startDrawingItemsOfType(LineSegmentROI)
     from qtpy.QtCore import QTimer
     QTimer.singleShot(3000, lambda: view.stopDrawingItems())
 
