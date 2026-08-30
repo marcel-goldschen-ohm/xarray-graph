@@ -12,6 +12,10 @@ class ArrayTableModel(QAbstractTableModel):
         if array.ndim not in (1, 2):
             raise ValueError("Array must be 1D or 2D.")
         self._array = array
+
+        # headers
+        self._row_labels: list[str] = []
+        self._column_labels: list[str] = []
     
     def array(self) -> np.ndarray:
         return self._array
@@ -80,6 +84,72 @@ class ArrayTableModel(QAbstractTableModel):
         if not self._read_only:
             flags |= Qt.ItemFlag.ItemIsEditable
         return flags
+
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int):
+        """ Get row or column label.
+        """
+        if role == Qt.ItemDataRole.DisplayRole:
+            if orientation == Qt.Orientation.Horizontal:
+                labels = self.columnLabels()
+            else: #elif orientation == Qt.Orientation.Vertical:
+                labels = self.rowLabels()
+            if section < len(labels):
+                label = labels[section]
+                if label is not None:
+                    return label
+            return section
+
+    def setHeaderData(self, section: int, orientation: Qt.Orientation, value, role: int) -> bool:
+        """ Set row or column label.
+        """
+        if role == Qt.ItemDataRole.EditRole:
+            if orientation == Qt.Orientation.Horizontal:
+                labels = self.columnLabels()
+            else: #elif orientation == Qt.Orientation.Vertical:
+                labels = self.rowLabels()
+            if section < len(labels):
+                labels[section] = value
+            else:
+                labels += [None] * (section - len(labels)) + [value]
+            if orientation == Qt.Orientation.Horizontal:
+                self.setColumnLabels(labels)
+            elif orientation == Qt.Orientation.Vertical:
+                self.setRowLabels(labels)
+            self.headerDataChanged.emit(orientation, section, section)
+            return True
+        return False
+    
+    def rowLabels(self) -> list:
+        return self._row_labels
+    
+    def setRowLabels(self, labels: list) -> None:
+        old_labels = self._row_labels
+        n_overlap = min(len(labels), len(old_labels))
+        first_change = 0
+        while (first_change < n_overlap) and (labels[first_change] == old_labels[first_change]):
+            first_change += 1
+        last_change = max(len(labels), len(old_labels)) - 1
+        while (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
+            last_change -= 1
+        self._row_labels = labels
+        if first_change <= last_change: 
+            self.headerDataChanged.emit(Qt.Orientation.Vertical, first_change, last_change)
+    
+    def columnLabels(self) -> list:
+        return self._column_labels
+    
+    def setColumnLabels(self, labels: list) -> None:
+        old_labels = self._column_labels
+        n_overlap = min(len(labels), len(old_labels))
+        first_change = 0
+        while (first_change < n_overlap) and (labels[first_change] == old_labels[first_change]):
+            first_change += 1
+        last_change = max(len(labels), len(old_labels)) - 1
+        while (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
+            last_change -= 1
+        self._column_labels = labels
+        if first_change <= last_change: 
+            self.headerDataChanged.emit(Qt.Orientation.Horizontal, first_change, last_change)
 
 
 if __name__ == "__main__":

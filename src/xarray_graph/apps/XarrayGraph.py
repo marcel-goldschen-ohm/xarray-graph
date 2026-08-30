@@ -366,11 +366,11 @@ class XarrayGraph(XarrayDataTreeViewer):
         if not xranges:
             return
         
-        from xarray_graph.graph.PlotCurve import PlotCurve
+        from xarray_graph.graph.PlotData import PlotData
         from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         xdim = self.xdim()
         for plot in self._plots.flatten().tolist():
-            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotData)]
             data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
             for graph in data_graphs:
                 item: XarrayDataTreeItem = graph._metadata.get('data_var_item', None)
@@ -1189,8 +1189,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         from qtpy.QtCore import Qt
         from qtpy.QtGui import QPen, QBrush
         from xarray_graph.graph.View import View
-        from xarray_graph.graph.PlotCurve import PlotCurve
-        from xarray_graph.graph.PlotCurveStyle import PlotCurveStyle
+        from xarray_graph.graph.PlotData import PlotData
+        from xarray_graph.graph.PlotDataStyle import PlotDataStyle
         from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         from pyqtgraph import AxisItem, DateAxisItem, mkPen
         bottomAxisChanged = False
@@ -1212,7 +1212,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             bottomAxis.setTicks(all_xticks)
             
             # existing graphs in plot
-            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotData)]
             data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
             masked_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'masked']
 
@@ -1237,7 +1237,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     style = node.attrs.get('style', {})
                 if 'color' not in style:
                     style['color'] = color
-                style = PlotCurveStyle(style)
+                style = PlotDataStyle(style)
                 linePen: QPen = style.linePen()
                 marker = style.get('marker', None)
                 if marker is not None:
@@ -1325,7 +1325,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                                 masked_graph.setData(x=xdata, y=raw_ydata)
                             else:
                                 # add new data to plot
-                                masked_graph = PlotCurve(x=xdata, y=raw_ydata)
+                                masked_graph = PlotData(x=xdata, y=raw_ydata)
                                 plot.addItem(masked_graph)
                                 masked_graphs.append(masked_graph)
                             masked_count += 1
@@ -1348,7 +1348,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                         data_graph.setData(x=xdata, y=ydata)
                     else:
                         # add new data to plot
-                        data_graph = PlotCurve(x=xdata, y=ydata)
+                        data_graph = PlotData(x=xdata, y=ydata)
                         plot.addItem(data_graph)
                         data_graphs.append(data_graph)
                     data_count += 1
@@ -1405,7 +1405,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                 xranges = self.visibleXRanges()
         
         from pyqtgraph import ViewBox, AxisItem, DateAxisItem, mkPen
-        from xarray_graph.graph.PlotCurve import PlotCurve
+        from xarray_graph.graph.PlotData import PlotData
         for plot in plots:
             xaxis: AxisItem = plot.getAxis('bottom')
             if isinstance(xaxis, DateAxisItem):
@@ -1421,7 +1421,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                     xunits = linked_xaxis.labelUnits
             
             # existing graphs in plot
-            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotData)]
             data_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
             preview_graphs = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'preview']
 
@@ -1479,7 +1479,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                         preview_graph.setData(x=xpreview, y=ypreview)
                     else:
                         # add new data to plot
-                        preview_graph = PlotCurve(x=xpreview, y=ypreview)
+                        preview_graph = PlotData(x=xpreview, y=ypreview)
                         plot.addItem(preview_graph)
                         preview_graphs.append(preview_graph)
                     preview_count += 1
@@ -1552,7 +1552,7 @@ class XarrayGraph(XarrayDataTreeViewer):
             raise ValueError(f"Invalid destination: {dst}")
         
         from pyqtgraph import AxisItem, DateAxisItem, mkPen
-        from xarray_graph.graph.PlotCurve import PlotCurve
+        from xarray_graph.graph.PlotData import PlotData
         from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         from xarray_graph.tree.XarrayDataTreeModel import XarrayDataTreeModel
         for plot in plots:
@@ -1565,10 +1565,10 @@ class XarrayGraph(XarrayDataTreeViewer):
             yunits = yaxis.labelUnits
             
             # existing graphs in plot
-            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotCurve)]
-            data_graphs: list[PlotCurve] = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
+            graphs = [item for item in plot.listDataItems() if isinstance(item, PlotData)]
+            data_graphs: list[PlotData] = [graph for graph in graphs if hasattr(graph, '_metadata') and graph._metadata.get('type', None) == 'data']
             for graph in data_graphs:
-                preview_graph: PlotCurve = graph._metadata.get('preview', None)
+                preview_graph: PlotData = graph._metadata.get('preview', None)
                 if preview_graph is None:
                     continue
                 data_var_item: XarrayDataTreeItem = graph._metadata['data_var_item']

@@ -4,6 +4,7 @@ Style is stored in hashable dict.
 """
 from __future__ import annotations
 
+from typing import cast, Any
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import QWidget
@@ -13,7 +14,7 @@ if typing.TYPE_CHECKING:
     from qtpy.QtGui import QPen, QBrush
 
 
-class PlotCurveStyle(dict):
+class PlotDataStyle(dict):
     """ Hashable style dict for graph data.
 
     'color': str
@@ -42,15 +43,22 @@ class PlotCurveStyle(dict):
     }
 
     # lines
-    lineStyles = {
-        'pens': [Qt.PenStyle.NoPen, Qt.PenStyle.SolidLine, Qt.PenStyle.DashLine, Qt.PenStyle.DotLine, Qt.PenStyle.DashDotLine, Qt.PenStyle.DashDotDotLine],
+    lineStyles: dict[str, list[str]] = {
         'labels': ['No Line', 'Solid Line', 'Dash Line', 'Dot Line', 'Dash Dot Line', 'Dash Dot Dot Line'],
         'symbols': ['', '-', '--', ':', '-.', '-..'],
         'strings': ['none', 'solid', 'dashed', 'dotted', 'dashdot', 'dashdotdot'],
     }
+    penStyles: list[Qt.PenStyle] = [
+        Qt.PenStyle.NoPen,
+        Qt.PenStyle.SolidLine,
+        Qt.PenStyle.DashLine,
+        Qt.PenStyle.DotLine,
+        Qt.PenStyle.DashDotLine,
+        Qt.PenStyle.DashDotDotLine
+    ]
 
     # markers
-    markers = {
+    markers: dict[str, list[str]] = {
         'pyqtgraph': ['none', 'o', 's', 't', 'd', '+', 't1', 't2', 't3', 'p', 'h', 'star', '|', '_', 'x', 'arrow_up', 'arrow_right', 'arrow_down', 'arrow_left', 'crosshair'],
         'labels': ['None', 'Circle', 'Square', 'Triangle', 'Diamond', 'Plus', 'Triangle Up', 'Triangle Right', 'Triangle Left', 'Pentagon', 'Hexagon', 'Star', 'Vertical Line', 'Horizontal Line', 'Cross', 'Arrow Up', 'Arrow Right', 'Arrow Down', 'Arrow Left', 'Crosshair'],
     }
@@ -113,50 +121,45 @@ class PlotCurveStyle(dict):
     @staticmethod
     def getKey(key: str) -> str:
         key = key.lower()
-        if key in PlotCurveStyle.keymap:
-            key = PlotCurveStyle.keymap[key]
+        if key in PlotDataStyle.keymap:
+            key = PlotDataStyle.keymap[key]
         return key
 
     @staticmethod
-    def _strToPen(linestyle: str) -> Qt.PenStyle:
-        try:
-            index = PlotCurveStyle.lineStyles['strings'].index(linestyle)
-            return PlotCurveStyle.lineStyles['pens'][index]
-        except ValueError:
+    def _indexOfLineStyle(value: Any) -> int:
+        if isinstance(value, Qt.PenStyle):
             try:
-                index = PlotCurveStyle.lineStyles['symbols'].index(linestyle)
-                return PlotCurveStyle.lineStyles['pens'][index]
+                return PlotDataStyle.penStyles.index(value)
+            except ValueError:
+                raise ValueError(f'Invalid pen style: {value}')
+        elif isinstance(value, str):
+            try:
+                return PlotDataStyle.lineStyles['strings'].index(value)
             except ValueError:
                 try:
-                    index = PlotCurveStyle.lineStyles['labels'].index(linestyle)
-                    return PlotCurveStyle.lineStyles['pens'][index]
+                    if value == '.-':
+                        value = '-.'
+                    elif value == '..-' or value == '.-.':
+                        value = '-..'
+                    index = PlotDataStyle.lineStyles['symbols'].index(value)
+                    return index
                 except ValueError:
-                    raise ValueError(f'Invalid linestyle: {linestyle}')
+                    try:
+                        index = PlotDataStyle.lineStyles['labels'].index(value)
+                        return index
+                    except ValueError:
+                        raise ValueError(f'Invalid linestyle: {value}')
+        raise ValueError(f'Invalid linestyle: {value}')
 
     @staticmethod
-    def _penToStr(pen: Qt.PenStyle, opt: str = 'strings') -> str:
-        if opt not in ['strings', 'symbols', 'labels']:
-            raise ValueError(f'Invalid option: "{opt}". Must be one of: "strings", "symbols", "labels"')
-        try:
-            index = PlotCurveStyle.lineStyles['pens'].index(pen)
-            return PlotCurveStyle.lineStyles[opt][index]
-        except ValueError:
-            raise ValueError(f'Invalid pen style: {pen}')
+    def _toLineStyle(value: Any, opt: str = 'strings') -> str:
+        index = PlotDataStyle._indexOfLineStyle(value)
+        return PlotDataStyle.lineStyles[opt][index]
 
     @staticmethod
-    def _toLineStyle(value: str | Qt.PenStyle) -> str:
-        try:
-            if isinstance(value, str):
-                if value == '.-':
-                    value = '-.'
-                elif value == '..-' or value == '.-.':
-                    value = '-..'
-                pen = PlotCurveStyle._strToPen(value)
-                return PlotCurveStyle._penToStr(pen)
-            elif isinstance(value, Qt.PenStyle):
-                return PlotCurveStyle._penToStr(value)
-        except ValueError:
-            raise ValueError(f'Invalid linestyle: {value}')
+    def _toPenStyle(value: Any) -> Qt.PenStyle:
+        index = PlotDataStyle._indexOfLineStyle(value)
+        return PlotDataStyle.penStyles[index]
 
     def color(self) -> QColor:
         from xarray_graph.utils.color import toQColor
@@ -176,7 +179,7 @@ class PlotCurveStyle(dict):
     def linePen(self) -> QPen:
         color = self['color']
         linestyle = self['linestyle']
-        penstyle = self._strToPen(linestyle)
+        penstyle = self._toPenStyle(linestyle)
         linewidth = self['linewidth']
         from pyqtgraph import mkPen
         return mkPen(color=color, style=penstyle, width=linewidth)
@@ -184,7 +187,7 @@ class PlotCurveStyle(dict):
     def markerPen(self) -> QPen:
         color = self['markeredgecolor']
         linestyle = self['markeredgestyle']
-        penstyle = self._strToPen(linestyle)
+        penstyle = self._toPenStyle(linestyle)
         linewidth = self['markeredgewidth']
         from pyqtgraph import mkPen
         return mkPen(color=color, style=penstyle, width=linewidth)
@@ -195,10 +198,10 @@ class PlotCurveStyle(dict):
         return mkBrush(color=color)
 
 
-class PlotCurveStylePanel(QWidget):
+class PlotDataStylePanel(QWidget):
 
     def __init__(self, *args, **kwargs):
-        QWidget.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         from xarray_graph.widgets.ColorButton import ColorButton
         from qtpy.QtWidgets import QLabel, QComboBox, QDoubleSpinBox, QCheckBox, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox
@@ -209,7 +212,7 @@ class PlotCurveStylePanel(QWidget):
 
         self._linestyle_label = QLabel('Style')
         self._linestyle_combobox = QComboBox()
-        self._linestyle_combobox.addItems(PlotCurveStyle.lineStyles['labels'])
+        self._linestyle_combobox.addItems(PlotDataStyle.lineStyles['labels'])
         self._linestyle_combobox.setCurrentIndex(1)  # default to solid line
 
         self._linewidth_label = QLabel('Width')
@@ -219,7 +222,7 @@ class PlotCurveStylePanel(QWidget):
 
         self._marker_label = QLabel('Marker')
         self._marker_combobox = QComboBox()
-        self._marker_combobox.addItems(list(PlotCurveStyle.markers['labels']))
+        self._marker_combobox.addItems(list(PlotDataStyle.markers['labels']))
         self._marker_combobox.setCurrentIndex(0)  # default to no marker
 
         self._markersize_label = QLabel('Size')
@@ -229,7 +232,7 @@ class PlotCurveStylePanel(QWidget):
 
         self._markeredgestyle_label = QLabel('Edge Style')
         self._markeredgestyle_combobox = QComboBox()
-        self._markeredgestyle_combobox.addItems(PlotCurveStyle.lineStyles['labels'])
+        self._markeredgestyle_combobox.addItems(PlotDataStyle.lineStyles['labels'])
         self._markeredgestyle_combobox.setCurrentIndex(1)  # default to solid line
 
         self._markeredgewidth_label = QLabel('Edge Width')
@@ -324,7 +327,7 @@ class PlotCurveStylePanel(QWidget):
     def _color(self) -> QColor:
         if self._default_color_checkbox.isChecked():
             return QColor()
-        return self._color_button.color()
+        return self._color_button.color() or QColor()
 
     def _on_color_changed(self, color: QColor):
         if self._default_markeredgecolor_checkbox.isChecked():
@@ -354,23 +357,31 @@ class PlotCurveStylePanel(QWidget):
             self._markerfacecolor_button.setColor(QColor())
         self._markerfacecolor_button.setEnabled(not state)
 
-    def style(self) -> PlotCurveStyle:
-        style = PlotCurveStyle()
+    def style(self) -> PlotDataStyle:
+        style = PlotDataStyle()
         for key, widget in self._widgets.items():
             try:
                 if key in ['color', 'markeredgecolor', 'markerfacecolor']:
+                    from xarray_graph.widgets.ColorButton import ColorButton
+                    widget = cast(ColorButton, widget)
                     if key == 'markerfacecolor' and self._markerfacecolor_nofill_checkbox.isChecked():
                         value = 'none'
                     else:
                         value = widget.color()
                 elif key in ['linestyle', 'markeredgestyle']:
+                    from qtpy.QtWidgets import QComboBox
+                    widget = cast(QComboBox, widget)
                     index = widget.currentIndex()
-                    value = PlotCurveStyle.lineStyles['strings'][index]
+                    value = PlotDataStyle.lineStyles['strings'][index]
                 elif key in ['linewidth', 'markersize', 'markeredgewidth']:
+                    from qtpy.QtWidgets import QDoubleSpinBox
+                    widget = cast(QDoubleSpinBox, widget)
                     value = widget.value()
                 elif key == 'marker':
+                    from qtpy.QtWidgets import QComboBox
+                    widget = cast(QComboBox, widget)
                     index = widget.currentIndex()
-                    value = PlotCurveStyle.markers['pyqtgraph'][index]
+                    value = PlotDataStyle.markers['pyqtgraph'][index]
                 else:
                     # should not happen
                     continue
@@ -379,7 +390,7 @@ class PlotCurveStylePanel(QWidget):
                 continue
         return style
     
-    def setStyle(self, style: PlotCurveStyle):
+    def setStyle(self, style: PlotDataStyle):
         for key, widget in self._widgets.items():
             try:
                 value = style[key]
@@ -391,17 +402,24 @@ class PlotCurveStylePanel(QWidget):
                         self._default_color_checkbox.setChecked(True)
                 elif key in ['linestyle', 'markeredgestyle']:
                     try:
-                        pen = PlotCurveStyle._strToPen(value)
-                        index = PlotCurveStyle.lineStyles['pens'].index(pen)
+                        from qtpy.QtWidgets import QComboBox
+                        widget = cast(QComboBox, widget)
+                        index = PlotDataStyle._indexOfLineStyle(value)
                         widget.setCurrentIndex(index)
                     except ValueError:
                         continue
                 elif key in ['linewidth', 'markersize', 'markeredgewidth']:
+                    from qtpy.QtWidgets import QDoubleSpinBox
+                    widget = cast(QDoubleSpinBox, widget)
+                    value = cast(float, value)
                     value = max(0, value)
                     widget.setValue(value)
                 elif key == 'marker':
                     try:
-                        index = PlotCurveStyle.markers['pyqtgraph'].index(value)
+                        from qtpy.QtWidgets import QComboBox
+                        widget = cast(QComboBox, widget)
+                        value = cast(str, value)
+                        index = PlotDataStyle.markers['pyqtgraph'].index(value)
                         widget.setCurrentIndex(index)
                     except ValueError:
                         continue
@@ -422,39 +440,48 @@ class PlotCurveStylePanel(QWidget):
                 continue
 
 
-# def editGraphStyle(graphStyle: PlotCurveStyle, styles: list[str] = None, parent: QWidget = None, title: str = None) -> PlotCurveStyle | None:
-#     panel = GraphStylePanel(styles)
-#     panel.layout().setContentsMargins(0, 0, 0, 0)
-#     panel.setGraphStyle(graphStyle)
+def editPlotDataStyle(style: PlotDataStyle, parent: QWidget = None, title: str = None) -> PlotDataStyle | None:
+    from qtpy.QtWidgets import QVBoxLayout, QDialog, QDialogButtonBox
+    from qtpy.QtCore import Qt
 
-#     dlg = QDialog(parent)
-#     vbox = QVBoxLayout(dlg)
-#     vbox.addWidget(panel)
+    panel = PlotDataStylePanel()
+    panel.setStyle(style)
 
-#     btns = QDialogButtonBox()
-#     btns.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-#     btns.accepted.connect(dlg.accept)
-#     btns.rejected.connect(dlg.reject)
-#     vbox.addWidget(btns)
-#     vbox.addStretch()
+    dlg = QDialog(parent)
+    if title is not None:
+        dlg.setWindowTitle(title)
+    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+    vbox = QVBoxLayout(dlg)
+    vbox.setContentsMargins(5, 5, 5, 5)
+    vbox.addWidget(panel)
 
-#     if title is not None:
-#         dlg.setWindowTitle(title)
-#     dlg.setWindowModality(Qt.ApplicationModal)
-#     if dlg.exec() == QDialog.Accepted:
-#         return panel.graphStyle()
+    btns = QDialogButtonBox()
+    btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+    btns.accepted.connect(dlg.accept)
+    btns.rejected.connect(dlg.reject)
+    vbox.addWidget(btns)
+    vbox.addStretch()
+
+    if dlg.exec() == QDialog.DialogCode.Accepted:
+        return panel.style()
 
 
 def test_live():
     from qtpy.QtWidgets import QApplication
     app = QApplication()
-    style = PlotCurveStyle()
+
+    style = PlotDataStyle()
     style['color'] = 'red'
     style['marker'] = 'o'
     style['markerfacecolor'] = 'none'
-    ui = PlotCurveStylePanel()
+
+    ui = PlotDataStylePanel()
     ui.setStyle(style)
     ui.show()
+
+    from qtpy.QtCore import QTimer
+    QTimer.singleShot(0, lambda style=style: editPlotDataStyle(style, parent=ui, title='Edit Style'))
+
     app.exec()
 
 

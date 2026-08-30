@@ -63,6 +63,8 @@ class AxisRegion(LinearRegionItem):
                 self.setMovable(value)
             elif key == 'format':
                 self.setFormat(value)
+        
+        self.sigRegionChangeFinished.emit(self)
     
     def format(self) -> dict[str, Any]:
         """ Return hashable dict for saving and restoring state.
@@ -260,9 +262,33 @@ class AxisRegion(LinearRegionItem):
         self.menu = scene.addParentContextMenus(self, self.menu, event)
         return self.menu
     
-    def editDialog(self, parent: QWidget = None):
-        editAxisRegion(self, parent=parent)
-        self.sigRegionChangeFinished.emit(self)
+    def editDialog(self, title: str = None, include_format: bool = True) -> None:
+        from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
+        
+        panel = AxisRegionPanel(include_format=include_format)
+        panel.setState(self.state())
+
+        dlg = QDialog(parent=self.getViewWidget())
+        if title:
+            dlg.setWindowTitle(title)
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        vbox = QVBoxLayout(dlg)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.addWidget(panel)
+
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        vbox.addWidget(btns)
+        vbox.addStretch()
+        
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        edited_state = panel.editedState()
+        if edited_state:
+            self.setState(edited_state)
 
 
 class AxisRegionLabel(InfLineLabel):
@@ -370,7 +396,9 @@ class AxisRegionPanel(QWidget):
                 self._textEdit.setPlainText(value)
             elif key == 'format' and hasattr(self, '_format_panel'):
                 self._format_panel.setFormat(value)
-        self._state = state
+        
+        from copy import deepcopy
+        self._state = deepcopy(state)
 
     def editedState(self) -> dict[str, Any]:
         """ Return the state of the widget, but only include values that have changed from the original state.
@@ -492,7 +520,9 @@ class AxisRegionFormatPanel(QWidget):
                 self._fontSizeSpinBox.setValue(value)
             elif key == 'fontcolor':
                 self._fontColorButton.setColor(toQColor(value))
-        self._format = format
+        
+        from copy import deepcopy
+        self._format = deepcopy(format)
 
     def editedFormat(self) -> dict[str, Any]:
         """ Return the format of the widget, but only include values that have changed from the original format.
@@ -503,41 +533,6 @@ class AxisRegionFormatPanel(QWidget):
             if key not in self._format or self._format[key] != value:
                 edited_format[key] = value
         return edited_format
-
-
-def editAxisRegion(region: AxisRegion = None, *args, **kwargs) -> dict[str, Any] | None:
-    include_format: bool = kwargs.pop('include_format', True)
-    title: str = kwargs.pop('title', None)
-
-    if region is None:
-        region = AxisRegion()
-
-    from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
-    
-    panel = AxisRegionPanel(include_format=include_format)
-    panel.setState(region.state())
-
-    dlg = QDialog(*args, **kwargs)
-    vbox = QVBoxLayout(dlg)
-    vbox.addWidget(panel)
-
-    btns = QDialogButtonBox()
-    btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-    btns.accepted.connect(dlg.accept)
-    btns.rejected.connect(dlg.reject)
-    vbox.addWidget(btns)
-    vbox.addStretch()
-
-    if title:
-        dlg.setWindowTitle(title)
-    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-    
-    if dlg.exec() != QDialog.DialogCode.Accepted:
-        return
-
-    edited_state = panel.editedState()
-    region.setState(edited_state)
-    return edited_state
 
 
 def test_live():
