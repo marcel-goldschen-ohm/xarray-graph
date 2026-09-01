@@ -218,9 +218,33 @@ class InfLine(InfiniteLine):
         self.menu = scene.addParentContextMenus(self, self.menu, event)
         return self.menu
     
-    def editDialog(self, parent: QWidget = None):
-        editInfLine(self, parent=parent)
-        self.sigPositionChangeFinished.emit(self)
+    def editDialog(self, title: str = None, include_format: bool = True):
+        from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
+        
+        panel = InfLinePanel(include_format=include_format)
+        panel.setState(self.state())
+
+        dlg = QDialog(parent=self.getViewWidget())
+        if title:
+            dlg.setWindowTitle(title)
+        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+        vbox = QVBoxLayout(dlg)
+        vbox.setContentsMargins(5, 5, 5, 5)
+        vbox.addWidget(panel)
+
+        btns = QDialogButtonBox()
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        vbox.addWidget(btns)
+        vbox.addStretch()
+        
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        edited_state = panel.editedState()
+        if edited_state:
+            self.setState(edited_state)
 
 
 class InfiniteLineLabel(InfLineLabel):
@@ -257,6 +281,7 @@ class InfLinePanel(QWidget):
     """
 
     def __init__(self, *args, **kwargs):
+        include_format: bool = kwargs.pop('include_format', True)
         super().__init__(*args, **kwargs)
 
         from qtpy.QtWidgets import QFormLayout, QLineEdit, QCheckBox, QTextEdit, QVBoxLayout, QFrame
@@ -281,14 +306,15 @@ class InfLinePanel(QWidget):
         vbox.setSpacing(0)
         vbox.addLayout(form)
 
-        hline = QFrame()
-        hline.setFrameShape(QFrame.Shape.HLine)
-        hline.setFrameShadow(QFrame.Shadow.Sunken)
+        if include_format:
+            hline = QFrame()
+            hline.setFrameShape(QFrame.Shape.HLine)
+            hline.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self._format_panel = InfLineFormatPanel()
+            self._format_panel = InfLineFormatPanel()
 
-        vbox.addWidget(hline)
-        vbox.addWidget(self._format_panel)
+            vbox.addWidget(hline)
+            vbox.addWidget(self._format_panel)
 
         vbox.addStretch()
 
@@ -444,40 +470,6 @@ class InfLineFormatPanel(QWidget):
             if key not in self._format or self._format[key] != value:
                 edited_format[key] = value
         return edited_format
-
-
-def editInfLine(line: InfLine = None, *args, **kwargs) -> dict[str, Any] | None:
-    title: str = kwargs.pop('title', None)
-
-    if line is None:
-        line = InfLine()
-
-    from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
-    
-    panel = InfLinePanel()
-    panel.setState(line.state())
-
-    dlg = QDialog(*args, **kwargs)
-    vbox = QVBoxLayout(dlg)
-    vbox.addWidget(panel)
-
-    btns = QDialogButtonBox()
-    btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-    btns.accepted.connect(dlg.accept)
-    btns.rejected.connect(dlg.reject)
-    vbox.addWidget(btns)
-    vbox.addStretch()
-
-    if title:
-        dlg.setWindowTitle(title)
-    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
-    
-    if dlg.exec() != QDialog.DialogCode.Accepted:
-        return
-
-    edited_state = panel.editedState()
-    line.setState(edited_state)
-    return edited_state
 
 
 def test_live():

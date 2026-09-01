@@ -10,7 +10,8 @@ import numpy as np
 import xarray as xr
 from pint import UnitRegistry, Quantity
 from cmap import Colormap
-from qtpy.QtCore import Qt, QObject, Signal
+from qtpy.QtCore import Signal  # type: ignore
+from qtpy.QtCore import Qt, QObject
 from qtpy.QtWidgets import QWidget
 from xarray_graph.apps.XarrayDataTreeViewer import XarrayDataTreeViewer
 
@@ -1645,41 +1646,43 @@ class XarrayGraph(XarrayDataTreeViewer):
             # add selected ROI objects
             self.addRoisToPlots(selectedRois, plots)
 
-    def _updateRoiPlotItemFromData(self, roiItem: QGraphicsObject, data: dict) -> None:
+    def _updateRoiPlotItemFromData(self, item: QGraphicsObject, data: dict) -> None:
         """ Apply ROI data to plotted ROI object.
         """
         from xarray_graph.graph.AxisRegion import XAxisRegion
         from xarray_graph.graph.InfLine import VLine
-        if isinstance(roiItem, XAxisRegion):
+        if isinstance(item, XAxisRegion):
             region = data['position'][self.xdim()]
             # print(f"Setting region: {region}")
-            roiItem.setRegion(region)
-            roiItem.setMovable(data.get('movable', False))
-            roiItem.setText(data.get('text', ''))
-            # item.setFormat(data.get('format', {}))
-        elif isinstance(roiItem, VLine):
+            item.setRegion(region)
+            item.setMovable(data.get('movable', False))
+            item.setText(data.get('text', ''))
+            item.setFormat(data.get('format', {}))
+        elif isinstance(item, VLine):
             pos = data['position'][self.xdim()]
             # print(f"Setting position: {pos}")
-            roiItem.setValue(pos)
-            roiItem.setMovable(data.get('movable', False))
-            # roiItem.setText(data.get('text', ''))
-            # item.setFormat(data.get('format', {}))
+            item.setValue(pos)
+            item.setMovable(data.get('movable', False))
+            item.setText(data.get('text', ''))
+            item.setFormat(data.get('format', {}))
 
-    def _updateRoiDataFromPlotItem(self, roiItem: QGraphicsObject, data: dict) -> None:
+    def _updateRoiDataFromPlotItem(self, item: QGraphicsObject, data: dict) -> None:
         """ Update ROI data from plotted ROI object.
         """
         from xarray_graph.graph.AxisRegion import XAxisRegion
         from xarray_graph.graph.InfLine import VLine
-        if isinstance(roiItem, XAxisRegion):
-            data['position'] = {self.xdim(): sorted(roiItem.getRegion())}
-            data['movable'] = roiItem.movable
-            data['text'] = roiItem.text()
-            # data['format'] = item.getFormat()
-        elif isinstance(roiItem, VLine):
-            data['position'] = {self.xdim(): roiItem.value()}
-            data['movable'] = roiItem.movable
-            # data['text'] = roiItem.text()
-            # data['format'] = item.getFormat()
+        if isinstance(item, XAxisRegion):
+            data['position'] = {self.xdim(): sorted(item.getRegion())}
+            data['movable'] = item.movable
+            data['text'] = item.text()
+            default_format = XAxisRegion().format()
+            data['format'] = {key: value for key, value in item.format().items() if value != default_format.get(key)}
+        elif isinstance(item, VLine):
+            data['position'] = {self.xdim(): item.value()}
+            data['movable'] = item.movable
+            data['text'] = item.text()
+            default_format = VLine().format()
+            data['format'] = {key: value for key, value in item.format().items() if value != default_format.get(key)}
 
     def _setupRoiPlotItem(self, item) -> None:
         """ Signals/Slots and properties for ROI plot item.
@@ -1688,19 +1691,13 @@ class XarrayGraph(XarrayDataTreeViewer):
         from xarray_graph.graph.InfLine import VLine
         if isinstance(item, XAxisRegion):
             item.sigRegionChanged.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            item.sigDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            item.sigEditingFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            # item.sigDeletionRequested.connect(lambda item=item: self.deleteROIs(item._ROI))
-            item.sigDragFinished.connect(lambda: self.updateROIsView())
-            item.sigEditingFinished.connect(lambda: self.updateROIsView())
+            item.sigRegionChangeFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            item.sigRegionChangeFinished.connect(lambda: self.updateROIsView())
             item.setZValue(0)
         elif isinstance(item, VLine):
             item.sigPositionChanged.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            # item.sigPositionDragFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            # item.sigEditingFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
-            # item.sigDeletionRequested.connect(lambda item=item: self.deleteROIs(item._ROI))
-            # item.sigPositionDragFinished.connect(lambda: self.updateROIsView())
-            # item.sigEditingFinished.connect(lambda: self.updateROIsView())
+            item.sigPositionChangeFinished.connect(lambda item=item: self._onRoiPlotItemChanged(item))
+            item.sigPositionChangeFinished.connect(lambda: self.updateROIsView())
             item.setZValue(0)
 
     def updateROIsView(self) -> None:
