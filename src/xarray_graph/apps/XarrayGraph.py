@@ -4,6 +4,7 @@ TODO:
 """
 from __future__ import annotations
 
+from typing import cast
 import weakref
 from copy import deepcopy
 import numpy as np
@@ -72,19 +73,20 @@ class XarrayGraph(XarrayDataTreeViewer):
         """
         if not hasattr(self, '_plots'):
             return
-        from pyqtgraph import PlotItem, ViewBox
-        xlinked_views = []
+        from pyqtgraph.graphicsItems.PlotItem import PlotItem
+        from pyqtgraph.graphicsItems.ViewBox import ViewBox
+        xlinked_views: list[ViewBox] = []
         xlinked_range = []
         n_vars, n_rows, n_cols = self._plots.shape
         for i in range(n_vars):
-            ylinked_views = []
+            ylinked_views: list[ViewBox] = []
             ylinked_range = []
             for row in range(n_rows):
                 for col in range(n_cols):
                     plot: PlotItem = self._plots[i, row, col]
-                    view: ViewBox = plot.getViewBox()
-                    xlinked_view: ViewBox = view.linkedView(view.XAxis)
-                    ylinked_view: ViewBox = view.linkedView(view.YAxis)
+                    view: ViewBox = cast(ViewBox, plot.getViewBox())
+                    xlinked_view = view.linkedView(view.XAxis)
+                    ylinked_view = view.linkedView(view.YAxis)
                     if (xlinked_view is None) and (ylinked_view is None):
                         view.enableAutoRange()
                     elif xlinked_view is None:
@@ -366,7 +368,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         xranges = self.visibleXRanges()
         if not xranges:
             return
-        
+
+        from typing import Literal
         from xarray_graph.graph.PlotData import PlotData
         from xarray_graph.tree.XarrayDataTreeItem import XarrayDataTreeItem
         xdim = self.xdim()
@@ -382,10 +385,14 @@ class XarrayGraph(XarrayDataTreeViewer):
                 coords[xdim] = data_var[xdim]
                 ydata = data_var.sel(coords).squeeze(drop=True).data
                 xdata = graph.xData
+                xdata = cast(np.ndarray, xdata)
+                ydata = cast(np.ndarray, ydata)
                 for xrange in xranges:
                     lb, ub = xrange
-                    li = np.searchsorted(xdata, lb, side='left')
-                    ui = np.searchsorted(xdata, ub, side='right') - 1
+                    left: Literal['left', 'right'] = 'left'
+                    right: Literal['left', 'right'] = 'right'
+                    li = np.searchsorted(xdata, lb, side=left)
+                    ui = np.searchsorted(xdata, ub, side=right) - 1
                     if li >= ui:
                         continue
                     
@@ -1722,9 +1729,10 @@ class XarrayGraph(XarrayDataTreeViewer):
         if graphicsItemType is None:
             return
         for plot in self._alivePlots():
-            view: View = plot.getViewBox()
-            self._connectRoiAddedSignal(view)
-            view.startDrawingItemsOfType(graphicsItemType)
+            view = plot.getViewBox()
+            if isinstance(view, View):
+                self._connectRoiAddedSignal(view)
+                view.startDrawingItemsOfType(graphicsItemType)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(True)
@@ -1732,9 +1740,10 @@ class XarrayGraph(XarrayDataTreeViewer):
     def stopDrawingRois(self) -> None:
         from xarray_graph.graph.View import View
         for plot in self._alivePlots():
-            view: View = plot.getViewBox()
-            view.stopDrawingItems()
-            self._disconnectRoiAddedSignal(view)
+            view = plot.getViewBox()
+            if isinstance(view, View):
+                view.stopDrawingItems()
+                self._disconnectRoiAddedSignal(view)
         from qtpy.QtCore import QSignalBlocker
         with QSignalBlocker(self._ROI_selection_button):
             self._ROI_selection_button.setChecked(False)
@@ -1743,7 +1752,9 @@ class XarrayGraph(XarrayDataTreeViewer):
         super()._initActions()
 
         from qtpy.QtGui import QColor, QKeySequence, QPalette
-        from qtpy.QtWidgets import QAction, QActionGroup, QApplication
+        from qtpy.QtGui import QAction  # type: ignore
+        from qtpy.QtWidgets import QActionGroup  # type: ignore
+        from qtpy.QtWidgets import QApplication
         from qtawesome import icon
 
         text_color = QApplication.palette().color(QPalette.ColorRole.Text)
@@ -1758,8 +1769,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             toolTip='DataTree & ROIs',
             checkable=True, 
             checked=True,
-            triggered=lambda checked: self.setDataPanelVisible(checked)
         )
+        self._data_action.triggered.connect(lambda checked: self.setDataPanelVisible(checked))
 
         self._home_action = QAction(
             icon=icon('mdi.home'),
@@ -1767,8 +1778,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             text='Home',
             toolTip='Autoscale',
             shortcut=QKeySequence('A'),
-            triggered=lambda: self.autoscale()
         )
+        self._home_action.triggered.connect(lambda: self.autoscale())
 
         self._notes_action = QAction(
             icon=icon('mdi6.text-box-edit-outline'),
@@ -1776,10 +1787,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             text='Notes',
             toolTip='Notes',
             checkable=False,
-            # shortcut=QKeySequence('N'),
-            # shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.notes()
         )
+        self._notes_action.triggered.connect(lambda checked: self.notes())
 
         self._view_ROIs_action = QAction(
             text='ROIs',
@@ -1788,8 +1797,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=True,
             shortcut=QKeySequence('W'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.updatePlotRois()
         )
+        self._view_ROIs_action.triggered.connect(lambda checked: self.updatePlotRois())
         
         self._ROI_event_action = QAction(
             icon=icon('fa6s.arrow-down-long'),
@@ -1800,8 +1809,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=False,
             shortcut=QKeySequence('E'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.onRoiTypeChanged()
         )
+        self._ROI_event_action.triggered.connect(lambda checked: self.onRoiTypeChanged())
         self._ROI_event_icon = icon('fa6s.arrow-down-long', color=faded_text_color, color_on=text_color)
 
         self._ROI_xrange_action = QAction(
@@ -1813,8 +1822,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=True,
             shortcut=QKeySequence('R'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.onRoiTypeChanged()
         )
+        self._ROI_xrange_action.triggered.connect(lambda checked: self.onRoiTypeChanged())
         self._ROI_xrange_icon = icon('mdi.arrow-expand-horizontal', color=faded_text_color, color_on=text_color)
 
         self._mask_action = QAction(
@@ -1823,8 +1832,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checkable=False,
             shortcut=QKeySequence('M'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.mask()
         )
+        self._mask_action.triggered.connect(lambda checked: self.mask())
 
         self._unmask_action = QAction(
             text='Unmask',
@@ -1832,8 +1841,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checkable=False,
             shortcut=QKeySequence('U'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.unmask()
         )
+        self._unmask_action.triggered.connect(lambda checked: self.unmask())
 
         self._view_masked_action = QAction(
             text='Masked',
@@ -1842,8 +1851,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checked=False,
             shortcut=QKeySequence('Y'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.refresh()
         )
+        self._view_masked_action.triggered.connect(lambda checked: self.refresh())
 
         self._interpolate_action = QAction(
             text='Interpolate',
@@ -1851,8 +1860,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checkable=False,
             shortcut=QKeySequence('I'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.interpolate()
         )
+        self._interpolate_action.triggered.connect(lambda checked: self.interpolate())
 
         self._zero_action = QAction(
             text='Zero',
@@ -1860,8 +1869,8 @@ class XarrayGraph(XarrayDataTreeViewer):
             checkable=False,
             shortcut=QKeySequence('Z'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.zero()
         )
+        self._zero_action.triggered.connect(lambda checked: self.zero())
 
         self._set_constant_action = QAction(
             text='Set Constant',
@@ -1869,24 +1878,24 @@ class XarrayGraph(XarrayDataTreeViewer):
             checkable=False,
             shortcut=QKeySequence('C'),
             shortcutVisibleInContextMenu=True,
-            triggered=lambda checked: self.setConstant()
         )
+        self._set_constant_action.triggered.connect(lambda checked: self.setConstant())
 
         self._filter_action = QAction(
             icon=icon('mdi.sine-wave'),
             iconVisibleInMenu=True,
             text='Filter',
             toolTip='Filter',
-            triggered=lambda checked: self.filter()
         )
+        self._filter_action.triggered.connect(lambda checked: self.filter())
 
         self._curve_fit_action = QAction(
             icon=icon('mdi.chart-bell-curve-cumulative'),
             iconVisibleInMenu=True,
             text='Curve Fit',
             toolTip='Curve Fit',
-            triggered=lambda checked: self.curveFit()
         )
+        self._curve_fit_action.triggered.connect(lambda checked: self.curveFit())
 
         self._measure_action = QAction(
             parent=self, 
@@ -1894,22 +1903,20 @@ class XarrayGraph(XarrayDataTreeViewer):
             iconVisibleInMenu=True,
             text='Measure',
             toolTip='Measure',
-            triggered=lambda checked: self.measure()
         )
+        self._measure_action.triggered.connect(lambda checked: self.measure())
 
         self._average_traces_action = QAction(
             parent=self,
             text='Average',
             toolTip='Average traces',
-            triggered=lambda checked: self.averageVisibleTraces()
-            # enabled=False
         )
+        self._average_traces_action.triggered.connect(lambda checked: self.averageVisibleTraces())
 
         self._xzero_action = QAction(
             parent=self,
             text='Set X-Axis Zero',
             toolTip='Set X-axis zero value',
-            # triggered=lambda checked: self.setTraceXZero()
             enabled=False
         )
 
@@ -1917,7 +1924,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             parent=self,
             text='Align to Onset',
             toolTip='Align traces to onset',
-            # triggered=lambda checked: self.alignTracesToOnset()
             enabled=False
         )
 
@@ -1925,7 +1931,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             parent=self,
             text='Add Traces',
             toolTip='Add traces',
-            # triggered=lambda checked: self.addTraces()
             enabled=False
         )
 
@@ -1933,7 +1938,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             parent=self,
             text='Subtract Traces',
             toolTip='Subtract traces',
-            # triggered=lambda checked: self.subtractTraces()
             enabled=False
         )
 
@@ -1941,7 +1945,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             parent=self,
             text='Multiply Traces',
             toolTip='Multiply traces',
-            # triggered=lambda checked: self.multiplyTraces()
             enabled=False
         )
 
@@ -1949,7 +1952,6 @@ class XarrayGraph(XarrayDataTreeViewer):
             parent=self,
             text='Divide Traces',
             toolTip='Divide traces',
-            # triggered=lambda checked: self.divideTraces()
             enabled=False
         )
 
@@ -2065,7 +2067,8 @@ class XarrayGraph(XarrayDataTreeViewer):
         self._dim_iters_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # ROI selector
-        from qtpy.QtWidgets import QMenu, QActionGroup, QToolButton
+        from qtpy.QtWidgets import QActionGroup  # type: ignore
+        from qtpy.QtWidgets import QMenu, QToolButton
         self._ROI_menu = QMenu()
         self._ROI_menu.addAction(self._ROI_event_action)
         self._ROI_menu.addAction(self._ROI_xrange_action)
@@ -2150,7 +2153,9 @@ class DimIterWidget(QWidget):
 
         from qtpy.QtCore import Qt, QSize
         from qtpy.QtGui import QColor, QPalette
-        from qtpy.QtWidgets import QAction, QActionGroup, QApplication, QGridLayout, QLabel, QMenu, QSizePolicy, QToolButton, QGraphicsOpacityEffect
+        from qtpy.QtGui import QAction  # type: ignore
+        from qtpy.QtWidgets import QActionGroup  # type: ignore
+        from qtpy.QtWidgets import QApplication, QGridLayout, QLabel, QMenu, QSizePolicy, QToolButton, QGraphicsOpacityEffect
         from qtawesome import icon
         from xarray_graph.widgets.MultiValueSpinBox import MultiValueSpinBox
 
@@ -2165,8 +2170,9 @@ class DimIterWidget(QWidget):
             iconVisibleInMenu = True, 
             checkable = True, 
             checked = True,
-            triggered = self.pile,
         )
+        self._pile_action.triggered.connect(self.pile)
+
         self._tile_vertically_action = QAction(
             parent = self, 
             icon = icon('mdi.reorder-horizontal', color=color_off, color_on=color_on), 
@@ -2174,8 +2180,9 @@ class DimIterWidget(QWidget):
             iconVisibleInMenu = True, 
             checkable = True, 
             checked = False,
-            triggered = self.tileVertically,
         )
+        self._tile_vertically_action.triggered.connect(self.tileVertically)
+
         self._tile_horizontally_action = QAction(
             parent = self, 
             icon = icon('mdi.reorder-vertical', color=color_off, color_on=color_on), 
@@ -2183,8 +2190,8 @@ class DimIterWidget(QWidget):
             iconVisibleInMenu = True, 
             checkable = True, 
             checked = False,
-            triggered = self.tileHorizontally,
         )
+        self._tile_horizontally_action.triggered.connect(self.tileHorizontally)
 
         self._tile_menu = QMenu()
         self._tile_menu.addAction(self._pile_action)
@@ -2206,19 +2213,17 @@ class DimIterWidget(QWidget):
         self._size_label_opacity_effect.setOpacity(0.5)
         self._size_label.setGraphicsEffect(self._size_label_opacity_effect)
 
-        self._xdim_button = QToolButton(
-            icon=icon('ph.arrow-line-down', color=color_off, color_on=color_on),
-            toolTip='Set as X-axis dimension',
-            pressed=self.setAsXDim,
-        )
+        self._xdim_button = QToolButton()
+        self._xdim_button.setIcon(icon('ph.arrow-line-down', color=color_off, color_on=color_on))
+        self._xdim_button.setToolTip('Set as X-axis dimension')
+        self._xdim_button.pressed.connect(self.setAsXDim)
         self._xdim_button.setMaximumSize(QSize(20, 20))
 
-        self._tile_button = QToolButton(
-            icon=self._pile_action.icon(),
-            text='Tile traces',
-            toolTip='Tile traces',
-            popupMode=QToolButton.ToolButtonPopupMode.InstantPopup,
-        )
+        self._tile_button = QToolButton()
+        self._tile_button.setIcon(self._pile_action.icon())
+        self._tile_button.setText('Tile traces')
+        self._tile_button.setToolTip('Tile traces')
+        self._tile_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._tile_button.setMaximumSize(QSize(20, 20))
         self._tile_button.setMenu(self._tile_menu)
         self._tile_button.setStyleSheet('QToolButton::menu-indicator { image: none; }')
