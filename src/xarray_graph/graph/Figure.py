@@ -6,7 +6,7 @@ from pyqtgraph import PlotWidget
 
 
 class Figure(PlotWidget):
-    """ PlotWidget with matlab color scheme and CustomPlotItem. """
+    """ PlotWidget with matlab color scheme and custom plot item. """
 
     def __init__(self, *args, **kwargs):
         if 'plotItem' not in kwargs:
