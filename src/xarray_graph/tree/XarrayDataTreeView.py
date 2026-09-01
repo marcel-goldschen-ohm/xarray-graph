@@ -8,6 +8,7 @@ TODO:
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import cast
 import numpy as np
 import xarray as xr
@@ -456,6 +457,8 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
         root_name = dt.name or 'old root'
         new_dt = xr.DataTree()
         new_dt[root_name] = dt
+        from copy import deepcopy
+        new_dt.attrs = deepcopy(dt.attrs)
         self.storeViewState()
         new_view_state = {f"/{root_name}{path}": state for path, state in self._view_state.items()}
         new_view_state[f"/{root_name}"] = {'expanded': True, 'selected': False}
