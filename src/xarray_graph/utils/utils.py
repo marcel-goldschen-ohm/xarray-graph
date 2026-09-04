@@ -114,6 +114,8 @@ def value_to_str(value, in_array: bool = False) -> str:
 
 
 def split_text(text: str) -> list[str]:
+    """ Split text at commas without breaking up nested parentheses, brackets, and braces.
+    """
     parts: list[str] = ['']
     grouping: str = ''
     for char in text:

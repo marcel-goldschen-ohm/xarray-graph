@@ -174,14 +174,14 @@ class TreeView[TreeItem: AbstractTreeItem, TreeModel: AbstractTreeModel](QTreeVi
         self._view_state = {}
         model = self.model()
         root = cast(TreeItem, model.rootItem())
-        for item in root.subtree_depth_first():
+        for item in root.subtree():
             item.setViewState({})
     
     def storeViewState(self, items: list[TreeItem] = None) -> None:
         model = self.model()
         if items is None:
             root = cast(TreeItem, model.rootItem())
-            items = list(root.subtree_depth_first())
+            items = list(root.subtree())
         selected_indexes = self.selectionModel().selectedIndexes()
         for item in items:
             if item.isRoot():
@@ -198,7 +198,7 @@ class TreeView[TreeItem: AbstractTreeItem, TreeModel: AbstractTreeModel](QTreeVi
         model = self.model()
         if items is None:
             root = cast(TreeItem, model.rootItem())
-            items = list(root.subtree_depth_first())
+            items = list(root.subtree())
         selected_indexes = self.selectionModel().selectedIndexes()
         from qtpy.QtCore import QItemSelection, QItemSelectionModel
         to_be_selected: QItemSelection = QItemSelection()
@@ -518,7 +518,7 @@ class TreeView[TreeItem: AbstractTreeItem, TreeModel: AbstractTreeModel](QTreeVi
                 # !!! Only do this at the start of the drag, do not repeat on subsequent dragEnterEvents such as when dragging between views.
                 dragged_items: list[TreeItem] = []
                 for src_item in mime_data.src_items:
-                    for item in src_item.subtree_depth_first():
+                    for item in src_item.subtree():
                         if item not in dragged_items:
                             dragged_items.append(item)
                 

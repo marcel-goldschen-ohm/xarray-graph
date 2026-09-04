@@ -26,7 +26,6 @@ def ordered_dims_iter(objects: list[DataTree | Dataset | DataArray]) -> Iterator
         else:
             # ignore objects that aren't DataArrays, Datasets, or DataTrees
             continue
-        var: DataArray
         for var in vars:
             for dim in var.dims:
                 if dim not in yielded_dims:

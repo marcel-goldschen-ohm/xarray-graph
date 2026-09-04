@@ -5,21 +5,16 @@ from __future__ import annotations
 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
-def orderedItems[TreeItem: AbstractTreeItem](items: list[TreeItem], order='depth-first') -> list[TreeItem]:
+def orderedItems[TreeItem: AbstractTreeItem](items: list[TreeItem]) -> list[TreeItem]:
     """ Returns the input items ordered according to their position in the tree.
     """
     if not items:
         return []
     root = items[0].root()  # assume all items are in the same tree
     ordered_items: list[TreeItem] = []
-    if order == 'depth-first':
-        for item in root.subtree_depth_first():
-            if item in items:
-                ordered_items.append(item)
-    elif order == 'breadth-first':
-        for item in root.subtree_breadth_first():
-            if item in items:
-                ordered_items.append(item)
+    for item in root.subtree(order='depth-first'):
+        if item in items:
+            ordered_items.append(item)
     return ordered_items
 
 
@@ -30,7 +25,7 @@ def itemBlocks[TreeItem: AbstractTreeItem](items: list[TreeItem]) -> list[list[T
     Blocks are ordered depth-first. Typically you should remove/move blocks in reverse depth-first order to ensure insertion row indices remain valid after handling each block.
     """
     # order items depth-first so that it is easier to group them into blocks
-    items = orderedItems(items, order='depth-first')
+    items = orderedItems(items)
 
     # group items into blocks by parent and contiguous rows
     blocks = [[items[0]]]
@@ -71,7 +66,7 @@ def allItemsAndTheirDescendents[TreeItem: AbstractTreeItem](items: list[TreeItem
         return []
     all_items: list[TreeItem] = []
     for item in items:
-        for descendant in item.subtree_depth_first():
+        for descendant in item.subtree():
             if descendant not in all_items:
                 all_items.append(descendant)
     return all_items

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from typing import Self, cast
 from enum import Enum
-import xarray as xr
+from xarray import DataTree, DataArray
+# import xarray as xr
 from xarray_graph.tree.AbstractTreeItem import AbstractTreeItem
 
 
@@ -24,9 +25,11 @@ class XarrayDataTreeItem(AbstractTreeItem):
         DATA_VAR = 3
         NODE = 4
 
-    def __init__(self, node: xr.DataTree = None, varname: str = '', parent: Self | None = None, sibling_index: int = None):
+    def __init__(self, node: DataTree = None, varname: str = '', parent: Self | None = None, sibling_index: int = None):
+        """ Wraps a DataTree node and optionally the name of a DataArray variable within the node.
+        """
         if node is None:
-            node = xr.DataTree()
+            node = DataTree()
         self._node = node
         self._varname = varname
         super().__init__(parent, sibling_index)
@@ -34,29 +37,29 @@ class XarrayDataTreeItem(AbstractTreeItem):
     def __repr__(self) -> str:
         """ Returns a single-line string representation of this item.
         """
-        return self.abspath()
+        return self.path()
         
     def __str__(self) -> str:
         """ Returns a multi-line string representation of this item's tree branch.
         """
         return self._tree_repr()
     
-    def abspath(self) -> str:
+    def path(self) -> str:
         """ Returns the absolute path to this item in the datatree (e.g. '/air_temperature/air').
         """
         if self._varname:
             return f"{self._node.path.rstrip('/')}/{self._varname}"
         return self._node.path
     
-    def data(self) -> xr.DataTree | xr.DataArray:
+    def data(self) -> DataTree | DataArray:
         if self._varname:
             return self._node[self._varname]
         return self._node
     
-    def node(self) -> xr.DataTree:
+    def node(self) -> DataTree:
         return self._node
     
-    def parentNode(self) -> xr.DataTree | None:
+    def parentNode(self) -> DataTree | None:
         if self._varname:
             return self._node
         return self._node.parent
@@ -65,7 +68,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         return self._varname == ''
     
     def isVariable(self) -> bool:
-        return self._varname != ''
+        return (self._varname != '') and (self._varname in self._node.variables)
     
     def isDataVar(self) -> bool:
         return (self._varname != '') and (self._varname in self._node.data_vars)
@@ -80,20 +83,20 @@ class XarrayDataTreeItem(AbstractTreeItem):
         return (self._varname != '') and (self._varname in self._node._inherited_coords_set())
 
     def dataType(self) -> XarrayDataTreeItem.DataType:
-        if self.isIndexCoord():
+        if self.isNode():
+            return XarrayDataTreeItem.DataType.NODE
+        elif self.isDataVar():
+            return XarrayDataTreeItem.DataType.DATA_VAR
+        elif self.isIndexCoord():
             return XarrayDataTreeItem.DataType.INDEX_COORD
         elif self.isCoord():
             return XarrayDataTreeItem.DataType.COORD
-        elif self.isDataVar():
-            return XarrayDataTreeItem.DataType.DATA_VAR
-        elif self.isNode():
-            return XarrayDataTreeItem.DataType.NODE
         raise ValueError(f'Unknown data type for item {self}')
     
     def rebuildSubtree(self, include_data_vars: bool = True, include_coords: bool = True, include_inherited_coords: bool = True) -> None:
+        self.children = []
         if not self.isNode():
             return
-        self.children = []
         if include_coords:
             from xarray_graph.utils.xarray_utils import ordered_coords_iter
             for coord in ordered_coords_iter(self._node, include_inherited=include_inherited_coords):
@@ -112,31 +115,29 @@ class XarrayDataTreeItem(AbstractTreeItem):
     
     def setName(self, name: str) -> None:
         if not name:
-            # must have a valid name
+            # must have a valid name, just ignore
             return
         if '/' in name:
-            # object names cannot contain path separators "/"
-            return
+            raise ValueError("Object names cannot contain path separators '/'")
         if self.isInheritedCoord():
-            # cannot rename inherited coords
-            return
+            raise RuntimeError(f"Cannot rename inherited coordinate {self.path()}")
         old_name = self.name()
         if name == old_name:
             # nothing to do
             return
-        node: xr.DataTree = self.node()
-        parent_node: xr.DataTree | None = node.parent
+        node = self.node()
+        parent_node = node.parent
         if parent_node is None:
             # this is the root node
             node.name = name
             return
         if name in parent_node:
-            raise ValueError(f'Name conflict: parent node already has an item named {name}')
+            raise ValueError(f'Name conflict: parent node {parent_node.path} already has an item named {name}')
         
         if self.isIndexCoord():
             # rename dimension in entire branch
             from xarray_graph.utils.xarray_utils import aligned_root
-            branch_root: xr.DataTree = aligned_root(parent_node)
+            branch_root = aligned_root(parent_node)
             branch_root.dataset = branch_root.to_dataset().rename_dims({old_name: name})
             for node in branch_root.descendants:
                 node.dataset = node.to_dataset().swap_dims({old_name: name})
@@ -150,7 +151,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
             self._varname = name
             # update item name in branch
             branch_root_item = self.root()[branch_root.path.strip('/')]
-            for branch_item in branch_root_item.subtree_depth_first():
+            for branch_item in branch_root_item.subtree():
                 if branch_item._varname == old_name:
                     branch_item._varname = name
         elif self.isVariable():
@@ -160,6 +161,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
             parent_node.children = {(child_name if child_name != old_name else name): child for child_name, child in parent_node.children.items()}
     
     def orphan(self) -> None:
+        from xarray import Dataset
         # remove data from existing datatree and put into new orphaned datatree
         if self.isNode():
             # need to copy in order to keep inherited coords
@@ -167,16 +169,16 @@ class XarrayDataTreeItem(AbstractTreeItem):
             self._node.orphan()
             self._node = new_node
         elif self.isDataVar():
-            new_node = xr.DataTree(
-                dataset=xr.Dataset(
+            new_node = DataTree(
+                dataset=Dataset(
                     data_vars={self._varname: self._node[self._varname]}
                 ),
             )
             self._node.dataset = self._node.to_dataset().drop_vars(self._varname)
             self._node = new_node
         elif self.isCoord():
-            new_node = xr.DataTree(
-                dataset=xr.Dataset(
+            new_node = DataTree(
+                dataset=Dataset(
                     coords={self._varname: self._node[self._varname]}
                 ),
             )
@@ -187,7 +189,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         if self.parent is not None:
             self.parent.children.remove(self)
             self.parent = None
-        for item in self.subtree_depth_first():
+        for item in self.subtree():
             if item is self:
                 continue
             new_node_path = item.path().removesuffix(item._varname).strip('/')
@@ -200,7 +202,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         
         # update datatree
         dt = self._node.root
-        old_child_path = child_item.abspath()
+        old_child_path = child_item.path()
         new_child_path = f"{self._node.path.rstrip('/')}/{child_name}"
         if child_item.isNode():
             dt[new_child_path] = child_item._node
@@ -217,7 +219,7 @@ class XarrayDataTreeItem(AbstractTreeItem):
         child_item.parent = self
         if old_child_path.endswith('/'):
             new_child_path += '/'
-        for item in child_item.subtree_depth_first():
+        for item in child_item.subtree():
             if item is child_item:
                 continue
             new_node_path = item._node.path.replace(old_child_path, new_child_path, 1)
@@ -230,10 +232,10 @@ class XarrayDataTreeItem(AbstractTreeItem):
         from copy import deepcopy
         cls = type(self)
         if self.isNode():
-            node_copy: xr.DataTree = self._node.copy(inherit=True, deep=deep)
+            node_copy = self._node.copy(inherit=True, deep=deep)
             item_copy = cls(node_copy)
             # copy subtree
-            for item in self.subtree_depth_first():
+            for item in self.subtree():
                 if item is self:
                     continue
                 new_node_path_in_copy = item._node.relative_to(self._node)
@@ -250,24 +252,26 @@ class XarrayDataTreeItem(AbstractTreeItem):
                         new_parent_item = item_copy[new_node_path_in_copy.strip('/').rsplit('/', 1)[0]]
                     else:
                         new_parent_item = item_copy
-                new_node = cast(xr.DataTree, new_node)
+                new_node = cast(DataTree, new_node)
                 subitem_copy = cls(new_node, item._varname, parent=new_parent_item)
                 view_state_copy = deepcopy(item.viewState())
                 subitem_copy.setViewState(view_state_copy)
         elif self.isDataVar():
+            from xarray import Dataset
             varname = self._varname
             var_copy = self._node[varname].copy(deep=deep)
-            node_copy = xr.DataTree(
-                dataset=xr.Dataset(
+            node_copy = DataTree(
+                dataset=Dataset(
                     data_vars={varname: var_copy}
                 ),
             )
             item_copy = cls(node_copy, varname)
         elif self.isCoord():
+            from xarray import Dataset
             varname = self._varname
             coord_copy = self._node[varname].copy(deep=deep)
-            node_copy = xr.DataTree(
-                dataset=xr.Dataset(
+            node_copy = DataTree(
+                dataset=Dataset(
                     coords={varname: coord_copy}
                 ),
             )
@@ -303,17 +307,19 @@ def findInsertionIndex(parent_item: XarrayDataTreeItem, child_item: XarrayDataTr
 
 
 def test_tree():
-    dt = xr.DataTree()
-    dt['air_temperature'] = xr.tutorial.load_dataset('air_temperature')
+    from xarray.tutorial import load_dataset
+    
+    dt = DataTree()
+    dt['air_temperature'] = load_dataset('air_temperature')
     dt['air_temperature/twice air'] = dt['air_temperature/air'] * 2
-    dt['air_temperature/inherits'] = xr.tutorial.load_dataset('air_temperature')
-    dt['air_temperature/inherits/again'] = xr.tutorial.load_dataset('air_temperature')
-    dt['child/grandchild/greatgrandchild'] = xr.DataTree()
-    dt['child/grandchild/tiny'] = xr.tutorial.load_dataset('tiny')
-    dt['child/grandchild/rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['rasm/rasm'] = xr.tutorial.load_dataset('rasm')
-    dt['air_temperature_gradient'] = xr.tutorial.load_dataset('air_temperature_gradient')
+    dt['air_temperature/inherits'] = load_dataset('air_temperature')
+    dt['air_temperature/inherits/again'] = load_dataset('air_temperature')
+    dt['child/grandchild/greatgrandchild'] = DataTree()
+    dt['child/grandchild/tiny'] = load_dataset('tiny')
+    dt['child/grandchild/rasm'] = load_dataset('rasm')
+    dt['rasm'] = load_dataset('rasm')
+    dt['rasm/rasm'] = load_dataset('rasm')
+    dt['air_temperature_gradient'] = load_dataset('air_temperature_gradient')
     # print(dt)
 
     # print(dt.path)

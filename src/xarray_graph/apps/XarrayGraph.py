@@ -938,7 +938,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeModel
         from qtpy.QtCore import QModelIndex
         model: AnnotationTreeModel = self._ROIs_view.model()
-        for item in model.rootItem().subtree_depth_first():
+        for item in model.rootItem().subtree():
             if getattr(item, '_data', None) is roi:
                 index: QModelIndex = model.indexFromItem(item)
                 model.dataChanged.emit(index, index)
@@ -1301,7 +1301,7 @@ class XarrayGraph(XarrayDataTreeViewer):
                         # xdim_coord_slice = data_var_slice.coords[xdim].copy(data=xdata)
 
                     # graph name is path plus non-xdim coords
-                    name = item.abspath()
+                    name = item.path()
                     if index_coords:
                         name += '[' + ','.join([f'{dim}={index_coords[dim]}' for dim in index_coords]) + ']'
                     
@@ -1619,7 +1619,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         self.refresh() # overkill?
         if dst == 'child node':
             selected_items: list[XarrayDataTreeItem] = self._datatree_view.selectedItems(ordered=True)
-            selected_paths = [item.abspath() for item in selected_items]
+            selected_paths = [item.path() for item in selected_items]
             new_selection = False
             model: XarrayDataTreeModel = self._datatree_view.model()
             root_item = model.rootItem()

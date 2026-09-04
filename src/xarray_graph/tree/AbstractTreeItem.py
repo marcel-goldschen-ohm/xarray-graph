@@ -24,6 +24,9 @@ class AbstractTreeItem():
     _path_sep: str = '/'
 
     def __init__(self, parent: Self | None = None, sibling_index: int = None):
+        """ A wrapper for a tree item with parent/child item linkage.
+        """
+        # parent/child tree item linkage
         self.parent: Self | None = parent
         self.children: list[Self] = []
         if parent:
@@ -34,6 +37,7 @@ class AbstractTreeItem():
             parent.children.insert(sibling_index, self)
 
         # store view state (e.g., expanded/collapsed, selected, etc.)
+        # this will be used primarily by tree view components, but it is convenient to store with the individual items, particularly when moving items between views
         self._view_state: dict = {}
     
     def __repr__(self) -> str:
@@ -54,7 +58,7 @@ class AbstractTreeItem():
             """
             if item_str_func is None:
                 item_str_func = lambda item: repr(item)
-            items: list[Self] = list(self.subtree_depth_first())
+            items: list[Self] = list(self.subtree())
             lines: list[str] = [item_str_func(item) for item in items]
             for i, item in enumerate(items):
                 if item is self:
@@ -109,6 +113,7 @@ class AbstractTreeItem():
         """ Set subtree item at path starting from this item.
 
         For nonexistent paths, new items will be created to ensure validity of the path.
+        !! For this to work, items must have a default constructor that does not require any arguments.
 
         !! For unique item access, all paths in the tree must be unique.
            Unique paths are not a requirement, it is up to you to enforce this if you want it.
@@ -137,6 +142,7 @@ class AbstractTreeItem():
                 #     warn('Path is not unique.')
             except ValueError:
                 # create new tree item to ensure validity of path
+                # !! The item must have a default constructor without any required arguments apart from the parent item.
                 NewItemType = type(new_item)
                 item = NewItemType(parent=item)
                 item.setName(name)
@@ -165,52 +171,47 @@ class AbstractTreeItem():
     
     def rebuildSubtree(self) -> None:
         """ Recursively build item subtree based on this item's data.
+
+        !! Implement in derived class with data-specific logic.
         """
         raise NotImplementedError('Implement in derived class with data-specific logic.')
     
     def name(self) -> str:
         """ Tree path key.
         
-        This implementation is for testing/debugging. Override in a derived class to get name from data.
+        !! Override in derived class to get name from data.
         """
         return getattr(self, '_name', str(id(self)))
     
     def setName(self, name: str) -> None:
         """ Tree path key.
         
-        This implementation is for testing/debugging. Override in a derived class to modify data.
+        !! Override in derived class to modify data.
         """
         setattr(self, '_name', name)
     
     def orphan(self) -> None:
         """ Remove this item from its parent.
         
-        Override in a derived class to update tree data.
+        !! Override in derived class to update tree data.
         """
         if not self.parent:
             return
-        
-        # !! WARNING: Update tree data in derived class...
-        
-        # Update item linkage
         self.parent.children.remove(self)
         self.parent = None
     
     def insertChild(self, index: int, item: Self) -> None:
         """ Insert a child item at the specified index.
 
-        Override in a derived class to update tree data.
+        !! Override in derived class to update tree data.
         """
-        # !! WARNING: Update tree data in derived class...
-
-        # Update item linkage
         self.children.insert(index, item)
         item.parent = self
     
     def copy(self) -> Self:
         """ Returns an orphaned copy of this item.
 
-        This implementation is for testing/debugging. Override in a derived class to copy tree data.
+        !! Override in derived class to copy tree data.
         """
         from copy import deepcopy
 
@@ -218,8 +219,6 @@ class AbstractTreeItem():
         item_copy = cls()
         item_copy.setName(self.name())
         item_copy.setViewState(deepcopy(self.viewState()))
-
-        # !! WARNING: Copy tree data in derived class...
 
         # recursively copy children
         for child in self.children:
@@ -263,7 +262,7 @@ class AbstractTreeItem():
         """ Maximum depth of this item's entire subtree.
         """
         max_depth: int = 0
-        for leaf in self.subtree_leaves():
+        for leaf in self.leaves():
             depth: int = leaf.level() - self.level()
             if depth > max_depth:
                 max_depth = depth
@@ -283,7 +282,7 @@ class AbstractTreeItem():
     
     def appendChild(self, item: Self) -> None:
         index: int = len(self.children)
-        self.insertChild(index, item)
+        return self.insertChild(index, item)
     
     # Tree traversal
     
@@ -363,7 +362,7 @@ class AbstractTreeItem():
             item = item.prev()
         return item
     
-    # Ancestor iteration
+    # Tree iteration
     
     def parents(self) -> Iterator[Self]:
         """ Iterate ancestors of this item from closest to most distant.
@@ -373,58 +372,56 @@ class AbstractTreeItem():
             yield item
             item = item.parent
     
-    # Subtree iteration
-    
-    def subtree_depth_first(self) -> Iterator[Self]:
-        """ Depth-first iteration of this item's subtree (inclusive of this item).
+    def subtree(self, order: str = 'depth-first', reversed: bool = False, include_self: bool = True) -> Iterator[Self]:
+        """ Iterate this item's subtree.
         """
-        item = self
-        end_item = self.lastLeaf().next()
-        while (item is not None) and (item is not end_item):
-            yield item
-            item = item.next()
-    
-    def subtree_reverse_depth_first(self) -> Iterator[Self]:
-        """ Reverse depth-first iteration of this item's subtree (inclusive of this item).
-        """
-        item = self.lastLeaf()
-        end_item = self.prev()
-        while (item is not None) and (item is not end_item):
-            yield item
-            item = item.prev()
-    
-    def subtree_breadth_first(self) -> Iterator[Self]:
-        """ Breadth-first iteration of this item's subtree (inclusive of this item).
-        """
-        level_items: list[Self] = [self]
-        index: int = 0
-        while True:
-            if index >= len(level_items):
-                # get all items on next level
-                level_items = [child for item in level_items for child in item.children]
-                if not level_items:
-                    return
-                index = 0
-            yield level_items[index]
-            index += 1
-    
-    def subtree_leaves(self) -> Iterator[Self]:
+        if order == 'depth-first':
+            if reversed:
+                # reverse depth-first
+                item = self.lastLeaf()
+                end_item = self.prev() if include_self else self
+                while (item is not None) and (item is not end_item):
+                    yield item
+                    item = item.prev()
+            else:
+                # depth-first
+                item = self if include_self else self.firstChild()
+                end_item = self.lastLeaf().next()
+                while (item is not None) and (item is not end_item):
+                    yield item
+                    item = item.next()
+        elif order == 'breadth-first':
+            if reversed:
+                raise NotImplementedError("Reverse breadth-first iteration is not implemented.")
+            else:
+                # breadth-first
+                level_items: list[Self] = [self]
+                index: int = 0 if include_self else 1
+                while True:
+                    if index >= len(level_items):
+                        # get all items on next level
+                        level_items = [child for item in level_items for child in item.children]
+                        if not level_items:
+                            return
+                        index = 0
+                    yield level_items[index]
+                    index += 1
+
+    def leaves(self, reversed: bool = False) -> Iterator[Self]:
         """ Iterate leaves of this item's subtree (leaves ordered depth-first).
         """
-        item = self.firstLeaf()
-        end_item = self.lastLeaf().nextLeaf()
-        while (item is not None) and (item is not end_item):
-            yield item
-            item = item.nextLeaf()
-    
-    def subtree_reverse_leaves(self) -> Iterator[Self]:
-        """ Iterate leaves of this item's subtree in reverse (leaves ordered reverse depth-first).
-        """
-        item = self.lastLeaf()
-        end_item = self.firstLeaf().prevLeaf()
-        while (item is not None) and (item is not end_item):
-            yield item
-            item = item.prevLeaf()
+        if reversed:
+            item = self.lastLeaf()
+            end_item = self.firstLeaf().prevLeaf()
+            while (item is not None) and (item is not end_item):
+                yield item
+                item = item.prevLeaf()
+        else:
+            item = self.firstLeaf()
+            end_item = self.lastLeaf().nextLeaf()
+            while (item is not None) and (item is not end_item):
+                yield item
+                item = item.nextLeaf()
     
 
 def test_tree():
@@ -459,23 +456,23 @@ def test_tree():
     # print(root._tree_repr(lambda item: str(id(item))))
 
     print('\nDepth-first iteration...')
-    for item in root.subtree_depth_first():
+    for item in root.subtree():
         print(item.name() or ' ', item.path())
 
     print('\nReverse depth-first iteration...')
-    for item in root.subtree_reverse_depth_first():
+    for item in root.subtree(order='depth-first', reversed=True):
         print(item.name() or ' ', item.path())
 
     print('\nBreadth-first iteration...')
-    for item in root.subtree_breadth_first():
+    for item in root.subtree(order='breadth-first'):
         print(item.name() or ' ', item.path())
 
     print('\nLeaf iteration...')
-    for item in root.subtree_leaves():
+    for item in root.leaves():
         print(item.name() or ' ', item.path())
 
     print('\nReverse leaf iteration...')
-    for item in root.subtree_reverse_leaves():
+    for item in root.leaves(reversed=True):
         print(item.name() or ' ', item.path())
 
     print(f'\nRemove {e.name()}...')

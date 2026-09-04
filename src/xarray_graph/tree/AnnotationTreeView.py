@@ -56,7 +56,7 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
     def selectedAnnotations(self) -> list[dict]:
         annotations: list[dict] = []
         for item in self.selectedItems():
-            for leaf in item.subtree_leaves():
+            for leaf in item.leaves():
                 if leaf.isAnnotation():
                     annotation = cast(dict, leaf._data)
                     if annotation not in annotations:
@@ -69,7 +69,7 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
         self.selectionModel().clearSelection()
         from qtpy.QtCore import QItemSelection
         toSelect = QItemSelection()
-        for item in root.subtree_leaves():
+        for item in root.leaves():
             if item is root:
                 continue
             if item.isAnnotation():
@@ -169,7 +169,7 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
     def copySelection(self) -> None:
         items: list[AnnotationTreeItem] = []
         for item in self.selectedItems():
-            for leaf_item in item.subtree_leaves():
+            for leaf_item in item.leaves():
                 if leaf_item not in items:
                     items.append(leaf_item)
         if not items:

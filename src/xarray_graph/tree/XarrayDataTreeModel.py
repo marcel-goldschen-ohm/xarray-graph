@@ -1,6 +1,7 @@
 """ PyQt tree model interface for a Xarray.DataTree.
 
 TODO:
+- when dragging items between views, respect the drop views item type visiblity settings (currently does not)
 - moveRows: merge items?
 """
 from __future__ import annotations
@@ -380,7 +381,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
                     item._varname = new_name
                     # update item name in branch
                     branch_root_item = item.root()[branch_root.path.strip('/')]
-                    for branch_item in branch_root_item.subtree_depth_first():
+                    for branch_item in branch_root_item.subtree():
                         if branch_item._varname == old_name:
                             branch_item._varname = new_name
                     # self._updateSubtreeItems(branch_root_item)
@@ -709,7 +710,7 @@ class XarrayDataTreeModel(AbstractTreeModel[XarrayDataTreeItem]):
         )
     
     def _updateSubtreeItems(self, parent_item: XarrayDataTreeItem) -> None:
-        for item in parent_item.subtree_depth_first():
+        for item in parent_item.subtree():
             if not item.isNode():
                 continue
             
