@@ -244,7 +244,7 @@ class TreeView[TreeItem: AbstractTreeItem, TreeModel: AbstractTreeModel](QTreeVi
                 items.append(item)
         if ordered:
             from xarray_graph.tree.AbstractTreeUtils import orderedItems
-            items = orderedItems(items, order='depth-first')
+            items = orderedItems(items)
         return items
     
     def setSelectedItems(self, items: list[TreeItem]):
