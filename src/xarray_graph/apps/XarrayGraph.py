@@ -2014,6 +2014,7 @@ class XarrayGraph(XarrayDataTreeViewer):
         model.setColumnLabels(['ROI'])
         self._ROIs_view.setModel(model)
         self._ROIs_view.selectionWasChanged.connect(self.onRoiSelectionChanged)
+        self._ROIs_view.annotationsChanged.connect(lambda annotations: self.updatePlotRois()) # overkill
         self._ROIs_view.setHeaderHidden(True)
 
         # datatree and ROI views splitter

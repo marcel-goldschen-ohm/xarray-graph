@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import cast
+from qtpy.QtCore import Signal  # type: ignore
 from qtpy.QtCore import QPoint, QSize, QModelIndex
 from qtpy.QtWidgets import QAbstractItemView, QMenu
 from xarray_graph.tree.TreeView import TreeView
@@ -11,6 +12,8 @@ from xarray_graph.tree.AnnotationTreeModel import AnnotationTreeModel
 
 
 class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
+
+    annotationsChanged = Signal(list)  # list[dict], but PyQt/PySide signals don't support parameterized generics
 
     _copied_annotations: list[dict] = []
 
@@ -151,6 +154,16 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
             action = QAction('Ungroup Selected', parent=menu)
             action.triggered.connect(lambda checked: self.ungroupSelected())
             menu.addAction(action)
+
+            menu.addSeparator()
+
+            action = QAction('Lock Selected', parent=menu)
+            action.triggered.connect(lambda checked: self.lockSelected())
+            menu.addAction(action)
+
+            action = QAction('Unlock Selected', parent=menu)
+            action.triggered.connect(lambda checked: self.unlockSelected())
+            menu.addAction(action)
         
         # expand/collapse
         menu.addSeparator()
@@ -235,6 +248,7 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
         
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.refresh()
+            self.annotationsChanged.emit([annotation])
     
     def insertNewGroup(self, parent_item: AnnotationTreeItem, row: int) -> None:
         if not parent_item.isRoot():
@@ -255,8 +269,8 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
         model.insertItems([new_item], row, parent_item)
     
     def groupSelected(self) -> None:
-        items = self.selectedItems()
-        if not items:
+        annotations = self.selectedAnnotations()
+        if not annotations:
             return
         from qtpy.QtWidgets import QInputDialog
         title = 'Group'
@@ -265,21 +279,35 @@ class AnnotationTreeView(TreeView[AnnotationTreeItem, AnnotationTreeModel]):
         group = group.strip()
         if not ok or not group:
             return
-        for item in items:
-            if item.isAnnotation():
-                annotation = cast(dict, item._data)
-                annotation['group'] = group
+        for annotation in annotations:
+            annotation['group'] = group
         self.refresh()
+        self.annotationsChanged.emit(annotations)
     
     def ungroupSelected(self) -> None:
-        items = self.selectedItems()
-        if not items:
+        annotations = self.selectedAnnotations()
+        if not annotations:
             return
-        for item in items:
-            if item.isAnnotation():
-                annotation = cast(dict, item._data)
-                annotation['group'] = ''
+        for annotation in annotations:
+            annotation['group'] = ''
         self.refresh()
+        self.annotationsChanged.emit(annotations)
+    
+    def lockSelected(self) -> None:
+        annotations = self.selectedAnnotations()
+        if not annotations:
+            return
+        for annotation in annotations:
+            annotation['movable'] = False
+        self.annotationsChanged.emit(annotations)
+    
+    def unlockSelected(self) -> None:
+        annotations = self.selectedAnnotations()
+        if not annotations:
+            return
+        for annotation in annotations:
+            annotation['movable'] = True
+        self.annotationsChanged.emit(annotations)
 
 
 def test_live():

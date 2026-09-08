@@ -52,7 +52,11 @@ class InfLine(InfiniteLine):
             elif key == 'movable':
                 self.setMovable(value)
             elif key == 'format':
-                self.setFormat(value)
+                from qtpy.QtCore import QSignalBlocker
+                with QSignalBlocker(self):
+                    self.setFormat(value)
+
+        self.sigPositionChangeFinished.emit(self)
     
     def format(self) -> dict[str, Any]:
         """ Return hashable dict for saving and restoring state.
@@ -90,6 +94,8 @@ class InfLine(InfiniteLine):
                 self.setFontSize(value)
             elif key == 'fontcolor':
                 self.setFontColor(toQColor(value))
+
+        self.sigPositionChangeFinished.emit(self)
 
     def position(self):
         return self.value()
