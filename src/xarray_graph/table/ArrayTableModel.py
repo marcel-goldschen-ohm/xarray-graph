@@ -62,19 +62,25 @@ class ArrayTableModel(QAbstractTableModel):
             try:
                 # Convert the input string back to the original array type
                 typed_value = self._array.dtype.type(value)
-                row = index.row()
-                col = index.column()
-                if self._array.ndim == 1:
-                    self._array[row] = typed_value
-                elif self._array.ndim == 2:
-                    self._array[row, col] = typed_value
-                
-                # Notify the view that the cell has changed
-                self.dataChanged.emit(index, index, [role])
-                return True
             except ValueError:
-                # Discard input if it cannot be converted to the array's data type
-                return False
+                try:
+                    typed_value = float(value)
+                    self._array = self._array.astype(float)
+                except ValueError:
+                    try:
+                        typed_value = str(value)
+                        self._array = self._array.astype(str)
+                    except ValueError:
+                        return False
+            row = index.row()
+            col = index.column()
+            if self._array.ndim == 1:
+                self._array[row] = typed_value
+            elif self._array.ndim == 2:
+                self._array[row, col] = typed_value
+            # Notify the view that the cell has changed
+            self.dataChanged.emit(index, index, [role])
+            return True
         return False
 
     def flags(self, index: QModelIndex):
