@@ -3,7 +3,7 @@
 TODO:
 - keep track of plot options (e.g., grid, downsample, etc.) for each plot and restore them when replotting
 - bulk format selected ROIs?
-- average is curretnly agnostic to which dimension(s) are averaged over. this is max flexible but loses some information. maybe allow user to select which dimension(s) to average over?
+- average is currently agnostic to which dimension(s) are averaged over. this is max flexible but loses some information. maybe allow user to select which dimension(s) to average over?
 - units conflict error message only specifies one of the conflicting variables. should list at list two.
 - saving preview for multiple variables with aligned but non-identical coordinates does not work. need to check and fix.
 - check combining multiple operations on different slices into same result variable
@@ -12,7 +12,6 @@ TODO:
 - plot should respect style attr.
 - bulk default style (strips custom formatting) for selected data_vars via context menu.
 - strip plot and ROI empty format attrs.
-- move selected item options in datatree view context menu to item submenu.
 - use label as ROI name and include in context menu.
 - better handling of displayed vs original units? this is a pain point right now. maybe store conversion to base units as attr on creation and upon units change?
 """

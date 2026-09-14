@@ -109,6 +109,65 @@ def rename_dims(node: DataTree, dims_dict: dict[str, str]) -> None:
                 child.dataset = child.to_dataset().reset_coords(old_names, drop=True)
 
 
+# def signal_analysis(dt: DataTree, varpaths: list[str], xdim: str, coord_slices: list[dict], analysis: dict, **kwargs) -> tuple[DataTree, list[str]]:
+#     """ ...
+#     """
+#     from typing import cast
+#     import numpy as np
+#     dt = dt.copy(deep=False)
+#     result_varpaths: list[str] = []
+#     for varpath in varpaths:
+#         var = dt[varpath]
+#         if not isinstance(var, DataArray):
+#             continue
+#         if xdim not in var.dims:
+#             continue
+#         i = varpath.rfind('/')
+#         nodepath = varpath[:i] if i > 0 else '/'
+#         node = dt[nodepath]
+#         if not isinstance(node, DataTree):
+#             continue
+#         result_nodepath = f'{nodepath.rstrip("/")}/{analysis["result_name"]}'
+#         result_varpath = f'{result_nodepath}/{var.name}'
+#         try:
+#             result_var = dt[result_varpath]
+#             # ask before overwriting existing result variable?
+#         except KeyError:
+#             result_var = var.copy(data=np.full(var.shape, np.nan))
+#             dt[result_varpath] = result_var
+#         try:
+#             x = cast(DataArray, var.coords[xdim])
+#         except KeyError:
+#             x = DataArray(np.arange(var.sizes[xdim]), dims=[xdim])
+#         for coord_slice in coord_slices:
+#             coord_slice = {dim: coord_slice[dim] for dim in coord_slice if dim in var.dims and dim != xdim}
+#             if not coord_slice:
+#                 continue
+#             y = var.sel(coord_slice)
+#             # perform analysis on x, y, and store result in result_var
+#             # result_var.loc[coord_slice] = ...
+#         result_varpaths.append(result_varpath)
+#     return dt, result_varpaths
+
+
+# def get_data(da: DataArray, coord_slice: dict = None) -> DataArray:
+#     """ Return a slice of the input DataArray based on the specified coordinate slices.
+#     """
+#     if coord_slice:
+#         da = da.sel(coord_slice)
+#     return da 
+
+
+# def mask_from_ranges(coord: DataArray, ranges: list[tuple[float, float]]) -> DataArray:
+#     """ Return a boolean mask for 1-D coordinate array coord where True indicates being within any of the specified ranges.
+#     """
+#     import numpy as np
+#     mask = coord.copy(data=np.full(coord.shape, False))
+#     for start, end in ranges:
+#         mask |= (coord >= start) & (coord <= end)
+#     return mask
+
+
 def to_base_units[T: DataArray | Dataset | DataTree](data: T, ureg: UnitRegistry) -> T:
     """ Use pint to convert input data into base units.
     """

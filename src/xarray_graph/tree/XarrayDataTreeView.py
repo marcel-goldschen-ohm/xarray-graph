@@ -8,7 +8,6 @@ TODO:
 """
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import cast
 import numpy as np
 import xarray as xr
@@ -194,73 +193,108 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
         from qtpy.QtGui import QAction  # type: ignore
         from qtpy.QtWidgets import QAbstractItemView
         
-        # disabled action acts as a label for the item that was right-clicked on
-        menu.addAction(QAction(
-            text=f'{item.path()}:',
-            parent=menu,
-            icon=icon,
-            iconVisibleInMenu=True,
-            enabled=False
-        ))
+        # # disabled action acts as a label for the item that was right-clicked on
+        # menu.addAction(QAction(
+        #     text=f'{item.path()}:',
+        #     parent=menu,
+        #     icon=icon,
+        #     iconVisibleInMenu=True,
+        #     enabled=False
+        # ))
 
-        # item-specific actions
+        # item-specific submenu
+        this_menu = QMenu(f'{item.path()}', icon=icon)
+
         action = QAction(
             text='Info',
-            parent=menu,
+            parent=this_menu,
             shortcut=QKeySequence('Ctrl+I'),
             shortcutVisibleInContextMenu=True
         )
         action.triggered.connect(lambda checked, item=item: self.infoDialog(item))
-        menu.addAction(action)
+        this_menu.addAction(action)
 
         if not item.isInheritedCoord():
             action = QAction(
                 text='Attrs',
-                parent=menu
+                parent=this_menu
             )
             action.triggered.connect(lambda checked, item=item: self.attrsDialog(item))
-            menu.addAction(action)
+            this_menu.addAction(action)
 
             if item.isVariable():
+                this_menu.addSeparator()
+
                 values = item.data().values
-                assert isinstance(values, np.ndarray)
-                ndim = values.squeeze().ndim
+                ndim = cast(np.ndarray, values).squeeze().ndim
                 action = QAction(
                     text='Data',
-                    parent=menu,
+                    parent=this_menu,
                     enabled=item.isCoord() or (item.isDataVar() and ndim == 1)
                 )
                 action.triggered.connect(lambda checked, item=item: self.dataDialog(item))
-                menu.addAction(action)
+                this_menu.addAction(action)
 
             if item.isNode():
+                this_menu.addSeparator()
+
                 action = QAction(
                     text='Rename Dimensions',
-                    parent=menu
+                    parent=this_menu
                 )
                 action.triggered.connect(lambda checked, item=item: self.renameDimensions(item))
-                menu.addAction(action)
+                this_menu.addAction(action)
+
+                this_menu.addSeparator()
 
                 action = QAction(
                     text='New Child Node',
-                    parent=menu
+                    parent=this_menu
                 )
                 action.triggered.connect(lambda checked, parent_item=item: self.insertNewChildNode(parent_item))
-                menu.addAction(action)
+                this_menu.addAction(action)
 
                 action = QAction(
                     text='New Data Variable',
-                    parent=menu
+                    parent=this_menu
                 )
                 action.triggered.connect(lambda checked, parent_item=item: self.insertNewDataVar(parent_item))
-                menu.addAction(action)
+                this_menu.addAction(action)
 
                 action = QAction(
                     text='New Coordinate',
-                    parent=menu
+                    parent=this_menu
                 )
                 action.triggered.connect(lambda checked, parent_item=item: self.insertNewCoord(parent_item))
-                menu.addAction(action)
+                this_menu.addAction(action)
+
+        # After adding all actions to this_menu:
+        from qtpy.QtGui import QFontMetrics
+        from qtpy.QtWidgets import QStyle
+        font_metrics = QFontMetrics(this_menu.font())
+        text_width = max(
+            (font_metrics.horizontalAdvance(action.text()) for action in this_menu.actions()),
+            default=0,
+        )
+        shortcut_width = max(
+            (
+                font_metrics.horizontalAdvance(
+                    action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+                )
+                for action in this_menu.actions()
+                if not action.shortcut().isEmpty()
+            ),
+            default=0,
+        )
+        icon_width = this_menu.style().pixelMetric(QStyle.PixelMetric.PM_SmallIconSize)
+        this_menu.setMinimumWidth(
+            text_width
+            + shortcut_width
+            + icon_width
+            + 48  # menu margins, spacing, and shortcut-column padding
+        )
+        
+        menu.addMenu(this_menu)
         
         # selection
         has_selection: bool = self.selectionModel().hasSelection()
