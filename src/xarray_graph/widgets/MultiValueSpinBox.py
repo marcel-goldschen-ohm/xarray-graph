@@ -27,6 +27,9 @@ class MultiValueSpinBox(QAbstractSpinBox):
     def __init__(self, *args, **kwargs):
         QAbstractSpinBox.__init__(self, *args, **kwargs)
 
+        # single selection mode (multi selection is allowed by default)
+        self._single_selection_mode = False
+
         # whether or not to show all individual values or values ranges when possible
         self._display_value_ranges_when_possible = True
 
@@ -66,6 +69,8 @@ class MultiValueSpinBox(QAbstractSpinBox):
             indices = np.array(indices, dtype=int)
         elif not np.issubdtype(indices.dtype, np.integer):
             indices = indices.astype(int)
+        if self._single_selection_mode and len(indices) > 1:
+            indices = np.array([indices[0]], dtype=int)
         mask = (indices >= 0) & (indices < len(self._indexed_values))
         self._indices = indices[mask]
         text = self.textFromValues(self.selectedValues())
@@ -92,6 +97,15 @@ class MultiValueSpinBox(QAbstractSpinBox):
         indices = self.indicesFromValues(values)
         self.setIndices(indices)
     
+    def isSingleSelectionMode(self) -> bool:
+        return self._single_selection_mode
+
+    def setSingleSelectionMode(self, single_selection: bool):
+        self._single_selection_mode = single_selection
+        if single_selection and len(self._indices) > 1:
+            # keep only the first index
+            self.setIndices([self._indices[0]])
+
     def displayValueRangesWhenPossible(self) -> bool:
         return self._display_value_ranges_when_possible
     
