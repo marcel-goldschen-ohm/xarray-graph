@@ -2169,7 +2169,7 @@ class DimIterWidget(QWidget):
         from qtpy.QtGui import QColor, QPalette
         from qtpy.QtGui import QAction  # type: ignore
         from qtpy.QtWidgets import QActionGroup  # type: ignore
-        from qtpy.QtWidgets import QApplication, QGridLayout, QLabel, QMenu, QSizePolicy, QToolButton, QGraphicsOpacityEffect
+        from qtpy.QtWidgets import QApplication, QGridLayout, QLabel, QMenu, QSizePolicy, QToolButton, QGraphicsOpacityEffect, QListWidget, QWidgetAction
         from qtawesome import icon
         from xarray_graph.widgets.MultiValueSpinBox import MultiValueSpinBox
 
@@ -2246,6 +2246,24 @@ class DimIterWidget(QWidget):
         self._spinbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._spinbox.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._spinbox.editingFinished.connect(lambda: self._spinbox.clearFocus())
+        self._spinbox.indicesChanged.connect(self._onSpinboxSelectionChanged)
+
+        self._list_selector = QListWidget()
+        self._list_selector.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self._list_selector.itemSelectionChanged.connect(self._onListSelectorSelectionChanged)
+
+        self._select_menu = QMenu()
+        action = QWidgetAction(self._select_menu)
+        action.setDefaultWidget(self._list_selector)
+        self._select_menu.addAction(action)
+
+        self._drop_select_button = QToolButton()
+        self._drop_select_button.setIcon(icon('ph.list', color=color_off, color_on=color_on))
+        self._drop_select_button.setToolTip('Select coordinates')
+        self._drop_select_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._drop_select_button.setMaximumSize(QSize(20, 20))
+        self._drop_select_button.setMenu(self._select_menu)
+        self._drop_select_button.setStyleSheet('QToolButton::menu-indicator { image: none; }')
 
         grid = QGridLayout(self)
         grid.setContentsMargins(5, 2, 5, 2)
@@ -2254,7 +2272,8 @@ class DimIterWidget(QWidget):
         grid.addWidget(self._size_label, 0, 1)
         grid.addWidget(self._xdim_button, 0, 2)
         grid.addWidget(self._tile_button, 0, 3)
-        grid.addWidget(self._spinbox, 1, 0, 1, 4)
+        grid.addWidget(self._spinbox, 1, 0, 1, 3)
+        grid.addWidget(self._drop_select_button, 1, 3)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
     
@@ -2277,6 +2296,15 @@ class DimIterWidget(QWidget):
             self._spinbox.setIndices([0])
         self._spinbox.blockSignals(False)
         self._size_label.setText(f': {coords.size}')
+
+        self._list_selector.blockSignals(True)
+        self._list_selector.clear()
+        self._list_selector.addItems([str(c) for c in coords])
+        selected_indices = self._spinbox.indices()
+        for i in range(self._list_selector.count()):
+            item = self._list_selector.item(i)
+            item.setSelected(i in selected_indices)
+        self._list_selector.blockSignals(False)
     
     def selectedCoords(self) -> np.ndarray:
         return self._spinbox.selectedValues()
@@ -2285,7 +2313,20 @@ class DimIterWidget(QWidget):
         self._spinbox.blockSignals(True)
         self._spinbox.setSelectedValues(coords)
         self._spinbox.blockSignals(False)
+        self._onSpinboxSelectionChanged()
     
+    def _onSpinboxSelectionChanged(self) -> None:
+        self._list_selector.blockSignals(True)
+        selected_indices = self._spinbox.indices()
+        for i in range(self._list_selector.count()):
+            item = self._list_selector.item(i)
+            item.setSelected(i in selected_indices)
+        self._list_selector.blockSignals(False)
+
+    def _onListSelectorSelectionChanged(self) -> None:
+        selected_indices = [i for i in range(self._list_selector.count()) if self._list_selector.item(i).isSelected()]
+        self._spinbox.setIndices(selected_indices)
+
     def updateTileButton(self, vertical_tile_dim: str | None = None, horizontal_tile_dim: str | None = None) -> None:
         dim = self.dim()
         if vertical_tile_dim == dim:

@@ -222,51 +222,51 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
             action.triggered.connect(lambda checked, item=item: self.attrsDialog(item))
             this_menu.addAction(action)
 
-            if item.isVariable():
-                this_menu.addSeparator()
+        if not item.isNode() and not item.isInheritedCoord():
+            this_menu.addSeparator()
 
-                values = item.data().values
-                ndim = cast(np.ndarray, values).squeeze().ndim
-                action = QAction(
-                    text='Data',
-                    parent=this_menu,
-                    enabled=item.isCoord() or (item.isDataVar() and ndim == 1)
-                )
-                action.triggered.connect(lambda checked, item=item: self.dataDialog(item))
-                this_menu.addAction(action)
+            # values = item.data().values
+            # ndim = cast(np.ndarray, values).squeeze().ndim
+            action = QAction(
+                text='Data',
+                parent=this_menu,
+                # enabled=item.isCoord() or (item.isDataVar() and ndim == 1)
+            )
+            action.triggered.connect(lambda checked, item=item: self.dataDialog(item))
+            this_menu.addAction(action)
 
-            if item.isNode():
-                this_menu.addSeparator()
+        if item.isNode():
+            this_menu.addSeparator()
 
-                action = QAction(
-                    text='Rename Dimensions',
-                    parent=this_menu
-                )
-                action.triggered.connect(lambda checked, item=item: self.renameDimensions(item))
-                this_menu.addAction(action)
+            action = QAction(
+                text='Rename Dimensions',
+                parent=this_menu
+            )
+            action.triggered.connect(lambda checked, item=item: self.renameDimensions(item))
+            this_menu.addAction(action)
 
-                this_menu.addSeparator()
+            this_menu.addSeparator()
 
-                action = QAction(
-                    text='New Child Node',
-                    parent=this_menu
-                )
-                action.triggered.connect(lambda checked, parent_item=item: self.insertNewChildNode(parent_item))
-                this_menu.addAction(action)
+            action = QAction(
+                text='New Child Node',
+                parent=this_menu
+            )
+            action.triggered.connect(lambda checked, parent_item=item: self.insertNewChildNode(parent_item))
+            this_menu.addAction(action)
 
-                action = QAction(
-                    text='New Data Variable',
-                    parent=this_menu
-                )
-                action.triggered.connect(lambda checked, parent_item=item: self.insertNewDataVar(parent_item))
-                this_menu.addAction(action)
+            action = QAction(
+                text='New Data Variable',
+                parent=this_menu
+            )
+            action.triggered.connect(lambda checked, parent_item=item: self.insertNewDataVar(parent_item))
+            this_menu.addAction(action)
 
-                action = QAction(
-                    text='New Coordinate',
-                    parent=this_menu
-                )
-                action.triggered.connect(lambda checked, parent_item=item: self.insertNewCoord(parent_item))
-                this_menu.addAction(action)
+            action = QAction(
+                text='New Coordinate',
+                parent=this_menu
+            )
+            action.triggered.connect(lambda checked, parent_item=item: self.insertNewCoord(parent_item))
+            this_menu.addAction(action)
 
         # After adding all actions to this_menu:
         from qtpy.QtGui import QFontMetrics
@@ -402,36 +402,32 @@ class XarrayDataTreeView(TreeView[XarrayDataTreeItem, XarrayDataTreeModel]):
         self.refresh()
         
     def dataDialog(self, item: XarrayDataTreeItem) -> None:
-        if not item.isVariable():
+        if item.isNode():
             return
-        values = item.data().values
-        values = cast(np.ndarray, values)
-        values = values.squeeze()
 
-        from xarray_graph.table.ArrayTableModel import ArrayTableModel
-        from xarray_graph.table.ArrayTableView import ArrayTableView
-        model: ArrayTableModel = ArrayTableModel(values)
-        view: ArrayTableView = ArrayTableView()
-        view.setModel(model)
+        from xarray_graph.table.XarrayTableViewer import XarrayTableViewer
+        viewer = XarrayTableViewer()
+        dims = [str(dim) for dim in item.node().dims]
+        isel = {dim: 0 for i, dim in enumerate(dims) if i >= 2}
+        viewer.setArray(item.node(), item.name(), isel=isel)
 
         from qtpy.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
 
         dlg = makeDialog(self, size=self._dialogSizeHint(), pos=QPoint(0, 0), title=item.name())
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(view)
+        layout.addWidget(viewer)
 
         btns = QDialogButtonBox()
-        btns.setStandardButtons(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        btns.setStandardButtons(QDialogButtonBox.StandardButton.Ok)
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
         layout.addWidget(btns)
         
         status = dlg.exec()
-        if status != QDialog.DialogCode.Accepted:
-            return
+        # if status != QDialog.DialogCode.Accepted:
+        #     return
         
-        item.data().data[:] = values
         self.refresh()
     
     def insertNewChildNode(self, parent_item: XarrayDataTreeItem, row: int = None) -> None:
