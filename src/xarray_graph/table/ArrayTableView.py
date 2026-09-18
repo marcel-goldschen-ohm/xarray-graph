@@ -10,10 +10,8 @@ class ArrayTableView(QTableView):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableView.SelectionBehavior.SelectItems)
         self.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
-        # self.setSortingEnabled(False)
     
     def selectedRowsAndColumns(self):
         """ Returns a tuple of (rows, cols) arrays for the selected cells in the table.
@@ -158,7 +156,8 @@ def test_live():
     sample_array = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
 
     # Create the model and view
-    model = ArrayTableModel(sample_array)
+    model = ArrayTableModel()
+    model.setArray(sample_array)
     view = ArrayTableView()
     view.setModel(model)
     view.show()
