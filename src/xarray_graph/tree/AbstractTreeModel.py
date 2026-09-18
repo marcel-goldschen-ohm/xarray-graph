@@ -173,7 +173,7 @@ class AbstractTreeModel[TreeItem: AbstractTreeItem](QAbstractItemModel):
         while (first_change < n_overlap) and (labels[first_change] == old_labels[first_change]):
             first_change += 1
         last_change = max(len(labels), len(old_labels)) - 1
-        while (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
+        while (last_change >= 0) and (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
             last_change -= 1
         self._row_labels = labels
         if first_change <= last_change: 
@@ -189,7 +189,7 @@ class AbstractTreeModel[TreeItem: AbstractTreeItem](QAbstractItemModel):
         while (first_change < n_overlap) and (labels[first_change] == old_labels[first_change]):
             first_change += 1
         last_change = max(len(labels), len(old_labels)) - 1
-        while (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
+        while (last_change >= 0) and (last_change < n_overlap) and (labels[last_change] == old_labels[last_change]):
             last_change -= 1
         self._column_labels = labels
         if first_change <= last_change: 
